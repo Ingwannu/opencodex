@@ -2225,6 +2225,26 @@ function findBaseUrlInObject(value, seen = new Set()) {
   return undefined;
 }
 
+function credentialMetadataOptions(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const out = {};
+  const metadata = value.metadata && typeof value.metadata === "object" && !Array.isArray(value.metadata)
+    ? value.metadata
+    : {};
+  Object.assign(out, metadata);
+  for (const key of ["resourceName", "resource_name", "resource", "resourceId", "resource_id"]) {
+    if (typeof value[key] === "string" && value[key].trim()) out[key] = value[key];
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function detectedBaseUrlForAuthEntry(providerId, body) {
+  return (
+    findBaseUrlInObject(body) ||
+    azureOpenAiBaseUrlFromOptions(providerId, credentialMetadataOptions(body))
+  );
+}
+
 function stripJsonComments(source) {
   return source
     .replace(/\/\*[\s\S]*?\*\//g, "")
@@ -2347,7 +2367,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
     const { name, body } = entry;
     const providerKey = sanitizeProviderId(name);
     seenProviderIds.add(providerKey);
-    const detectedBaseUrl = findBaseUrlInObject(body);
+    const detectedBaseUrl = detectedBaseUrlForAuthEntry(providerKey, body);
     const configPreset = providerConfig.providers.get(providerKey);
     const resolved = configPreset
       ? { name: providerKey, preset: configPreset }
@@ -2368,7 +2388,10 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
     const providerAdapter = preset.providerAdapter || preset.provider;
     const baseUrl = baseUrlForPreset(preset, detectedBaseUrl);
     const providerId = preset.providerId || presetName;
-    const runtimeSupported = preset.runtimeSupported !== false && isRuntimeSupportedAdapter(providerAdapter);
+    const runtimeSupported =
+      (preset.runtimeSupported !== false ||
+        (providerAdapter === "openai-compatible" && Boolean(baseUrl))) &&
+      isRuntimeSupportedAdapter(providerAdapter);
     const accountSuffix = sanitizeProviderId(entry.label || entry.credentialId || name) || randomUUID().slice(0, 8);
     const id = `${sanitizeProviderId(providerId)}-${accountSuffix}`;
     imported += upsertOpenCodeAccountWithModelOverrides(

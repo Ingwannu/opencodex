@@ -11,6 +11,7 @@ import {
 } from "./types.js";
 import {
   amazonBedrockBaseUrlFromOptions,
+  azureOpenAiBaseUrlFromOptions,
   cloudflareAiGatewayBaseUrlFromOptions,
   cloudflareWorkersAiBaseUrlFromOptions,
   isRuntimeSupportedProvider,
@@ -540,6 +541,38 @@ function findBaseUrlInObject(value: unknown, seen = new Set<object>()): string |
   return undefined;
 }
 
+function credentialMetadataOptions(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  const metadata = source.metadata && typeof source.metadata === "object" && !Array.isArray(source.metadata)
+    ? (source.metadata as Record<string, unknown>)
+    : {};
+  Object.assign(out, metadata);
+  for (const key of [
+    "resourceName",
+    "resource_name",
+    "resource",
+    "resourceId",
+    "resource_id",
+  ]) {
+    if (typeof source[key] === "string" && source[key].trim()) {
+      out[key] = source[key];
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function detectedBaseUrlForAuthEntry(
+  providerId: string,
+  body: unknown,
+): string | undefined {
+  return (
+    findBaseUrlInObject(body) ??
+    azureOpenAiBaseUrlFromOptions(providerId, credentialMetadataOptions(body))
+  );
+}
+
 type OpenCodeAuthEntry = {
   name: string;
   body: unknown;
@@ -661,7 +694,7 @@ export async function accountsFromOpenCodeAuthPayload(
     const { name, body } = entry;
     const providerKey = sanitizeProviderId(name);
     seenProviderIds.add(providerKey);
-    const detectedBaseUrl = findBaseUrlInObject(body);
+    const detectedBaseUrl = detectedBaseUrlForAuthEntry(providerKey, body);
     const configEntry = options.providerConfig?.get(providerKey);
     const registry =
       configEntry ??
@@ -682,8 +715,10 @@ export async function accountsFromOpenCodeAuthPayload(
       sanitizeProviderId(entry.label ?? entry.credentialId ?? name) ||
       randomUUID().slice(0, 8);
     const id = `${providerId}-${accountSuffix}`;
-    const runtimeSupported = registry.runtimeSupported;
     const baseUrl = baseUrlForRegistry(registry, detectedBaseUrl);
+    const runtimeSupported =
+      registry.runtimeSupported ||
+      (registry.providerAdapter === "openai-compatible" && Boolean(baseUrl));
 
     const account: Account = {
       id,

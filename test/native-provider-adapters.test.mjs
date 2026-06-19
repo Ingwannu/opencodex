@@ -1598,6 +1598,31 @@ test("Azure registry metadata stays OpenAI-compatible when resource env is missi
   assert.ok(entry.models?.["gpt-5.1-prod"]);
 });
 
+test("OpenCode auth import derives Azure endpoint from credential metadata", async () => {
+  const accounts = await accountsFromOpenCodeAuthPayload({
+    azure: {
+      type: "key",
+      key: "az-test-key",
+      metadata: {
+        resourceName: "az-auth-resource",
+      },
+    },
+  });
+  const azure = accounts.find(
+    (account) =>
+      account.providerId === "azure" &&
+      account.providerAdapter === "openai-compatible",
+  );
+
+  assert.equal(azure?.provider, "openai-compatible");
+  assert.equal(azure?.providerAdapter, "openai-compatible");
+  assert.equal(azure?.baseUrl, "https://az-auth-resource.openai.azure.com/openai");
+  assert.equal(azure?.upstreamMode, "responses");
+  assert.equal(azure?.compatibilityMode, "responses");
+  assert.equal(azure?.accessToken, "az-test-key");
+  assert.equal(azure?.enabled, true);
+});
+
 test("OpenCode auth import splits model-level provider overrides into virtual accounts", async () => {
   const previous = {
     AZURE_COGNITIVE_SERVICES_RESOURCE_NAME:

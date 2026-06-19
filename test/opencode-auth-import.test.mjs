@@ -783,7 +783,11 @@ test("imports Azure OpenAI v1 endpoint from OpenCode config and env variables", 
   );
 
   const store = readStore(storePath);
-  const azure = store.accounts.find((account) => account.providerId === "azure");
+  const azure = store.accounts.find(
+    (account) =>
+      account.providerId === "azure" &&
+      account.providerAdapter === "openai-compatible",
+  );
   assert.equal(azure?.provider, "openai-compatible");
   assert.equal(azure?.providerAdapter, "openai-compatible");
   assert.equal(azure?.providerLabel, "azure");
@@ -793,6 +797,53 @@ test("imports Azure OpenAI v1 endpoint from OpenCode config and env variables", 
   assert.equal(azure?.accessToken, "az-test-key");
   assert.equal(azure?.enabled, true);
   assert.ok(azure?.providerModels?.["gpt-5.1-prod"]);
+});
+
+test("imports Azure OpenAI resource name from OpenCode credential metadata", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-azure-metadata-auth-"));
+  const storePath = path.join(dir, "accounts.json");
+  const authPath = path.join(dir, "auth.json");
+
+  fs.writeFileSync(
+    authPath,
+    JSON.stringify(
+      {
+        azure: {
+          type: "key",
+          key: "az-test-key",
+          metadata: {
+            resourceName: "az-auth-resource",
+          },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  execFileSync(process.execPath, [cli, "auth", "import-opencode", authPath], {
+    cwd: root,
+    env: {
+      ...process.env,
+      MULTICODEX_STORE_PATH: storePath,
+      MULTICODEX_DATA_DIR: dir,
+    },
+    encoding: "utf8",
+  });
+
+  const store = readStore(storePath);
+  const azure = store.accounts.find(
+    (account) =>
+      account.providerId === "azure" &&
+      account.providerAdapter === "openai-compatible",
+  );
+  assert.equal(azure?.provider, "openai-compatible");
+  assert.equal(azure?.providerAdapter, "openai-compatible");
+  assert.equal(azure?.baseUrl, "https://az-auth-resource.openai.azure.com/openai");
+  assert.equal(azure?.upstreamMode, "responses");
+  assert.equal(azure?.compatibilityMode, "responses");
+  assert.equal(azure?.accessToken, "az-test-key");
+  assert.equal(azure?.enabled, true);
 });
 
 test("imports Snowflake Cortex from OpenCode config and env PAT/JWT token", () => {

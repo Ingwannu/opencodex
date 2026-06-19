@@ -71,7 +71,8 @@ OpenCodex acts as an OpenAI-compatible gateway that lets you route requests acro
 - **OAuth onboarding** from dashboard (manual redirect paste flow)
 - **Provider registry** from Models.dev with OpenCode-style provider IDs
 - **OpenCode auth import** from `~/.local/share/opencode/auth.json`, including
-  custom provider endpoint metadata from `opencode.json` / `opencode.jsonc`
+  custom provider endpoint metadata and provider-level `options.apiKey` /
+  `headers.Authorization` secrets from `opencode.json` / `opencode.jsonc`
 - **Manual OpenAI-compatible connections** with custom `baseUrl` + API key
 - **Persistent account storage** across container restarts
 - **Request tracing v2** (retention capped at 1000, server pagination, tokens/model/error/latency stats, optional full payload)

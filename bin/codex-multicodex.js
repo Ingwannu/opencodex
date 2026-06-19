@@ -1162,6 +1162,10 @@ function authSetEnabled(id, enabled) {
   console.log(`${enabled ? "enabled" : "disabled"}: ${id}`);
 }
 
+function normalizeSecret(value) {
+  return String(value || "").trim().replace(/^Bearer\s+/i, "").trim();
+}
+
 function findSecretInObject(value, seen = new Set()) {
   if (!value || typeof value !== "object") return undefined;
   if (seen.has(value)) return undefined;
@@ -1170,7 +1174,7 @@ function findSecretInObject(value, seen = new Set()) {
   const directKeys = ["apiKey", "apikey", "api_key", "key", "token", "accessToken", "access_token", "bearer", "value"];
   for (const key of directKeys) {
     const found = value[key];
-    if (typeof found === "string" && found.trim()) return found.trim();
+    if (typeof found === "string" && found.trim()) return normalizeSecret(found);
   }
 
   for (const child of Object.values(value)) {
@@ -1179,6 +1183,28 @@ function findSecretInObject(value, seen = new Set()) {
   }
 
   return undefined;
+}
+
+function findSecretInHeaders(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  for (const [key, raw] of Object.entries(value)) {
+    if (typeof raw !== "string" || !raw.trim()) continue;
+    const normalizedKey = key.toLowerCase();
+    if (
+      normalizedKey === "authorization" ||
+      normalizedKey === "x-api-key" ||
+      normalizedKey === "api-key"
+    ) {
+      return normalizeSecret(raw);
+    }
+  }
+  return undefined;
+}
+
+function findSecretInProviderConfig(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const options = value.options && typeof value.options === "object" ? value.options : {};
+  return findSecretInObject(options) || findSecretInHeaders(options.headers) || findSecretInHeaders(value.headers);
 }
 
 function findBaseUrlInObject(value, seen = new Set()) {
@@ -1252,6 +1278,20 @@ function providerConfigFromOpenCodeConfigPayload(payload) {
   return out;
 }
 
+function providerSecretsFromOpenCodeConfigPayload(payload) {
+  const providers = payload?.provider;
+  const out = new Map();
+  if (!providers || typeof providers !== "object" || Array.isArray(providers)) {
+    return out;
+  }
+
+  for (const [providerId, raw] of Object.entries(providers)) {
+    const secret = findSecretInProviderConfig(raw);
+    if (secret) out.set(sanitizeProviderId(providerId), secret);
+  }
+  return out;
+}
+
 function readOpenCodeProviderConfig(opts = {}) {
   const explicit = optionValue(opts, "config", "config-path", "configPath");
   const candidates = explicit
@@ -1270,12 +1310,13 @@ function readOpenCodeProviderConfig(opts = {}) {
       return {
         path: candidate,
         providers: providerConfigFromOpenCodeConfigPayload(payload),
+        secrets: providerSecretsFromOpenCodeConfigPayload(payload),
       };
     } catch (err) {
       throw new Error(`Failed to parse OpenCode config ${candidate}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  return { path: undefined, providers: new Map() };
+  return { path: undefined, providers: new Map(), secrets: new Map() };
 }
 
 function inferAuthPresetFromName(name, body) {
@@ -1303,14 +1344,17 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         ? payload.map((entry, index) => [String(index), entry])
         : [];
   let imported = 0;
+  const seenProviderIds = new Set();
 
   for (const [name, body] of entries) {
+    const providerKey = sanitizeProviderId(name);
+    seenProviderIds.add(providerKey);
     const detectedBaseUrl = findBaseUrlInObject(body);
-    const token = findSecretInObject(body);
+    const token = findSecretInObject(body) || providerConfig.secrets.get(providerKey);
     if (!token) continue;
-    const configPreset = providerConfig.providers.get(sanitizeProviderId(name));
+    const configPreset = providerConfig.providers.get(providerKey);
     const resolved = configPreset
-      ? { name: sanitizeProviderId(name), preset: configPreset }
+      ? { name: providerKey, preset: configPreset }
       : await canonicalAuthProvider(name, {
           "base-url": detectedBaseUrl,
         });
@@ -1323,6 +1367,46 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
     const providerId = preset.providerId || presetName;
     const runtimeSupported = preset.runtimeSupported !== false && isRuntimeSupportedAdapter(providerAdapter);
     const id = `${sanitizeProviderId(providerId)}-${sanitizeProviderId(name) || randomUUID().slice(0, 8)}`;
+    upsertAccount(
+      {
+        id,
+        provider: preset.provider,
+        providerId,
+        providerAdapter,
+        providerLabel: preset.label,
+        providerNpm: preset.providerNpm,
+        providerSource: "opencode",
+        providerDoc: preset.providerDoc,
+        providerAuthEnv: preset.tokenEnv,
+        providerModels: preset.models,
+        upstreamMode: preset.upstreamMode,
+        compatibilityMode: preset.compatibilityMode,
+        openAiPathPrefix: preset.openAiPathPrefix,
+        email: id,
+        accessToken: token,
+        baseUrl,
+        enabled: runtimeSupported,
+        priority: 0,
+        state: runtimeSupported ? undefined : { lastError: `${providerAdapter} adapter not implemented yet` },
+      },
+      false,
+    );
+    imported += 1;
+    console.log(`imported: ${id}${runtimeSupported ? "" : " (auth-only)"}`);
+  }
+
+  for (const [providerKey, token] of providerConfig.secrets) {
+    if (seenProviderIds.has(providerKey)) continue;
+    const preset = providerConfig.providers.get(providerKey);
+    if (!preset) continue;
+
+    const providerAdapter = preset.providerAdapter || preset.provider;
+    const baseUrl = providerAdapter === "openai-compatible"
+      ? normalizeOpenAiCompatibleBaseUrl(preset.baseUrl)
+      : normalizeBaseUrl(preset.baseUrl);
+    const providerId = preset.providerId || providerKey;
+    const runtimeSupported = preset.runtimeSupported !== false && isRuntimeSupportedAdapter(providerAdapter);
+    const id = `${sanitizeProviderId(providerId)}-${providerKey || randomUUID().slice(0, 8)}`;
     upsertAccount(
       {
         id,

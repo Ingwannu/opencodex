@@ -155,6 +155,73 @@ test("imports custom OpenCode provider metadata from opencode config", () => {
   assert.ok(haimaker?.providerModels?.["z-ai/glm-4.6"]);
 });
 
+test("imports OpenCode config provider secrets without auth.json entries", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-config-secret-"));
+  const storePath = path.join(dir, "accounts.json");
+  const authPath = path.join(dir, "auth.json");
+  const configPath = path.join(dir, "opencode.jsonc");
+
+  fs.writeFileSync(authPath, JSON.stringify({}, null, 2));
+  fs.writeFileSync(
+    configPath,
+    `{
+      "provider": {
+        "fhgenie": {
+          "npm": "@ai-sdk/openai-compatible",
+          "name": "FhGenie",
+          "options": {
+            "baseURL": "https://fhgenie.example/v1",
+            "apiKey": "fh-secret"
+          },
+          "models": {
+            "Kimi-K2-Thinking": { "name": "Kimi K2 Thinking" }
+          }
+        },
+        "headergenie": {
+          "npm": "@ai-sdk/openai-compatible",
+          "options": {
+            "baseURL": "https://headergenie.example/v1",
+            "headers": {
+              "Authorization": "Bearer header-secret"
+            }
+          },
+          "models": {
+            "glm-5.2": { "name": "GLM 5.2" }
+          }
+        }
+      }
+    }`,
+  );
+
+  execFileSync(
+    process.execPath,
+    [cli, "auth", "import-opencode", authPath, "--config", configPath],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        MULTICODEX_STORE_PATH: storePath,
+        MULTICODEX_DATA_DIR: dir,
+      },
+      encoding: "utf8",
+    },
+  );
+
+  const store = readStore(storePath);
+  const byProviderId = new Map(
+    store.accounts.map((account) => [account.providerId, account]),
+  );
+
+  assert.equal(byProviderId.get("fhgenie")?.providerAdapter, "openai-compatible");
+  assert.equal(byProviderId.get("fhgenie")?.baseUrl, "https://fhgenie.example");
+  assert.equal(byProviderId.get("fhgenie")?.accessToken, "fh-secret");
+  assert.equal(byProviderId.get("fhgenie")?.enabled, true);
+  assert.ok(byProviderId.get("fhgenie")?.providerModels?.["Kimi-K2-Thinking"]);
+  assert.equal(byProviderId.get("headergenie")?.baseUrl, "https://headergenie.example");
+  assert.equal(byProviderId.get("headergenie")?.accessToken, "header-secret");
+  assert.ok(byProviderId.get("headergenie")?.providerModels?.["glm-5.2"]);
+});
+
 test("imports Cloudflare AI Gateway from OpenCode config and env variables", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-cloudflare-auth-"));
   const storePath = path.join(dir, "accounts.json");

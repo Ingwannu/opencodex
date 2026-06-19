@@ -8,6 +8,9 @@ import {
 } from "../dist/provider-native.js";
 import {
   accountsFromOpenCodeAuthPayload,
+  parseOpenCodeConfigPayload,
+  providerConfigFromOpenCodeConfigPayload,
+  providerSecretsFromOpenCodeConfigPayload,
 } from "../dist/opencode-auth.js";
 import {
   resolveProviderRegistryEntry,
@@ -357,6 +360,53 @@ test("OpenCode auth import preserves configured model metadata", async () => {
 
   assert.equal(accounts[0]?.providerId, "haimaker");
   assert.ok(accounts[0]?.providerModels?.["z-ai/glm-4.6"]);
+});
+
+test("OpenCode config secrets create accounts without auth.json entries", async () => {
+  const payload = parseOpenCodeConfigPayload(`{
+    "provider": {
+      "fhgenie": {
+        "npm": "@ai-sdk/openai-compatible",
+        "name": "FhGenie",
+        "options": {
+          "baseURL": "https://fhgenie.example/v1",
+          "apiKey": "fh-secret"
+        },
+        "models": {
+          "Kimi-K2-Thinking": { "name": "Kimi K2 Thinking" }
+        }
+      },
+      "headergenie": {
+        "npm": "@ai-sdk/openai-compatible",
+        "options": {
+          "baseURL": "https://headergenie.example/v1",
+          "headers": {
+            "Authorization": "Bearer header-secret"
+          }
+        },
+        "models": {
+          "glm-5.2": { "name": "GLM 5.2" }
+        }
+      }
+    }
+  }`);
+  const providerConfig = providerConfigFromOpenCodeConfigPayload(payload);
+  const providerConfigSecrets = providerSecretsFromOpenCodeConfigPayload(payload);
+
+  const accounts = await accountsFromOpenCodeAuthPayload({}, {
+    providerConfig,
+    providerConfigSecrets,
+  });
+  const byId = new Map(accounts.map((account) => [account.providerId, account]));
+
+  assert.equal(byId.get("fhgenie")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("fhgenie")?.baseUrl, "https://fhgenie.example");
+  assert.equal(byId.get("fhgenie")?.accessToken, "fh-secret");
+  assert.equal(byId.get("fhgenie")?.enabled, true);
+  assert.ok(byId.get("fhgenie")?.providerModels?.["Kimi-K2-Thinking"]);
+  assert.equal(byId.get("headergenie")?.accessToken, "header-secret");
+  assert.equal(byId.get("headergenie")?.baseUrl, "https://headergenie.example");
+  assert.ok(byId.get("headergenie")?.providerModels?.["glm-5.2"]);
 });
 
 test("OpenCode auth import enables OpenAI-compatible SDK providers", async () => {

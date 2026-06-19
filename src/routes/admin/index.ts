@@ -24,6 +24,7 @@ import {
   accountsFromOpenCodeAuthPayload,
   parseOpenCodeConfigPayload,
   providerConfigFromOpenCodeConfigPayload,
+  providerSecretsFromOpenCodeConfigPayload,
 } from "../../opencode-auth.js";
 import {
   accountFromOAuth,
@@ -374,15 +375,20 @@ export function createAdminRouter(options: AdminRoutesOptions) {
           path.join(os.homedir(), ".config", "opencode", "opencode.json"),
         ];
     const config = await readFirstExistingText(configCandidates);
-    const providerConfig = config
-      ? providerConfigFromOpenCodeConfigPayload(
-          parseOpenCodeConfigPayload(config.raw),
-        )
+    const configPayload = config
+      ? parseOpenCodeConfigPayload(config.raw)
+      : undefined;
+    const providerConfig = configPayload
+      ? providerConfigFromOpenCodeConfigPayload(configPayload)
+      : undefined;
+    const providerConfigSecrets = configPayload
+      ? providerSecretsFromOpenCodeConfigPayload(configPayload)
       : undefined;
     const raw = await fs.readFile(filePath, "utf8");
     const payload = JSON.parse(raw);
     const accounts = await accountsFromOpenCodeAuthPayload(payload, {
       providerConfig,
+      providerConfigSecrets,
     });
     await Promise.all(accounts.map((account) => store.upsertAccount(account)));
     await store.flushIfDirty();

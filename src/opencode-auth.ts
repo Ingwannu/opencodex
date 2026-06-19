@@ -10,6 +10,15 @@ import {
   type ProviderRegistryEntry,
 } from "./provider-registry.js";
 
+type OpenCodeAuthImportOptions = {
+  providerConfig?: Map<string, ProviderRegistryEntry>;
+  providerConfigSecrets?: Map<string, string>;
+};
+
+function normalizeSecret(value: string): string {
+  return value.trim().replace(/^Bearer\s+/i, "").trim();
+}
+
 function findSecretInObject(value: unknown, seen = new Set<object>()): string | undefined {
   if (!value || typeof value !== "object") return undefined;
   if (seen.has(value)) return undefined;
@@ -29,7 +38,7 @@ function findSecretInObject(value: unknown, seen = new Set<object>()): string | 
   ];
   for (const key of directKeys) {
     const found = source[key];
-    if (typeof found === "string" && found.trim()) return found.trim();
+    if (typeof found === "string" && found.trim()) return normalizeSecret(found);
   }
 
   for (const child of Object.values(source)) {
@@ -38,6 +47,36 @@ function findSecretInObject(value: unknown, seen = new Set<object>()): string | 
   }
 
   return undefined;
+}
+
+function findSecretInHeaders(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const headers = value as Record<string, unknown>;
+  for (const [key, raw] of Object.entries(headers)) {
+    if (typeof raw !== "string" || !raw.trim()) continue;
+    const normalizedKey = key.toLowerCase();
+    if (
+      normalizedKey === "authorization" ||
+      normalizedKey === "x-api-key" ||
+      normalizedKey === "api-key"
+    ) {
+      return normalizeSecret(raw);
+    }
+  }
+  return undefined;
+}
+
+function findSecretInProviderConfig(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  const options = source.options && typeof source.options === "object"
+    ? (source.options as Record<string, unknown>)
+    : {};
+  return (
+    findSecretInObject(options) ??
+    findSecretInHeaders(options.headers) ??
+    findSecretInHeaders(source.headers)
+  );
 }
 
 function findBaseUrlInObject(value: unknown, seen = new Set<object>()): string | undefined {
@@ -75,16 +114,19 @@ function entriesFromAuthPayload(payload: unknown): Array<[string, unknown]> {
 
 export async function accountsFromOpenCodeAuthPayload(
   payload: unknown,
-  options: { providerConfig?: Map<string, ProviderRegistryEntry> } = {},
+  options: OpenCodeAuthImportOptions = {},
 ): Promise<Account[]> {
   const accounts: Account[] = [];
+  const seenProviderIds = new Set<string>();
 
   for (const [name, body] of entriesFromAuthPayload(payload)) {
-    const token = findSecretInObject(body);
+    const providerKey = sanitizeProviderId(name);
+    seenProviderIds.add(providerKey);
+    const token = findSecretInObject(body) ?? options.providerConfigSecrets?.get(providerKey);
     if (!token) continue;
 
     const detectedBaseUrl = findBaseUrlInObject(body);
-    const configEntry = options.providerConfig?.get(sanitizeProviderId(name));
+    const configEntry = options.providerConfig?.get(providerKey);
     const registry =
       configEntry ??
       (await resolveProviderRegistryEntry(name, {
@@ -97,6 +139,46 @@ export async function accountsFromOpenCodeAuthPayload(
       registry.providerAdapter === "openai-compatible"
         ? normalizeOpenAiCompatibleBaseUrl(detectedBaseUrl || registry.baseUrl)
         : normalizeBaseUrl(detectedBaseUrl || registry.baseUrl);
+
+    accounts.push({
+      id,
+      provider: registry.provider,
+      providerId,
+      providerAdapter: registry.providerAdapter,
+      providerLabel: registry.label,
+      providerNpm: registry.providerNpm,
+      providerSource: "opencode",
+      providerDoc: registry.providerDoc,
+      providerAuthEnv: registry.tokenEnv,
+      providerModels: registry.models,
+      upstreamMode: registry.upstreamMode,
+      compatibilityMode: registry.compatibilityMode,
+      openAiPathPrefix: registry.openAiPathPrefix,
+      email: id,
+      accessToken: token,
+      baseUrl,
+      enabled: runtimeSupported,
+      priority: 0,
+      state: runtimeSupported
+        ? undefined
+        : {
+            lastError: `${registry.providerAdapter} adapter not implemented yet`,
+      },
+    });
+  }
+
+  for (const [providerKey, token] of options.providerConfigSecrets ?? []) {
+    if (seenProviderIds.has(providerKey)) continue;
+    if (!options.providerConfig?.has(providerKey)) continue;
+
+    const registry = options.providerConfig.get(providerKey)!;
+    const providerId = sanitizeProviderId(registry.providerId || providerKey);
+    const id = `${providerId}-${providerKey || randomUUID().slice(0, 8)}`;
+    const runtimeSupported = registry.runtimeSupported;
+    const baseUrl =
+      registry.providerAdapter === "openai-compatible"
+        ? normalizeOpenAiCompatibleBaseUrl(registry.baseUrl)
+        : normalizeBaseUrl(registry.baseUrl);
 
     accounts.push({
       id,
@@ -197,6 +279,25 @@ export function providerConfigFromOpenCodeConfigPayload(
       sanitizeProviderId(providerId),
       providerRegistryEntryFromMetadata(providerId, metadata, "manual"),
     );
+  }
+
+  return out;
+}
+
+export function providerSecretsFromOpenCodeConfigPayload(
+  payload: unknown,
+): Map<string, string> {
+  const providers = objectFromPath(payload, ["provider"]);
+  const out = new Map<string, string>();
+  if (!providers || typeof providers !== "object" || Array.isArray(providers)) {
+    return out;
+  }
+
+  for (const [providerId, raw] of Object.entries(
+    providers as Record<string, unknown>,
+  )) {
+    const secret = findSecretInProviderConfig(raw);
+    if (secret) out.set(sanitizeProviderId(providerId), secret);
   }
 
   return out;

@@ -1828,6 +1828,30 @@ test("Azure OpenAI directory provider resolves to OpenAI-compatible responses ro
   assert.deepEqual(entry.tokenEnv, ["AZURE_RESOURCE_NAME", "AZURE_API_KEY"]);
 });
 
+test("Azure Cognitive Services directory provider derives cognitive services endpoint", () => {
+  const entry = providerRegistryEntryFromMetadata("azure-cognitive-services", {
+    id: "azure-cognitive-services",
+    name: "Azure Cognitive Services",
+    npm: "@ai-sdk/azure",
+    options: {
+      resourceName: "azc-resource",
+    },
+    env: [
+      "AZURE_COGNITIVE_SERVICES_RESOURCE_NAME",
+      "AZURE_COGNITIVE_SERVICES_API_KEY",
+    ],
+    models: {
+      "gpt-5.1-prod": { name: "GPT 5.1 Prod" },
+    },
+  });
+
+  assert.equal(entry.providerAdapter, "openai-compatible");
+  assert.equal(entry.baseUrl, "https://azc-resource.cognitiveservices.azure.com");
+  assert.equal(entry.upstreamMode, "responses");
+  assert.equal(entry.compatibilityMode, "responses");
+  assert.equal(entry.runtimeSupported, true);
+});
+
 test("OpenCode auth import derives Azure endpoint from credential metadata", async () => {
   const accounts = await accountsFromOpenCodeAuthPayload({
     azure: {
@@ -1939,7 +1963,7 @@ test("OpenCode auth import splits model-level provider overrides into virtual ac
         account.providerAdapter === "anthropic",
     );
 
-    assert.equal(parent?.baseUrl, "https://azc-resource.openai.azure.com/openai");
+    assert.equal(parent?.baseUrl, "https://azc-resource.cognitiveservices.azure.com");
     assert.equal(parent?.accessToken, "azc-key");
     assert.equal(parent?.enabled, true);
     assert.ok(parent?.providerModels?.["gpt-5.1-prod"]);

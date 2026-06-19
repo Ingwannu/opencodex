@@ -313,6 +313,47 @@ test("admin account creation derives Databricks endpoint from provider options",
   }
 });
 
+test("admin account creation derives Azure Cognitive Services endpoint from provider options", async () => {
+  const { store, server, baseUrl } = await createAdminFixture();
+  try {
+    const res = await fetch(`${baseUrl}/accounts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "azure-cognitive-from-ui",
+        provider: "openai-compatible",
+        providerId: "azure-cognitive-services",
+        providerAdapter: "openai-compatible",
+        providerAuthType: "api-key",
+        providerOptions: {
+          resourceName: "azc-resource",
+        },
+        accessToken: "azc-key",
+        enabled: true,
+      }),
+    });
+    const payload = await res.json();
+
+    assert.equal(res.status, 200, JSON.stringify(payload));
+    assert.equal(payload.ok, true);
+    assert.equal(
+      payload.account.baseUrl,
+      "https://azc-resource.cognitiveservices.azure.com",
+    );
+
+    const stored = (await store.listAccounts()).find(
+      (account) => account.id === "azure-cognitive-from-ui",
+    );
+    assert.equal(
+      stored?.baseUrl,
+      "https://azc-resource.cognitiveservices.azure.com",
+    );
+    assert.equal(stored?.enabled, true);
+  } finally {
+    await closeServer(server);
+  }
+});
+
 test("admin account creation derives Snowflake Cortex endpoint from provider options", async () => {
   const { store, server, baseUrl } = await createAdminFixture();
   try {

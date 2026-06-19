@@ -854,6 +854,9 @@ export function azureOpenAiBaseUrlFromOptions(
       : env.AZURE_RESOURCE_NAME);
 
   if (!resourceName?.trim()) return undefined;
+  if (id === "azure-cognitive-services") {
+    return `https://${resourceName.trim()}.cognitiveservices.azure.com/v1`;
+  }
   return `https://${resourceName.trim()}.openai.azure.com/openai/v1`;
 }
 

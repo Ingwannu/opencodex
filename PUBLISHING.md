@@ -8,8 +8,14 @@ package metadata was prepared.
 ```bash
 npm ci
 npm --prefix web ci
+npm test
 npm run build
-npm run pack:check
+git diff --check
+node --check bin/codex-multicodex.js
+npm audit --audit-level=high
+npm --prefix web audit --audit-level=high
+npm pack --dry-run --json --ignore-scripts
+npm publish --dry-run --access public
 ```
 
 Check the `npm pack --dry-run` output before publishing. The tarball should

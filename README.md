@@ -165,7 +165,9 @@ Because this is often deployed remotely (Unraid/VPS), onboarding uses a manual r
 Mistral and z.ai accounts use manual token entry in the dashboard.
 OpenAI-compatible accounts use manual `baseUrl` + API key entry in the dashboard.
 The provider selector is populated from Models.dev when network access is
-available, then falls back to bundled common providers.
+available, then falls back to bundled v0 provider defaults for the fixed
+OpenCode/Models.dev providers that can be routed through the current REST
+adapters.
 
 OpenCodex can route providers that map to the current runtime adapters:
 
@@ -196,9 +198,13 @@ OpenCodex can route providers that map to the current runtime adapters:
 - OpenAI-compatible providers from Models.dev, including OpenRouter, Requesty,
   local OpenAI-compatible servers, custom OpenCode providers using
   `@ai-sdk/openai-compatible`, and provider SDKs that expose documented
-  OpenAI-compatible HTTP endpoints: xAI, Groq, DeepInfra, Cerebras, Together AI,
+  OpenAI-compatible HTTP endpoints. The bundled v0 fallback set covers common
+  fixed-endpoint providers such as DeepSeek, Xiaomi, Neuralwatt, Fireworks AI,
+  Moonshot/Kimi, Alibaba, Zhipu, SiliconFlow, ModelScope, GitHub Models,
+  GitHub Copilot, xAI, Groq, DeepInfra, Cerebras, Together AI,
   Perplexity Sonar, Vercel AI Gateway, v0, Venice, AIHubMix, Merge Gateway, and
-  Cloudflare AI Gateway when `CLOUDFLARE_ACCOUNT_ID` and
+  other OpenCode directory providers with stable OpenAI-compatible endpoints.
+  Cloudflare AI Gateway is supported when `CLOUDFLARE_ACCOUNT_ID` and
   `CLOUDFLARE_GATEWAY_ID` or equivalent OpenCode provider options are available
 - Auth-free local OpenAI-compatible providers, including built-in OpenCode-style
   entries for Ollama (`http://127.0.0.1:11434/v1`), LM Studio
@@ -231,13 +237,13 @@ OpenCodex can route providers that map to the current runtime adapters:
 
 Credentials for providers whose endpoint/auth prerequisites are unresolved, such
 as Azure without resource routing metadata, Cloudflare AI Gateway without
-account/gateway routing metadata, Google Vertex without project/location/auth,
-Snowflake without account/token env, Bedrock credential flows that require AWS
-SDK providers such as SSO/IRSA/instance metadata, and other provider-specific
-SDK adapters not yet mapped to a native REST bridge, are imported and shown as
-auth-only disabled accounts. They are preserved for management, but are not sent
-through the proxy until the endpoint/auth metadata resolves or an exact native
-adapter/compatibility bridge is added.
+account/gateway routing metadata, Databricks/Neon/Snowflake without endpoint
+env, Google Vertex without project/location/auth, Bedrock credential flows that
+require AWS SDK providers such as SSO/IRSA/instance metadata, and rare
+provider-specific SDK adapters not yet mapped to a native REST bridge, are
+imported and shown as auth-only disabled accounts. They are preserved for
+management, but are not sent through the proxy until the endpoint/auth metadata
+resolves or an exact native adapter/compatibility bridge is added.
 
 Default expected redirect URI:
 

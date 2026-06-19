@@ -1627,6 +1627,79 @@ console.log(JSON.stringify(out));`,
   }
 });
 
+test("major v0 providers import as enabled runtime accounts offline", () => {
+  const providerIds = [
+    "deepseek",
+    "xiaomi",
+    "xiaomi-token-plan-ams",
+    "xiaomi-token-plan-cn",
+    "xiaomi-token-plan-sgp",
+    "neuralwatt",
+    "fireworks-ai",
+    "firepass",
+    "openai",
+    "anthropic",
+    "google",
+  ];
+  const output = execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `const { resolveProviderRegistryEntry } = await import("./dist/provider-registry.js");
+const { accountsFromOpenCodeAuthPayload } = await import("./dist/opencode-auth.js");
+const providerIds = ${JSON.stringify(providerIds)};
+const payload = Object.fromEntries(providerIds.map((id) => [id, { apiKey: id + "-key" }]));
+const accounts = await accountsFromOpenCodeAuthPayload(payload);
+const rows = [];
+for (const id of providerIds) {
+  const entry = await resolveProviderRegistryEntry(id);
+  const account = accounts.find((item) => item.providerId === id || item.id.includes(id));
+  rows.push({
+    id,
+    providerAdapter: entry.providerAdapter,
+    runtimeSupported: entry.runtimeSupported,
+    baseUrl: entry.baseUrl,
+    imported: Boolean(account),
+    enabled: Boolean(account?.enabled),
+  });
+}
+console.log(JSON.stringify(rows));`,
+    ],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MODELS_DEV_API_URL: "data:application/json,{}",
+      },
+      encoding: "utf8",
+    },
+  );
+  const rows = JSON.parse(output);
+
+  const expectedAdapters = {
+    deepseek: "openai-compatible",
+    xiaomi: "openai-compatible",
+    "xiaomi-token-plan-ams": "openai-compatible",
+    "xiaomi-token-plan-cn": "openai-compatible",
+    "xiaomi-token-plan-sgp": "openai-compatible",
+    neuralwatt: "openai-compatible",
+    "fireworks-ai": "openai-compatible",
+    firepass: "openai-compatible",
+    openai: "openai-compatible",
+    anthropic: "anthropic",
+    google: "google",
+  };
+
+  for (const row of rows) {
+    assert.equal(row.providerAdapter, expectedAdapters[row.id], row.id);
+    assert.equal(row.runtimeSupported, true, row.id);
+    assert.equal(row.imported, true, row.id);
+    assert.equal(row.enabled, true, row.id);
+    assert.ok(row.baseUrl, row.id);
+  }
+});
+
 test("built-in registry entries preserve Models.dev model metadata", () => {
   const api = `data:application/json,${encodeURIComponent(JSON.stringify({
     anthropic: {

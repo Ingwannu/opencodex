@@ -14,13 +14,16 @@ import {
   azureOpenAiBaseUrlFromOptions,
   cloudflareAiGatewayBaseUrlFromOptions,
   cloudflareWorkersAiBaseUrlFromOptions,
+  databricksBaseUrlFromOptions,
   isRuntimeSupportedProvider,
+  neonBaseUrlFromOptions,
   normalizeBaseUrl,
   normalizeOpenAiCompatibleBaseUrl,
   providerAdapterFromNpm,
   providerRegistryEntryFromMetadata,
   resolveProviderRegistryEntry,
   sanitizeProviderId,
+  snowflakeCortexBaseUrlFromOptions,
   vertexBaseUrlFromOptions,
   type ProviderRegistryEntry,
 } from "./provider-registry.js";
@@ -570,6 +573,28 @@ function credentialMetadataOptions(value: unknown): Record<string, unknown> | un
     "resource",
     "resourceId",
     "resource_id",
+    "DATABRICKS_HOST",
+    "databricksHost",
+    "databricks_host",
+    "NEON_AI_GATEWAY_BASE_URL",
+    "neonAiGatewayBaseUrl",
+    "neon_ai_gateway_base_url",
+    "SNOWFLAKE_ACCOUNT",
+    "snowflakeAccount",
+    "snowflake_account",
+    "project",
+    "projectId",
+    "projectID",
+    "googleCloudProject",
+    "google_cloud_project",
+    "googleVertexProject",
+    "google_vertex_project",
+    "location",
+    "region",
+    "vertexLocation",
+    "vertex_location",
+    "googleVertexLocation",
+    "google_vertex_location",
   ]) {
     if (typeof source[key] === "string" && source[key].trim()) {
       out[key] = source[key];
@@ -590,6 +615,14 @@ function detectedBaseUrlForAuthEntry(
       ? cloudflareAiGatewayBaseUrlFromOptions(metadataOptions)
       : id === "cloudflare-workers-ai"
         ? cloudflareWorkersAiBaseUrlFromOptions(metadataOptions)
+        : id === "databricks"
+          ? databricksBaseUrlFromOptions(metadataOptions)
+        : id === "neon"
+          ? neonBaseUrlFromOptions(metadataOptions)
+        : id === "snowflake-cortex"
+          ? snowflakeCortexBaseUrlFromOptions(metadataOptions)
+        : id === "google-vertex" || id === "google-vertex-anthropic"
+          ? vertexBaseUrlFromOptions(metadataOptions)
         : undefined) ??
     azureOpenAiBaseUrlFromOptions(providerId, metadataOptions)
   );

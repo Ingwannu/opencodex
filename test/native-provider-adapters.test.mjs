@@ -2306,6 +2306,73 @@ test("OpenCode auth import handles Databricks host env values that include a URL
   }
 });
 
+test("OpenCode auth import derives env-templated endpoints from credential metadata", async () => {
+  const previous = {
+    DATABRICKS_HOST: process.env.DATABRICKS_HOST,
+    DATABRICKS_TOKEN: process.env.DATABRICKS_TOKEN,
+    NEON_AI_GATEWAY_BASE_URL: process.env.NEON_AI_GATEWAY_BASE_URL,
+    NEON_AI_GATEWAY_TOKEN: process.env.NEON_AI_GATEWAY_TOKEN,
+    SNOWFLAKE_ACCOUNT: process.env.SNOWFLAKE_ACCOUNT,
+    SNOWFLAKE_CORTEX_TOKEN: process.env.SNOWFLAKE_CORTEX_TOKEN,
+    SNOWFLAKE_CORTEX_PAT: process.env.SNOWFLAKE_CORTEX_PAT,
+  };
+  for (const key of Object.keys(previous)) delete process.env[key];
+  try {
+    const accounts = await accountsFromOpenCodeAuthPayload({
+      databricks: {
+        apiKey: "db-token",
+        metadata: {
+          DATABRICKS_HOST: "https://dbc.example.com",
+        },
+      },
+      neon: {
+        apiKey: "neon-token",
+        metadata: {
+          NEON_AI_GATEWAY_BASE_URL: "https://neon.example",
+        },
+      },
+      "snowflake-cortex": {
+        apiKey: "snowflake-token",
+        metadata: {
+          SNOWFLAKE_ACCOUNT: "acme-test",
+        },
+      },
+    });
+    const byProviderId = new Map(
+      accounts.map((account) => [account.providerId, account]),
+    );
+
+    assert.equal(
+      byProviderId.get("databricks")?.baseUrl,
+      "https://dbc.example.com/ai-gateway/mlflow",
+    );
+    assert.equal(byProviderId.get("databricks")?.accessToken, "db-token");
+    assert.equal(byProviderId.get("databricks")?.enabled, true);
+
+    assert.equal(
+      byProviderId.get("neon")?.baseUrl,
+      "https://neon.example/ai-gateway/mlflow",
+    );
+    assert.equal(byProviderId.get("neon")?.accessToken, "neon-token");
+    assert.equal(byProviderId.get("neon")?.enabled, true);
+
+    assert.equal(
+      byProviderId.get("snowflake-cortex")?.baseUrl,
+      "https://acme-test.snowflakecomputing.com/api/v2/cortex",
+    );
+    assert.equal(
+      byProviderId.get("snowflake-cortex")?.accessToken,
+      "snowflake-token",
+    );
+    assert.equal(byProviderId.get("snowflake-cortex")?.enabled, true);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test("OpenCode auth import preserves configured model metadata", async () => {
   const config = new Map([
     [

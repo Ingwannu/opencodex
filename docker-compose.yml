@@ -1,0 +1,26 @@
+services:
+  opencodex:
+    build: .
+    container_name: opencodex
+    ports:
+      - "1455:1455"
+    environment:
+      - PORT=1455
+      - PUBLIC_BASE_URL=http://localhost:1455
+      - STORE_PATH=/data/accounts.json
+      - OAUTH_STATE_PATH=/data/oauth-state.json
+      - TRACE_FILE_PATH=/data/requests-trace.jsonl
+      - CHATGPT_BASE_URL=https://chatgpt.com
+      - UPSTREAM_PATH=/backend-api/codex/responses
+      - PROXY_MODELS=gpt-5.3-codex,gpt-5.2-codex,gpt-5-codex
+      - MODELS_CLIENT_VERSION=1.0.0
+      - MODELS_CACHE_MS=600000
+      - ADMIN_TOKEN=change-me
+      - OAUTH_CLIENT_ID=app_EMoamEEZ73f0CkXaXp7hrann
+      - OAUTH_AUTHORIZATION_URL=https://auth.openai.com/oauth/authorize
+      - OAUTH_TOKEN_URL=https://auth.openai.com/oauth/token
+      - OAUTH_SCOPE=openid profile email offline_access
+      - OAUTH_REDIRECT_URI=http://localhost:1455/auth/callback
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

@@ -1,0 +1,67 @@
+{
+  "name": "opencodex",
+  "version": "0.2.0",
+  "description": "OpenCodex multi-provider proxy and launcher integration for OpenAI Codex CLI.",
+  "type": "module",
+  "homepage": "https://github.com/Ingwannu/opencodex#readme",
+  "bugs": {
+    "url": "https://github.com/Ingwannu/opencodex/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ingwannu/opencodex.git"
+  },
+  "keywords": [
+    "opencodex",
+    "codex",
+    "openai",
+    "proxy",
+    "router",
+    "openai-compatible",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "scripts/",
+    "web-dist/",
+    "README.md",
+    "PUBLISHING.md"
+  ],
+  "bin": {
+    "opencodex": "bin/codex-multicodex.js",
+    "codex-multicodex": "bin/codex-multicodex.js"
+  },
+  "scripts": {
+    "codex:sync": "node bin/codex-multicodex.js sync",
+    "codex:install": "node bin/codex-multicodex.js install",
+    "codex:update": "node bin/codex-multicodex.js update",
+    "codex:uninstall": "node bin/codex-multicodex.js uninstall",
+    "codex:auth": "node bin/codex-multicodex.js auth",
+    "codex:doctor": "node bin/codex-multicodex.js doctor",
+    "dev": "tsx watch src/server.ts",
+    "build:api": "tsc -p tsconfig.json",
+    "build:web": "npm --prefix web run build",
+    "build": "npm run build:web && npm run build:api",
+    "prepack": "npm run build && node scripts/prepare-package.js",
+    "pack:check": "npm pack --dry-run",
+    "publish:dry": "npm publish --dry-run --access public",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@foxglove/wasm-zstd": "^1.0.1",
+    "body-parser": "^1.20.4",
+    "express": "^4.22.1",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.13.10",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.22.4",
+    "typescript": "^5.7.3"
+  }
+}

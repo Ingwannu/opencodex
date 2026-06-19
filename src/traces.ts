@@ -1,0 +1,974 @@
+import { estimateCostUsd } from "./model-pricing.js";
+import fs from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import path from "node:path";
+
+export type TraceEntry = {
+  id: string;
+  at: number;
+  route: string;
+  accountId?: string;
+  accountEmail?: string;
+  model?: string;
+  requestedModel?: string;
+  resolvedModel?: string;
+  status: number;
+  isError: boolean;
+  stream: boolean;
+  latencyMs: number;
+  tokensInput?: number;
+  tokensOutput?: number;
+  tokensTotal?: number;
+  costUsd?: number;
+  usage?: any;
+  requestBody?: any;
+  error?: string;
+  upstreamError?: string;
+  upstreamContentType?: string;
+  upstreamEmptyBody?: boolean;
+  assistantEmptyOutput?: boolean;
+  assistantFinishReason?: string;
+};
+
+export type TraceListEntry = Omit<TraceEntry, "requestBody"> & {
+  hasRequestBody: boolean;
+};
+
+export type TraceTotals = {
+  requests: number;
+  errors: number;
+  errorRate: number;
+  tokensInput: number;
+  tokensOutput: number;
+  tokensTotal: number;
+  costUsd: number;
+  latencyAvgMs: number;
+};
+
+export type TraceModelStats = {
+  model: string;
+  count: number;
+  okCount: number;
+  tokensInput: number;
+  tokensOutput: number;
+  tokensTotal: number;
+  costUsd: number;
+};
+
+export type TraceTimeseriesBucket = {
+  at: number;
+  requests: number;
+  errors: number;
+  tokensInput: number;
+  tokensOutput: number;
+  tokensTotal: number;
+  costUsd: number;
+  latencyP50Ms: number;
+  latencyP95Ms: number;
+};
+
+export type TraceStats = {
+  totals: TraceTotals;
+  models: TraceModelStats[];
+  timeseries: TraceTimeseriesBucket[];
+};
+
+export type UsageTokenTotals = {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+};
+
+export type UsageAggregate = {
+  requests: number;
+  ok: number;
+  errors: number;
+  stream: number;
+  latencyMsTotal: number;
+  requestsWithUsage: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  statusCounts: Record<string, number>;
+  firstAt?: number;
+  lastAt?: number;
+};
+
+export type TraceManagerConfig = {
+  filePath: string;
+  historyFilePath?: string;
+  retentionMax?: number;
+  pageSizeMax?: number;
+  legacyLimitMax?: number;
+};
+
+type TraceBucketAggregate = {
+  at: number;
+  requests: number;
+  errors: number;
+  tokensInput: number;
+  tokensOutput: number;
+  tokensTotal: number;
+  costUsd: number;
+  latencyMsTotal: number;
+  latencies: number[];
+  models: Map<string, TraceModelStats>;
+};
+
+const DEFAULT_RETENTION_MAX = 1000;
+const DEFAULT_PAGE_SIZE_MAX = 100;
+const DEFAULT_LEGACY_LIMIT_MAX = 2000;
+const HOUR_MS = 3_600_000;
+const MAX_LATENCY_SAMPLES_PER_BUCKET = 2000;
+
+function safeNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
+function normalizeTokenFields(
+  usage: any,
+  fallback?: { input?: number; output?: number; total?: number },
+) {
+  const input =
+    safeNumber(usage?.input_tokens) ??
+    safeNumber(usage?.prompt_tokens) ??
+    fallback?.input;
+  const output =
+    safeNumber(usage?.output_tokens) ??
+    safeNumber(usage?.completion_tokens) ??
+    fallback?.output;
+  const total =
+    safeNumber(usage?.total_tokens) ??
+    fallback?.total ??
+    (input ?? 0) + (output ?? 0);
+  return {
+    tokensInput: input,
+    tokensOutput: output,
+    tokensTotal: total,
+  };
+}
+
+function normalizeTrace(raw: any): TraceEntry | null {
+  if (!raw || typeof raw !== "object") return null;
+  const at = safeNumber(raw.at);
+  const route = typeof raw.route === "string" ? raw.route : "";
+  const status = safeNumber(raw.status);
+  const latencyMs = safeNumber(raw.latencyMs);
+  if (
+    !at ||
+    !route ||
+    typeof status === "undefined" ||
+    typeof latencyMs === "undefined"
+  )
+    return null;
+
+  const fallbackModel =
+    typeof raw.requestBody?.model === "string"
+      ? raw.requestBody.model
+      : undefined;
+  const model =
+    typeof raw.model === "string" && raw.model.trim()
+      ? raw.model.trim()
+      : fallbackModel;
+  const normalizedTokens = normalizeTokenFields(raw.usage, {
+    input: safeNumber(raw.tokensInput),
+    output: safeNumber(raw.tokensOutput),
+    total: safeNumber(raw.tokensTotal),
+  });
+  const costUsd = estimateCostUsd(
+    model,
+    normalizedTokens.tokensInput ?? 0,
+    normalizedTokens.tokensOutput ?? 0,
+  );
+
+  return {
+    id:
+      typeof raw.id === "string" && raw.id
+        ? raw.id
+        : `${at}-${route}-${status}`,
+    at,
+    route,
+    accountId: typeof raw.accountId === "string" ? raw.accountId : undefined,
+    accountEmail:
+      typeof raw.accountEmail === "string" ? raw.accountEmail : undefined,
+    model,
+    requestedModel:
+      typeof raw.requestedModel === "string" ? raw.requestedModel : undefined,
+    resolvedModel:
+      typeof raw.resolvedModel === "string" ? raw.resolvedModel : undefined,
+    status,
+    isError: typeof raw.isError === "boolean" ? raw.isError : status >= 400,
+    stream: Boolean(raw.stream),
+    latencyMs,
+    tokensInput: normalizedTokens.tokensInput,
+    tokensOutput: normalizedTokens.tokensOutput,
+    tokensTotal: normalizedTokens.tokensTotal,
+    costUsd,
+    usage: raw.usage,
+    requestBody: raw.requestBody,
+    error: typeof raw.error === "string" ? raw.error : undefined,
+    upstreamError:
+      typeof raw.upstreamError === "string" ? raw.upstreamError : undefined,
+    upstreamContentType:
+      typeof raw.upstreamContentType === "string"
+        ? raw.upstreamContentType
+        : undefined,
+    upstreamEmptyBody:
+      typeof raw.upstreamEmptyBody === "boolean"
+        ? raw.upstreamEmptyBody
+        : undefined,
+    assistantEmptyOutput:
+      typeof raw.assistantEmptyOutput === "boolean"
+        ? raw.assistantEmptyOutput
+        : undefined,
+    assistantFinishReason:
+      typeof raw.assistantFinishReason === "string"
+        ? raw.assistantFinishReason
+        : undefined,
+  };
+}
+
+function percentile(values: number[], p: number): number {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.ceil((p / 100) * sorted.length) - 1),
+  );
+  return sorted[idx];
+}
+
+function usageToTokens(usage: any): UsageTokenTotals {
+  const promptTokens =
+    safeNumber(usage?.prompt_tokens) ?? safeNumber(usage?.input_tokens) ?? 0;
+  const completionTokens =
+    safeNumber(usage?.completion_tokens) ??
+    safeNumber(usage?.output_tokens) ??
+    0;
+  const totalTokens =
+    safeNumber(usage?.total_tokens) ?? promptTokens + completionTokens;
+  return { promptTokens, completionTokens, totalTokens };
+}
+
+function createUsageAggregate(): UsageAggregate {
+  return {
+    requests: 0,
+    ok: 0,
+    errors: 0,
+    stream: 0,
+    latencyMsTotal: 0,
+    requestsWithUsage: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    statusCounts: {},
+  };
+}
+
+function addTraceToAggregate(agg: UsageAggregate, trace: TraceEntry) {
+  const status = Number(trace.status);
+  const statusKey = Number.isFinite(status) ? String(status) : "unknown";
+  const tokens = usageToTokens(trace.usage);
+
+  agg.requests += 1;
+  if (status >= 200 && status < 400) agg.ok += 1;
+  else agg.errors += 1;
+  if (trace.stream) agg.stream += 1;
+
+  agg.latencyMsTotal += Number.isFinite(trace.latencyMs) ? trace.latencyMs : 0;
+  agg.statusCounts[statusKey] = (agg.statusCounts[statusKey] ?? 0) + 1;
+
+  if (trace.usage) {
+    agg.requestsWithUsage += 1;
+    agg.promptTokens += tokens.promptTokens;
+    agg.completionTokens += tokens.completionTokens;
+    agg.totalTokens += tokens.totalTokens;
+  }
+
+  if (typeof trace.at === "number") {
+    agg.firstAt =
+      typeof agg.firstAt === "number"
+        ? Math.min(agg.firstAt, trace.at)
+        : trace.at;
+    agg.lastAt =
+      typeof agg.lastAt === "number"
+        ? Math.max(agg.lastAt, trace.at)
+        : trace.at;
+  }
+}
+
+function finalizeAggregate(agg: UsageAggregate) {
+  const avgLatencyMs = agg.requests
+    ? Math.round((agg.latencyMsTotal / agg.requests) * 100) / 100
+    : 0;
+  const successRate = agg.requests
+    ? Math.round((agg.ok / agg.requests) * 10000) / 100
+    : 0;
+  const streamingRate = agg.requests
+    ? Math.round((agg.stream / agg.requests) * 10000) / 100
+    : 0;
+
+  return {
+    requests: agg.requests,
+    ok: agg.ok,
+    errors: agg.errors,
+    successRate,
+    stream: agg.stream,
+    streamingRate,
+    latencyMsTotal: agg.latencyMsTotal,
+    avgLatencyMs,
+    requestsWithUsage: agg.requestsWithUsage,
+    tokens: {
+      prompt: agg.promptTokens,
+      completion: agg.completionTokens,
+      total: agg.totalTokens,
+    },
+    statusCounts: agg.statusCounts,
+    firstAt: agg.firstAt,
+    lastAt: agg.lastAt,
+  };
+}
+
+function buildTraceStats(traces: TraceEntry[]): TraceStats {
+  const requests = traces.length;
+  const errors = traces.filter((t) => t.isError).length;
+  const tokensInput = traces.reduce((sum, t) => sum + (t.tokensInput ?? 0), 0);
+  const tokensOutput = traces.reduce(
+    (sum, t) => sum + (t.tokensOutput ?? 0),
+    0,
+  );
+  const tokensTotal = traces.reduce(
+    (sum, t) =>
+      sum + (t.tokensTotal ?? (t.tokensInput ?? 0) + (t.tokensOutput ?? 0)),
+    0,
+  );
+  const costUsd = traces.reduce((sum, t) => {
+    if (typeof t.costUsd === "number") return sum + t.costUsd;
+    return (
+      sum +
+      (estimateCostUsd(t.model, t.tokensInput ?? 0, t.tokensOutput ?? 0) ?? 0)
+    );
+  }, 0);
+  const latencyAvgMs = requests
+    ? traces.reduce((sum, t) => sum + t.latencyMs, 0) / requests
+    : 0;
+  const errorRate = requests ? errors / requests : 0;
+
+  const modelMap = new Map<string, TraceModelStats>();
+  for (const trace of traces) {
+    const key = trace.model || "unknown";
+    const existing = modelMap.get(key);
+    const traceCost =
+      typeof trace.costUsd === "number"
+        ? trace.costUsd
+        : (estimateCostUsd(
+            trace.model,
+            trace.tokensInput ?? 0,
+            trace.tokensOutput ?? 0,
+          ) ?? 0);
+    if (!existing) {
+      modelMap.set(key, {
+        model: key,
+        count: 1,
+        okCount: trace.isError ? 0 : 1,
+        tokensInput: trace.tokensInput ?? 0,
+        tokensOutput: trace.tokensOutput ?? 0,
+        tokensTotal: trace.tokensTotal ?? 0,
+        costUsd: traceCost,
+      });
+    } else {
+      existing.count += 1;
+      if (!trace.isError) existing.okCount += 1;
+      existing.tokensInput += trace.tokensInput ?? 0;
+      existing.tokensOutput += trace.tokensOutput ?? 0;
+      existing.tokensTotal += trace.tokensTotal ?? 0;
+      existing.costUsd += traceCost;
+    }
+  }
+  const models = Array.from(modelMap.values()).sort(
+    (a, b) => b.count - a.count,
+  );
+
+  const bucketMap = new Map<
+    number,
+    {
+      requests: number;
+      errors: number;
+      tokensInput: number;
+      tokensOutput: number;
+      tokensTotal: number;
+      costUsd: number;
+      latencies: number[];
+    }
+  >();
+  for (const trace of traces) {
+    const bucketAt = Math.floor(trace.at / 3_600_000) * 3_600_000;
+    const bucket = bucketMap.get(bucketAt) ?? {
+      requests: 0,
+      errors: 0,
+      tokensInput: 0,
+      tokensOutput: 0,
+      tokensTotal: 0,
+      costUsd: 0,
+      latencies: [],
+    };
+    bucket.requests += 1;
+    if (trace.isError) bucket.errors += 1;
+    bucket.tokensInput += trace.tokensInput ?? 0;
+    bucket.tokensOutput += trace.tokensOutput ?? 0;
+    bucket.tokensTotal += trace.tokensTotal ?? 0;
+    bucket.costUsd +=
+      typeof trace.costUsd === "number"
+        ? trace.costUsd
+        : (estimateCostUsd(
+            trace.model,
+            trace.tokensInput ?? 0,
+            trace.tokensOutput ?? 0,
+          ) ?? 0);
+    bucket.latencies.push(trace.latencyMs);
+    bucketMap.set(bucketAt, bucket);
+  }
+  const timeseries = Array.from(bucketMap.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([at, bucket]) => ({
+      at,
+      requests: bucket.requests,
+      errors: bucket.errors,
+      tokensInput: bucket.tokensInput,
+      tokensOutput: bucket.tokensOutput,
+      tokensTotal: bucket.tokensTotal,
+      costUsd: bucket.costUsd,
+      latencyP50Ms: percentile(bucket.latencies, 50),
+      latencyP95Ms: percentile(bucket.latencies, 95),
+    }));
+
+  return {
+    totals: {
+      requests,
+      errors,
+      errorRate,
+      tokensInput,
+      tokensOutput,
+      tokensTotal,
+      costUsd,
+      latencyAvgMs,
+    },
+    models,
+    timeseries,
+  };
+}
+
+function createEmptyBucket(at: number): TraceBucketAggregate {
+  return {
+    at,
+    requests: 0,
+    errors: 0,
+    tokensInput: 0,
+    tokensOutput: 0,
+    tokensTotal: 0,
+    costUsd: 0,
+    latencyMsTotal: 0,
+    latencies: [],
+    models: new Map(),
+  };
+}
+
+function addLatencySample(bucket: TraceBucketAggregate, latencyMs: number) {
+  if (!Number.isFinite(latencyMs)) return;
+  const sampleCount = bucket.latencies.length;
+  if (sampleCount < MAX_LATENCY_SAMPLES_PER_BUCKET) {
+    bucket.latencies.push(latencyMs);
+    return;
+  }
+
+  // Deterministic down-sampling keeps hourly percentile estimates bounded
+  // while preserving coverage across the whole bucket window.
+  const replaceAt = bucket.requests % MAX_LATENCY_SAMPLES_PER_BUCKET;
+  bucket.latencies[replaceAt] = latencyMs;
+}
+
+function addTraceToBucket(bucket: TraceBucketAggregate, trace: TraceEntry) {
+  const model = trace.model || "unknown";
+  const traceCost =
+    typeof trace.costUsd === "number"
+      ? trace.costUsd
+      : (estimateCostUsd(
+          trace.model,
+          trace.tokensInput ?? 0,
+          trace.tokensOutput ?? 0,
+        ) ?? 0);
+  const traceTokensTotal =
+    trace.tokensTotal ?? (trace.tokensInput ?? 0) + (trace.tokensOutput ?? 0);
+
+  bucket.requests += 1;
+  if (trace.isError) bucket.errors += 1;
+  bucket.tokensInput += trace.tokensInput ?? 0;
+  bucket.tokensOutput += trace.tokensOutput ?? 0;
+  bucket.tokensTotal += traceTokensTotal;
+  bucket.costUsd += traceCost;
+  bucket.latencyMsTotal += Number.isFinite(trace.latencyMs) ? trace.latencyMs : 0;
+  addLatencySample(bucket, trace.latencyMs);
+
+  const existing = bucket.models.get(model);
+  if (existing) {
+    existing.count += 1;
+    if (!trace.isError) existing.okCount += 1;
+    existing.tokensInput += trace.tokensInput ?? 0;
+    existing.tokensOutput += trace.tokensOutput ?? 0;
+    existing.tokensTotal += traceTokensTotal;
+    existing.costUsd += traceCost;
+    return;
+  }
+
+  bucket.models.set(model, {
+    model,
+    count: 1,
+    okCount: trace.isError ? 0 : 1,
+    tokensInput: trace.tokensInput ?? 0,
+    tokensOutput: trace.tokensOutput ?? 0,
+    tokensTotal: traceTokensTotal,
+    costUsd: traceCost,
+  });
+}
+
+export type TraceManager = ReturnType<typeof createTraceManager>;
+
+export function createTraceManager(config: TraceManagerConfig) {
+  const {
+    filePath,
+    historyFilePath = `${filePath}.stats-history`,
+    retentionMax = DEFAULT_RETENTION_MAX,
+    pageSizeMax = DEFAULT_PAGE_SIZE_MAX,
+    legacyLimitMax = DEFAULT_LEGACY_LIMIT_MAX,
+  } = config;
+
+  let traceWriteQueue: Promise<void> = Promise.resolve();
+  let historyWriteQueue: Promise<void> = Promise.resolve();
+  const traceCache: TraceEntry[] = [];
+  const statsBuckets = new Map<number, TraceBucketAggregate>();
+  let totalStored = 0;
+  let cacheInit: Promise<void> | null = null;
+
+  async function ensureParentDir(file: string) {
+    await fs.mkdir(path.dirname(file), { recursive: true });
+  }
+
+  async function readTraceFileFromDisk(): Promise<TraceEntry[]> {
+    try {
+      const raw = await fs.readFile(filePath, "utf8");
+      const parsed: TraceEntry[] = [];
+      for (const line of raw.split("\n")) {
+        if (!line.trim()) continue;
+        try {
+          const normalized = normalizeTrace(JSON.parse(line));
+          if (normalized) parsed.push(normalized);
+        } catch {}
+      }
+      return parsed.slice(-retentionMax);
+    } catch {
+      return [];
+    }
+  }
+
+  async function scanStatsHistory<T>(
+    onTrace: (trace: TraceEntry) => void,
+    shouldCollect?: (trace: TraceEntry) => boolean,
+  ): Promise<T extends true ? TraceEntry[] : void>;
+  async function scanStatsHistory(
+    onTrace: (trace: TraceEntry) => void,
+    shouldCollect?: (trace: TraceEntry) => boolean,
+  ): Promise<TraceEntry[] | void> {
+    try {
+      const raw = await fs.readFile(historyFilePath, "utf8");
+      const collected: TraceEntry[] = [];
+      for (const line of raw.split("\n")) {
+        if (!line.trim()) continue;
+        try {
+          const normalized = normalizeTrace(JSON.parse(line));
+          if (!normalized) continue;
+          onTrace(normalized);
+          if (shouldCollect?.(normalized)) collected.push(normalized);
+        } catch {}
+      }
+      return shouldCollect ? collected : undefined;
+    } catch {
+      return shouldCollect ? [] : undefined;
+    }
+  }
+
+  function ingestStatsTrace(trace: TraceEntry) {
+    totalStored += 1;
+    const bucketAt = Math.floor(trace.at / HOUR_MS) * HOUR_MS;
+    const bucket = statsBuckets.get(bucketAt) ?? createEmptyBucket(bucketAt);
+    addTraceToBucket(bucket, trace);
+    statsBuckets.set(bucketAt, bucket);
+  }
+
+  async function ensureCacheReady() {
+    if (cacheInit) {
+      await cacheInit;
+      return;
+    }
+    cacheInit = (async () => {
+      await Promise.all([ensureParentDir(filePath), ensureParentDir(historyFilePath)]);
+      const traces = await readTraceFileFromDisk();
+      traceCache.splice(0, traceCache.length, ...traces.slice(-retentionMax));
+      await scanStatsHistory(ingestStatsTrace);
+    })();
+    await cacheInit;
+  }
+
+  async function writeTraceWindow(entries: TraceEntry[]): Promise<void> {
+    const tmp = `${filePath}.tmp-${randomUUID()}`;
+    const BATCH_SIZE = 1000;
+    const MAX_ENTRY_SIZE = 1024 * 1024; // 1MB per entry max
+    const fileHandle = await fs.open(tmp, 'w');
+    try {
+      for (let i = 0; i < entries.length; i += BATCH_SIZE) {
+        const batch = entries.slice(i, i + BATCH_SIZE);
+        const batchLines = [];
+        for (const entry of batch) {
+          const json = JSON.stringify(entry);
+          if (json.length > MAX_ENTRY_SIZE) {
+            console.warn(`Skipping oversized trace entry (${json.length} bytes)`);
+            continue;
+          }
+          batchLines.push(json);
+        }
+        if (batchLines.length > 0) {
+          const batchContent = batchLines.join('\n') + '\n';
+          await fileHandle.writeFile(batchContent);
+        }
+      }
+    } finally {
+      await fileHandle.close();
+    }
+    await fs.rename(tmp, filePath);
+  }
+
+  function toStatsHistoryEntry(entry: TraceEntry): TraceEntry {
+    const {
+      requestBody: _requestBody,
+      usage: _usage,
+      error: _error,
+      upstreamError: _upstreamError,
+      upstreamContentType: _upstreamContentType,
+      upstreamEmptyBody: _upstreamEmptyBody,
+      assistantEmptyOutput: _assistantEmptyOutput,
+      assistantFinishReason: _assistantFinishReason,
+      ...rest
+    } = entry;
+    return rest;
+  }
+
+  function toNormalizedHistoryEntry(entry: TraceEntry): TraceEntry | null {
+    return normalizeTrace(toStatsHistoryEntry(entry));
+  }
+
+  async function appendStatsHistory(entry: TraceEntry): Promise<void> {
+    await ensureCacheReady();
+    const normalized = toNormalizedHistoryEntry(entry);
+    if (normalized) ingestStatsTrace(normalized);
+    const line = `${JSON.stringify(toStatsHistoryEntry(entry))}\n`;
+    const run = historyWriteQueue.then(async () => {
+      await ensureParentDir(historyFilePath);
+      await fs.appendFile(historyFilePath, line, "utf8");
+    });
+    historyWriteQueue = run.catch(() => undefined);
+    await run;
+  }
+
+  async function readTraceWindow(): Promise<TraceEntry[]> {
+    await ensureCacheReady();
+    return traceCache.slice();
+  }
+
+  async function readTraceById(id: string): Promise<TraceEntry | null> {
+    await ensureCacheReady();
+    return traceCache.find((trace) => trace.id === id) ?? null;
+  }
+
+  function toTraceListEntry(entry: TraceEntry): TraceListEntry {
+    const { requestBody: _requestBody, ...rest } = entry;
+    return {
+      ...rest,
+      hasRequestBody: typeof entry.requestBody !== "undefined",
+    };
+  }
+
+  async function readTraceListWindow(): Promise<TraceListEntry[]> {
+    await ensureCacheReady();
+    return traceCache.map(toTraceListEntry);
+  }
+
+  async function readStatsHistory(): Promise<TraceEntry[]> {
+    await ensureCacheReady();
+    const traces = await scanStatsHistory<true>(() => undefined, () => true);
+    return traces ?? [];
+  }
+
+  async function readStatsHistoryRange(
+    sinceMs?: number,
+    untilMs?: number,
+  ): Promise<TraceEntry[]> {
+    await ensureCacheReady();
+    const traces = await scanStatsHistory<true>(
+      () => undefined,
+      (t) => {
+        if (
+          typeof sinceMs === "number" &&
+          Number.isFinite(sinceMs) &&
+          t.at < sinceMs
+        ) {
+          return false;
+        }
+        if (
+          typeof untilMs === "number" &&
+          Number.isFinite(untilMs) &&
+          t.at > untilMs
+        ) {
+          return false;
+        }
+        return true;
+      },
+    );
+    return traces ?? [];
+  }
+
+  async function seedStatsHistoryIfMissing() {
+    await ensureCacheReady();
+    try {
+      const existing = await fs.readFile(historyFilePath, "utf8");
+      if (existing.trim()) return;
+    } catch {}
+    if (!traceCache.length) return;
+    
+    const BATCH_SIZE = 1000;
+    const MAX_ENTRY_SIZE = 1024 * 1024; // 1MB per entry max
+    const fileHandle = await fs.open(historyFilePath, 'w');
+    const historyEntries: TraceEntry[] = [];
+    
+    try {
+      for (let i = 0; i < traceCache.length; i += BATCH_SIZE) {
+        const batch = traceCache.slice(i, i + BATCH_SIZE);
+        const batchLines = [];
+        for (const entry of batch) {
+          const statsEntry = toStatsHistoryEntry(entry);
+          const json = JSON.stringify(statsEntry);
+          if (json.length > MAX_ENTRY_SIZE) {
+            console.warn(`Skipping oversized history entry (${json.length} bytes)`);
+            continue;
+          }
+          batchLines.push(json);
+          const normalized = toNormalizedHistoryEntry(entry);
+          if (normalized) {
+            historyEntries.push(normalized);
+          }
+        }
+        if (batchLines.length > 0) {
+          const batchContent = batchLines.join('\n') + '\n';
+          await fileHandle.writeFile(batchContent);
+        }
+      }
+    } finally {
+      await fileHandle.close();
+    }
+    totalStored = 0;
+    statsBuckets.clear();
+    for (const entry of historyEntries) ingestStatsTrace(entry);
+  }
+
+  async function compactTraceStorageIfNeeded() {
+    await ensureCacheReady();
+    // Triage: if cache exceeds retention limit, rewrite the trace file
+    // to only keep the last retentionMax entries. History file already
+    // contains metadata for all entries via appendStatsHistory().
+    if (traceCache.length > retentionMax) {
+      const trimmed = traceCache.slice(-retentionMax);
+      traceCache.splice(0, traceCache.length, ...trimmed);
+      await writeTraceWindow(traceCache);
+    }
+  }
+
+  async function getTraceStats(
+    sinceMs?: number,
+    untilMs?: number,
+  ): Promise<{ totalStored: number; matched: number; stats: TraceStats }> {
+    await ensureCacheReady();
+    const selectedBuckets = Array.from(statsBuckets.values())
+      .filter((bucket) => {
+        if (
+          typeof sinceMs === "number" &&
+          Number.isFinite(sinceMs) &&
+          bucket.at + HOUR_MS <= sinceMs
+        ) {
+          return false;
+        }
+        if (
+          typeof untilMs === "number" &&
+          Number.isFinite(untilMs) &&
+          bucket.at > untilMs
+        ) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => a.at - b.at);
+
+    const modelMap = new Map<string, TraceModelStats>();
+    let requests = 0;
+    let errors = 0;
+    let tokensInput = 0;
+    let tokensOutput = 0;
+    let tokensTotal = 0;
+    let costUsd = 0;
+    let latencyWeightedTotal = 0;
+
+    const timeseries = selectedBuckets.map((bucket) => {
+      requests += bucket.requests;
+      errors += bucket.errors;
+      tokensInput += bucket.tokensInput;
+      tokensOutput += bucket.tokensOutput;
+      tokensTotal += bucket.tokensTotal;
+      costUsd += bucket.costUsd;
+      latencyWeightedTotal += bucket.latencyMsTotal;
+
+      for (const model of bucket.models.values()) {
+        const existing = modelMap.get(model.model);
+        if (existing) {
+          existing.count += model.count;
+          existing.okCount += model.okCount;
+          existing.tokensInput += model.tokensInput;
+          existing.tokensOutput += model.tokensOutput;
+          existing.tokensTotal += model.tokensTotal;
+          existing.costUsd += model.costUsd;
+        } else {
+          modelMap.set(model.model, { ...model });
+        }
+      }
+
+      return {
+        at: bucket.at,
+        requests: bucket.requests,
+        errors: bucket.errors,
+        tokensInput: bucket.tokensInput,
+        tokensOutput: bucket.tokensOutput,
+        tokensTotal: bucket.tokensTotal,
+        costUsd: bucket.costUsd,
+        latencyP50Ms: percentile(bucket.latencies, 50),
+        latencyP95Ms: percentile(bucket.latencies, 95),
+      };
+    });
+
+    return {
+      totalStored,
+      matched: requests,
+      stats: {
+        totals: {
+          requests,
+          errors,
+          errorRate: requests ? errors / requests : 0,
+          tokensInput,
+          tokensOutput,
+          tokensTotal,
+          costUsd,
+          latencyAvgMs: requests ? latencyWeightedTotal / requests : 0,
+        },
+        models: Array.from(modelMap.values()).sort((a, b) => b.count - a.count),
+        timeseries,
+      },
+    };
+  }
+
+  async function appendTrace(
+    entry: Omit<
+      TraceEntry,
+      "id" | "isError" | "tokensInput" | "tokensOutput" | "tokensTotal"
+    >,
+  ) {
+    const normalizedTokens = normalizeTokenFields(entry.usage);
+    const finalEntry: TraceEntry = {
+      ...entry,
+      id: randomUUID(),
+      isError: entry.status >= 400,
+      tokensInput: normalizedTokens.tokensInput,
+      tokensOutput: normalizedTokens.tokensOutput,
+      tokensTotal: normalizedTokens.tokensTotal,
+      costUsd: estimateCostUsd(
+        entry.model,
+        normalizedTokens.tokensInput ?? 0,
+        normalizedTokens.tokensOutput ?? 0,
+      ),
+    };
+
+    const line = `${JSON.stringify(finalEntry)}\n`;
+    
+    // Fire trace file write asynchronously - don't block on this
+    traceWriteQueue = traceWriteQueue.then(async () => {
+      await ensureCacheReady();
+      traceCache.push(finalEntry);
+      // Triage: periodically compact the trace file to only keep last retentionMax entries
+      // History file retains metadata for all entries for stats purposes
+      const shouldCompact = traceCache.length > retentionMax * 1.5; // Compact at 150% of limit to avoid frequent rewrites
+      if (traceCache.length > retentionMax) {
+        traceCache.splice(0, traceCache.length - retentionMax);
+      }
+      await ensureParentDir(filePath);
+      await fs.appendFile(filePath, line, "utf8");
+      // Compact trace file asynchronously to avoid blocking
+      if (shouldCompact) {
+        void compactTraceStorageIfNeeded();
+      }
+    }).catch(() => undefined);
+    
+    // Fire history write asynchronously - completely independent from trace write
+    void appendStatsHistory(finalEntry).catch(() => undefined);
+  }
+
+  function recordTrace(
+    entry: Omit<
+      TraceEntry,
+      "id" | "isError" | "tokensInput" | "tokensOutput" | "tokensTotal"
+    >,
+  ) {
+    void appendTrace(entry).catch((err) => {
+      console.error("trace append failed", err);
+    });
+  }
+
+  async function readTracesLegacy(limit = 200): Promise<TraceEntry[]> {
+    await ensureCacheReady();
+    const sliced = traceCache.slice(
+      -Math.max(1, Math.min(limit, legacyLimitMax)),
+    );
+    return sliced;
+  }
+
+  return {
+    readTraceWindow,
+    readTraceById,
+    readTraceListWindow,
+    writeTraceWindow,
+    readStatsHistory,
+    readStatsHistoryRange,
+    seedStatsHistoryIfMissing,
+    compactTraceStorageIfNeeded,
+    getTraceStats,
+    appendTrace,
+    recordTrace,
+    readTracesLegacy,
+    buildTraceStats,
+    createUsageAggregate,
+    addTraceToAggregate,
+    finalizeAggregate,
+    usageToTokens,
+    pageSizeMax,
+    retentionMax,
+    legacyLimitMax,
+  };
+}

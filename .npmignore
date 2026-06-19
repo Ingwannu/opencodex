@@ -1,0 +1,14 @@
+data/
+node_modules/
+web/node_modules/
+.env
+.env.*
+.codex/
+.omx/
+.claude/
+.mcp.json
+*.log
+*.pid
+*.jsonl
+package-lock.json
+web/package-lock.json

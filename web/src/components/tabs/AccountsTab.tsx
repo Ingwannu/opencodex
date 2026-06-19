@@ -1,0 +1,1131 @@
+import type { Account, StoreSettings, TraceStats } from "../../types";
+import React, { useEffect, useState } from "react";
+import { fmt, maskEmail, maskId } from "../../lib/ui";
+
+import { Metric } from "../Metric";
+import { createPortal } from "react-dom";
+
+type Props = {
+  traceStats: TraceStats;
+  accounts: Account[];
+  settings: StoreSettings;
+  sanitized: boolean;
+  patch: (id: string, body: any) => Promise<void>;
+  del: (id: string) => Promise<void>;
+  unblock: (id: string) => Promise<void>;
+  refreshUsage: (id: string) => Promise<void>;
+  createAccount: (body: any) => Promise<void>;
+  patchSettings: (body: Partial<StoreSettings>) => Promise<void>;
+  startOAuth: (email: string, accountId?: string) => Promise<any>;
+  completeOAuth: (flowId: string, input: string) => Promise<any>;
+  oauthRedirectUri: string;
+};
+
+type AccountProvider = "openai" | "openai-compatible" | "mistral" | "zai";
+
+type EditAccountState = {
+  id: string;
+  provider: AccountProvider;
+  upstreamMode: "" | "responses" | "chat/completions";
+  email: string;
+  accessToken: string;
+  refreshToken: string;
+  chatgptAccountId: string;
+  baseUrl: string;
+  priority: string;
+  enabled: boolean;
+};
+
+type OAuthDialogState = {
+  flowId: string;
+  email: string;
+  authorizeUrl: string;
+  expectedRedirectUri: string;
+  callbackInput: string;
+  isSubmitting: boolean;
+  mode: "create" | "reauth";
+  accountId?: string;
+  pendingPriority?: number;
+  pendingEnabled?: boolean;
+};
+
+function isOAuthProvider(provider: AccountProvider) {
+  return provider === "openai";
+}
+
+function isManualTokenProvider(provider: AccountProvider) {
+  return provider === "mistral" || provider === "openai-compatible" || provider === "zai";
+}
+
+function providerFavicon(provider?: string) {
+  if (provider === "mistral") return "https://mistral.ai/favicon.ico";
+  if (provider === "zai") return "https://z.ai/favicon.ico";
+  return "https://openai.com/favicon.ico";
+}
+
+function providerLabel(provider?: string) {
+  if (provider === "mistral") return "Mistral";
+  if (provider === "openai-compatible") return "OpenAI-compatible";
+  if (provider === "zai") return "z.ai";
+  return "OpenAI";
+}
+
+function activeModelBlocks(account: Account) {
+  return Object.entries(account.state?.modelBlocks ?? {}).filter(
+    ([, block]) => block.until > Date.now(),
+  );
+}
+
+export function AccountsTab(props: Props) {
+  const {
+    traceStats,
+    accounts,
+    settings,
+    sanitized,
+    patch,
+    del,
+    unblock,
+    refreshUsage,
+    createAccount,
+    patchSettings,
+    startOAuth,
+    completeOAuth,
+    oauthRedirectUri,
+  } = props;
+  const [showAddAccount, setShowAddAccount] = useState(false);
+  const [provider, setProvider] = useState<AccountProvider>("openai");
+  const [manualEmail, setManualEmail] = useState("");
+  const [manualAccessToken, setManualAccessToken] = useState("");
+  const [manualRefreshToken, setManualRefreshToken] = useState("");
+  const [manualChatgptAccountId, setManualChatgptAccountId] = useState("");
+  const [manualBaseUrl, setManualBaseUrl] = useState("");
+  const [manualUpstreamMode, setManualUpstreamMode] = useState<
+    "" | "responses" | "chat/completions"
+  >("");
+  const [manualPriority, setManualPriority] = useState("0");
+  const [manualEnabled, setManualEnabled] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<EditAccountState | null>(
+    null,
+  );
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [oauthBusyId, setOauthBusyId] = useState<string | null>(null);
+  const [oauthDialog, setOauthDialog] = useState<OAuthDialogState | null>(null);
+  const [openMenu, setOpenMenu] = useState<{
+    accountId: string;
+    top: number;
+    left: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const closeMenu = () => setOpenMenu(null);
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        closeMenu();
+        return;
+      }
+      if (target.closest(".icon-menu-btn")) return;
+      if (target.closest(".account-action-menu")) return;
+      closeMenu();
+    };
+    const onScroll = () => closeMenu();
+    const onResize = () => closeMenu();
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!oauthDialog) return;
+
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (!data || typeof data !== "object") return;
+      if ((data as { type?: string }).type !== "multivibe-oauth-callback")
+        return;
+      const callbackUrl = (data as { callbackUrl?: string }).callbackUrl;
+      if (typeof callbackUrl !== "string" || !callbackUrl.trim()) return;
+
+      try {
+        const received = new URL(callbackUrl);
+        const expected = new URL(oauthDialog.expectedRedirectUri);
+        if (
+          received.origin !== expected.origin ||
+          received.pathname !== expected.pathname
+        ) {
+          return;
+        }
+      } catch {
+        return;
+      }
+
+      setOauthDialog((current) =>
+        current ? { ...current, callbackInput: callbackUrl.trim() } : current,
+      );
+      void submitOauthCallback(callbackUrl.trim());
+    };
+
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [oauthDialog]);
+
+  const closeModal = () => {
+    setShowAddAccount(false);
+    setProvider("openai");
+    setManualEmail("");
+    setManualAccessToken("");
+    setManualRefreshToken("");
+    setManualChatgptAccountId("");
+    setManualBaseUrl("");
+    setManualUpstreamMode("");
+    setManualPriority("0");
+    setManualEnabled(true);
+    setIsSubmitting(false);
+    sessionStorage.removeItem("multivibe-oauth-pending");
+  };
+
+  const closeEditModal = () => {
+    setEditingAccount(null);
+    setIsSavingEdit(false);
+  };
+
+  const closeOauthDialog = () => {
+    setOauthDialog(null);
+    sessionStorage.removeItem("multivibe-oauth-pending");
+  };
+
+  const submitManualAccount = async () => {
+    if (isOAuthProvider(provider)) {
+      if (!manualEmail.trim()) return;
+      setIsSubmitting(true);
+      try {
+        const result = await startOAuth(manualEmail.trim());
+        const authorizeUrl = result?.authorizeUrl as string | undefined;
+        const flowId = result?.flowId as string | undefined;
+        const expectedRedirectUri =
+          (result?.expectedRedirectUri as string | undefined) ||
+          oauthRedirectUri;
+        if (!authorizeUrl || !flowId) {
+          throw new Error("Missing OAuth flow details from start response");
+        }
+        setOauthDialog({
+          flowId,
+          email: manualEmail.trim(),
+          authorizeUrl,
+          expectedRedirectUri,
+          callbackInput: "",
+          isSubmitting: false,
+          mode: "create",
+          pendingPriority: Number(manualPriority) || 0,
+          pendingEnabled: manualEnabled,
+        });
+        sessionStorage.setItem(
+          "multivibe-oauth-pending",
+          JSON.stringify({
+            flowId,
+            mode: "create",
+            pendingPriority: Number(manualPriority) || 0,
+            pendingEnabled: manualEnabled,
+            timestamp: Date.now(),
+          }),
+        );
+        window.open(authorizeUrl, "_blank", "noreferrer");
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    if (!manualAccessToken.trim()) return;
+    if (provider === "openai-compatible" && !manualBaseUrl.trim()) return;
+    setIsSubmitting(true);
+    try {
+      await createAccount({
+        provider,
+        email: manualEmail.trim() || undefined,
+        accessToken: manualAccessToken.trim(),
+        refreshToken: manualRefreshToken.trim() || undefined,
+        baseUrl:
+          provider === "openai-compatible" ? manualBaseUrl.trim() : undefined,
+        upstreamMode: manualUpstreamMode || undefined,
+        priority: Number(manualPriority) || 0,
+        enabled: manualEnabled,
+      });
+      closeModal();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const openEditModal = (account: Account) => {
+    setOpenMenu(null);
+    const nextProvider: AccountProvider =
+      account.provider === "mistral"
+        ? "mistral"
+        : account.provider === "zai"
+          ? "zai"
+        : account.provider === "openai-compatible"
+          ? "openai-compatible"
+          : "openai";
+    setEditingAccount({
+      id: account.id,
+      provider: nextProvider,
+      upstreamMode: account.upstreamMode ?? "",
+      email: account.email ?? "",
+      accessToken: account.accessToken ?? "",
+      refreshToken: account.refreshToken ?? "",
+      chatgptAccountId: account.chatgptAccountId ?? "",
+      baseUrl: account.baseUrl ?? "",
+      priority: String(account.priority ?? 0),
+      enabled: account.enabled,
+    });
+  };
+
+  const saveEditedAccount = async () => {
+    if (!editingAccount) return;
+    if (isOAuthProvider(editingAccount.provider)) {
+      if (!editingAccount.email.trim()) return;
+      setIsSavingEdit(true);
+      try {
+        const result = await startOAuth(
+          editingAccount.email.trim(),
+          editingAccount.id,
+        );
+        const authorizeUrl = result?.authorizeUrl as string | undefined;
+        const flowId = result?.flowId as string | undefined;
+        const expectedRedirectUri =
+          (result?.expectedRedirectUri as string | undefined) ||
+          oauthRedirectUri;
+        if (!authorizeUrl || !flowId) {
+          throw new Error("Missing OAuth flow details from start response");
+        }
+        closeEditModal();
+        setOauthDialog({
+          flowId,
+          email: editingAccount.email.trim(),
+          authorizeUrl,
+          expectedRedirectUri,
+          callbackInput: "",
+          isSubmitting: false,
+          mode: "reauth",
+          accountId: editingAccount.id,
+        });
+        sessionStorage.setItem(
+          "multivibe-oauth-pending",
+          JSON.stringify({
+            flowId,
+            mode: "reauth",
+            accountId: editingAccount.id,
+            timestamp: Date.now(),
+          }),
+        );
+        window.open(authorizeUrl, "_blank", "noreferrer");
+      } finally {
+        setIsSavingEdit(false);
+      }
+      return;
+    }
+
+    if (!editingAccount.accessToken.trim()) return;
+    if (
+      editingAccount.provider === "openai-compatible" &&
+      !editingAccount.baseUrl.trim()
+    )
+      return;
+    setIsSavingEdit(true);
+    try {
+      await patch(editingAccount.id, {
+        email: editingAccount.email.trim() || undefined,
+        accessToken: editingAccount.accessToken.trim(),
+        refreshToken: editingAccount.refreshToken.trim() || undefined,
+        baseUrl:
+          editingAccount.provider === "openai-compatible"
+            ? editingAccount.baseUrl.trim()
+            : undefined,
+        upstreamMode: editingAccount.upstreamMode || undefined,
+        priority: Number(editingAccount.priority) || 0,
+        enabled: editingAccount.enabled,
+      });
+      closeEditModal();
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const submitOauthCallback = async (overrideUrl?: string) => {
+    const input = overrideUrl?.trim() || oauthDialog?.callbackInput.trim();
+    if (!input || !oauthDialog) return;
+    setIsSavingEdit(true);
+    try {
+      setOauthDialog((current) =>
+        current ? { ...current, isSubmitting: true } : current,
+      );
+      const result = await completeOAuth(oauthDialog.flowId, input);
+      const accountId = String(
+        result?.account?.id ?? oauthDialog.accountId ?? "",
+      ).trim();
+      if (
+        oauthDialog.mode === "create" &&
+        accountId &&
+        (oauthDialog.pendingPriority !== 0 ||
+          oauthDialog.pendingEnabled === false)
+      ) {
+        await patch(accountId, {
+          priority: oauthDialog.pendingPriority ?? 0,
+          enabled: oauthDialog.pendingEnabled ?? true,
+        });
+      }
+      closeOauthDialog();
+      closeModal();
+    } finally {
+      setIsSavingEdit(false);
+      setOauthDialog((current) =>
+        current ? { ...current, isSubmitting: false } : current,
+      );
+    }
+  };
+
+  const reauthAccount = async (account: Account) => {
+    setOpenMenu(null);
+    if ((account.provider ?? "openai") !== "openai") return;
+    if (!account.email?.trim()) {
+      window.alert(
+        "This OpenAI account has no email, so reauth cannot be started.",
+      );
+      return;
+    }
+    setOauthBusyId(account.id);
+    try {
+      const result = await startOAuth(account.email.trim(), account.id);
+      const authorizeUrl = result?.authorizeUrl as string | undefined;
+      const flowId = result?.flowId as string | undefined;
+      const expectedRedirectUri =
+        (result?.expectedRedirectUri as string | undefined) || oauthRedirectUri;
+      if (!authorizeUrl || !flowId) {
+        throw new Error("Missing OAuth flow details from OAuth start response");
+      }
+      setOauthDialog({
+        flowId,
+        email: account.email.trim(),
+        authorizeUrl,
+        expectedRedirectUri,
+        callbackInput: "",
+        isSubmitting: false,
+        mode: "reauth",
+        accountId: account.id,
+      });
+      sessionStorage.setItem(
+        "multivibe-oauth-pending",
+        JSON.stringify({
+          flowId,
+          mode: "reauth",
+          accountId: account.id,
+          timestamp: Date.now(),
+        }),
+      );
+      window.open(authorizeUrl, "_blank", "noreferrer");
+    } finally {
+      setOauthBusyId(null);
+    }
+  };
+
+  const openAiCount = accounts.filter(
+    (account) => (account.provider ?? "openai") === "openai",
+  ).length;
+  const passthroughAccounts = accounts.filter(
+    (account) => (account.provider ?? "openai") === "openai" && account.enabled,
+  );
+  const selectedPassthroughAccount = accounts.find(
+    (account) => account.id === settings.defaultPassthroughAccountId,
+  );
+  const openAiCompatibleCount = accounts.filter(
+    (account) => account.provider === "openai-compatible",
+  ).length;
+  const mistralCount = accounts.filter(
+    (account) => account.provider === "mistral",
+  ).length;
+  const zaiCount = accounts.filter(
+    (account) => account.provider === "zai",
+  ).length;
+  const blockedCount = accounts.filter(
+    (account) => activeModelBlocks(account).length > 0,
+  ).length;
+  const enabledCount = accounts.filter((account) => account.enabled).length;
+
+  const renderUsageCell = (value?: number, resetAt?: number) => {
+    const safeValue =
+      typeof value === "number" ? Math.max(0, Math.min(100, value)) : 0;
+    return (
+      <div className="usage-cell">
+        <div className="usage-value-row">
+          <strong>
+            {typeof value === "number" ? `${Math.round(value)}%` : "?"}
+          </strong>
+          <small>{fmt(resetAt)}</small>
+        </div>
+        <div className="mini-progress">
+          <span style={{ width: `${safeValue}%` }} />
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <section className="grid cards4">
+        <Metric
+          title="Accounts"
+          value={`${accounts.length}`}
+          detail="Total configured providers"
+        />
+        <Metric
+          title="Enabled"
+          value={`${enabledCount}`}
+          detail="Available for routing"
+          tone="success"
+        />
+        <Metric
+          title="Blocked"
+          value={`${blockedCount}`}
+          detail="Need manual review or quota reset"
+          tone={blockedCount > 0 ? "warning" : "default"}
+        />
+        <Metric
+          title="Top model"
+          value={traceStats.models[0]?.model ?? "-"}
+          detail="Highest volume in the selected range"
+        />
+      </section>
+
+      <section className="panel">
+        <div className="section-split-header">
+          <div>
+            <h2>Default passthrough</h2>
+            <p className="muted">
+              Non-completions API routes are forwarded through this OpenAI account.
+            </p>
+          </div>
+          <label className="compact-field">
+            Account
+            <select
+              value={settings.defaultPassthroughAccountId ?? ""}
+              disabled={!passthroughAccounts.length}
+              onChange={(e) =>
+                void patchSettings({
+                  defaultPassthroughAccountId: e.target.value || undefined,
+                })
+              }
+            >
+              <option value="">
+                {passthroughAccounts.length
+                  ? "No default selected"
+                  : "No enabled OpenAI account"}
+              </option>
+              {passthroughAccounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {sanitized
+                    ? maskEmail(account.email)
+                    : (account.email ?? account.id)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="state-stack">
+          {settings.defaultPassthroughAccountId ? (
+            selectedPassthroughAccount &&
+            (selectedPassthroughAccount.provider ?? "openai") === "openai" &&
+            selectedPassthroughAccount.enabled ? (
+              <span className="badge badge-live">
+                Active: {sanitized
+                  ? maskEmail(selectedPassthroughAccount.email)
+                  : (selectedPassthroughAccount.email ?? selectedPassthroughAccount.id)}
+              </span>
+            ) : (
+              <span className="badge badge-warn">
+                Selected passthrough account is unavailable
+              </span>
+            )
+          ) : (
+            <span className="badge badge-warn">No default account selected</span>
+          )}
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="section-split-header">
+          <h2>Accounts</h2>
+          <div className="inline wrap">
+            <span className="badge">{openAiCount} OpenAI</span>
+            <span className="badge">
+              {openAiCompatibleCount} OpenAI-compatible
+            </span>
+            <span className="badge">{mistralCount} Mistral</span>
+            <span className="badge">{zaiCount} z.ai</span>
+            <button className="btn" onClick={() => setShowAddAccount(true)}>
+              Add account
+            </button>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Vendor</th>
+                <th>Account</th>
+                <th>5h quota</th>
+                <th>Weekly quota</th>
+                <th>Routing state</th>
+                <th>Last error</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {accounts.map((a) => {
+                const modelBlocks = activeModelBlocks(a);
+                return (
+                <tr key={a.id}>
+                  <td>
+                    <span className="provider-badge">
+                      <img
+                        className="provider-icon"
+                        src={providerFavicon(a.provider)}
+                        alt={`${providerLabel(a.provider)} icon`}
+                        loading="lazy"
+                      />
+                      {providerLabel(a.provider)}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="account-cell">
+                      <strong>
+                        {sanitized
+                          ? maskEmail(a.email)
+                          : (a.email ?? "No email set")}
+                      </strong>
+                      {a.baseUrl && (
+                        <span className="mono muted">{a.baseUrl}</span>
+                      )}
+                      {a.upstreamMode && (
+                        <span className="mono muted">
+                          upstream: {a.upstreamMode}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td>
+                    {renderUsageCell(
+                      a.usage?.primary?.usedPercent,
+                      a.usage?.primary?.resetAt,
+                    )}
+                  </td>
+                  <td>
+                    {renderUsageCell(
+                      a.usage?.secondary?.usedPercent,
+                      a.usage?.secondary?.resetAt,
+                    )}
+                  </td>
+                  <td>
+                    <div className="state-stack">
+                      <span
+                        className={
+                          a.enabled ? "badge badge-live" : "badge badge-warn"
+                        }
+                      >
+                        {a.enabled ? "Enabled" : "Disabled"}
+                      </span>
+                      {modelBlocks.map(([model, block]) => (
+                        <span className="badge badge-warn" key={model}>
+                          {`${model} blocked until ${fmt(block.until)}`}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="mono">
+                    {a.state?.lastError?.slice(0, 80) ?? "-"}
+                  </td>
+                  <td>
+                    <div className="account-actions-cell">
+                      <button
+                        className="icon-menu-btn"
+                        aria-label={`Open actions for ${a.email ?? a.id}`}
+                        aria-expanded={openMenu?.accountId === a.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setOpenMenu((current) =>
+                            current?.accountId === a.id
+                              ? null
+                              : {
+                                  accountId: a.id,
+                                  top: rect.bottom + 8,
+                                  left: rect.right - 220,
+                                },
+                          );
+                        }}
+                      >
+                        <svg
+                          width="18"
+                          height="18"
+                          viewBox="0 0 18 18"
+                          aria-hidden="true"
+                        >
+                          <circle cx="9" cy="3.5" r="1.5" />
+                          <circle cx="9" cy="9" r="1.5" />
+                          <circle cx="9" cy="14.5" r="1.5" />
+                        </svg>
+                      </button>
+                      {openMenu?.accountId === a.id &&
+                        createPortal(
+                          <div
+                            className="account-action-menu"
+                            style={{ top: openMenu.top, left: openMenu.left }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              className="account-action-item"
+                              onClick={() => openEditModal(a)}
+                            >
+                              Modify parameters
+                            </button>
+                            <button
+                              className="account-action-item"
+                              onClick={() => {
+                                setOpenMenu(null);
+                                void patch(a.id, { enabled: !a.enabled });
+                              }}
+                            >
+                              {a.enabled ? "Disable" : "Enable"}
+                            </button>
+                            <button
+                              className="account-action-item"
+                              onClick={() => {
+                                setOpenMenu(null);
+                                void unblock(a.id);
+                              }}
+                            >
+                              Unblock
+                            </button>
+                            <button
+                              className="account-action-item"
+                              onClick={() => {
+                                setOpenMenu(null);
+                                void refreshUsage(a.id);
+                              }}
+                            >
+                              Refresh usage
+                            </button>
+                            {a.provider === "openai" ? (
+                              <button
+                                className="account-action-item"
+                                disabled={oauthBusyId === a.id}
+                                onClick={() => void reauthAccount(a)}
+                              >
+                                {oauthBusyId === a.id ? "Opening..." : "Reauth"}
+                              </button>
+                            ) : (
+                              <button
+                                className="account-action-item"
+                                onClick={() => openEditModal(a)}
+                              >
+                                Change key
+                              </button>
+                            )}
+                            <button
+                              className="account-action-item account-action-item-danger"
+                              onClick={() => {
+                                setOpenMenu(null);
+                                void del(a.id);
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>,
+                          document.body,
+                        )}
+                    </div>
+                  </td>
+                </tr>
+                );
+              })}
+              {!accounts.length && (
+                <tr>
+                  <td colSpan={7} className="muted empty-row">
+                    No accounts configured yet. Add an OpenAI,
+                    OpenAI-compatible, Mistral, or z.ai account to expose models and
+                    enable routing.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {showAddAccount && (
+        <div className="modal-backdrop" onClick={closeModal}>
+          <div className="modal panel" onClick={(e) => e.stopPropagation()}>
+            <div className="inline wrap row-between">
+              <h2>Add account</h2>
+              <button className="btn ghost" onClick={closeModal}>
+                Close
+              </button>
+            </div>
+            <div className="grid modal-grid">
+              <label>
+                Provider
+                <select
+                  value={provider}
+                  onChange={(e) =>
+                    setProvider(e.target.value as AccountProvider)
+                  }
+                >
+                  <option value="openai">OpenAI</option>
+                  <option value="openai-compatible">OpenAI-compatible</option>
+                  <option value="mistral">Mistral</option>
+                  <option value="zai">z.ai</option>
+                </select>
+              </label>
+              <label>
+                Email (optional)
+                <input
+                  value={manualEmail}
+                  onChange={(e) => setManualEmail(e.target.value)}
+                  placeholder="account@email.com"
+                />
+              </label>
+              {provider === "openai-compatible" && (
+                <label>
+                  Base URL
+                  <input
+                    value={manualBaseUrl}
+                    onChange={(e) => setManualBaseUrl(e.target.value)}
+                    placeholder="https://your-api.example.com"
+                  />
+                </label>
+              )}
+              <label>
+                Upstream mode (optional)
+                <select
+                  value={manualUpstreamMode}
+                  onChange={(e) =>
+                    setManualUpstreamMode(
+                      e.target.value as "" | "responses" | "chat/completions",
+                    )
+                  }
+                >
+                  <option value="">Automatic</option>
+                  <option value="responses">Force `/v1/responses`</option>
+                  <option value="chat/completions">
+                    Force `/v1/chat/completions`
+                  </option>
+                </select>
+              </label>
+              {isManualTokenProvider(provider) ? (
+                <>
+                  <label>
+                    API key
+                    <input
+                      value={manualAccessToken}
+                      onChange={(e) => setManualAccessToken(e.target.value)}
+                      placeholder="Required"
+                    />
+                  </label>
+                  <label>
+                    Refresh token (optional)
+                    <input
+                      value={manualRefreshToken}
+                      onChange={(e) => setManualRefreshToken(e.target.value)}
+                      placeholder="Optional"
+                    />
+                  </label>
+                </>
+              ) : (
+                <div className="muted">
+                  OpenAI onboarding uses OAuth. Start the flow, complete the
+                  browser callback, then paste the full callback URL here
+                  instead of entering access or refresh tokens manually.
+                </div>
+              )}
+              <label>
+                Priority
+                <input
+                  value={manualPriority}
+                  onChange={(e) => setManualPriority(e.target.value)}
+                  placeholder="0"
+                />
+              </label>
+              <label className="inline">
+                <input
+                  type="checkbox"
+                  checked={manualEnabled}
+                  onChange={(e) => setManualEnabled(e.target.checked)}
+                />
+                Enabled
+              </label>
+            </div>
+            <div className="inline wrap">
+              <button
+                className="btn"
+                disabled={
+                  isSubmitting ||
+                  (isOAuthProvider(provider)
+                    ? !manualEmail.trim()
+                    : !manualAccessToken.trim() ||
+                      (provider === "openai-compatible" &&
+                        !manualBaseUrl.trim()))
+                }
+                onClick={() => void submitManualAccount()}
+              >
+                {isSubmitting
+                  ? isOAuthProvider(provider)
+                    ? "Starting OAuth..."
+                    : "Creating..."
+                  : isOAuthProvider(provider)
+                    ? "Start OAuth"
+                    : "Create account"}
+              </button>
+              <button className="btn ghost" onClick={closeModal}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingAccount && (
+        <div className="modal-backdrop" onClick={closeEditModal}>
+          <div className="modal panel" onClick={(e) => e.stopPropagation()}>
+            <div className="inline wrap row-between">
+              <h2>Update account</h2>
+              <button className="btn ghost" onClick={closeEditModal}>
+                Close
+              </button>
+            </div>
+            <div className="grid modal-grid">
+              <label>
+                Email (optional)
+                <input
+                  value={editingAccount.email}
+                  onChange={(e) =>
+                    setEditingAccount((current) =>
+                      current ? { ...current, email: e.target.value } : current,
+                    )
+                  }
+                  placeholder="account@email.com"
+                />
+              </label>
+              {editingAccount.provider === "openai-compatible" && (
+                <label>
+                  Base URL
+                  <input
+                    value={editingAccount.baseUrl}
+                    onChange={(e) =>
+                      setEditingAccount((current) =>
+                        current
+                          ? { ...current, baseUrl: e.target.value }
+                          : current,
+                      )
+                    }
+                    placeholder="https://your-api.example.com"
+                  />
+                </label>
+              )}
+              <label>
+                Upstream mode (optional)
+                <select
+                  value={editingAccount.upstreamMode}
+                  onChange={(e) =>
+                    setEditingAccount((current) =>
+                      current
+                        ? {
+                            ...current,
+                            upstreamMode: e.target.value as
+                              | ""
+                              | "responses"
+                              | "chat/completions",
+                          }
+                        : current,
+                    )
+                  }
+                >
+                  <option value="">Automatic</option>
+                  <option value="responses">Force `/v1/responses`</option>
+                  <option value="chat/completions">
+                    Force `/v1/chat/completions`
+                  </option>
+                </select>
+              </label>
+              {isManualTokenProvider(editingAccount.provider) ? (
+                <>
+                  <label>
+                    API key
+                    <input
+                      value={editingAccount.accessToken}
+                      onChange={(e) =>
+                        setEditingAccount((current) =>
+                          current
+                            ? { ...current, accessToken: e.target.value }
+                            : current,
+                        )
+                      }
+                      placeholder="Required"
+                    />
+                  </label>
+                  <label>
+                    Refresh token (optional)
+                    <input
+                      value={editingAccount.refreshToken}
+                      onChange={(e) =>
+                        setEditingAccount((current) =>
+                          current
+                            ? { ...current, refreshToken: e.target.value }
+                            : current,
+                        )
+                      }
+                      placeholder="Optional"
+                    />
+                  </label>
+                </>
+              ) : (
+                <div className="muted">
+                  OpenAI reauth uses OAuth. Save changes to open the login flow,
+                  then paste the full callback URL instead of editing tokens
+                  manually.
+                </div>
+              )}
+              <label>
+                Priority
+                <input
+                  value={editingAccount.priority}
+                  onChange={(e) =>
+                    setEditingAccount((current) =>
+                      current
+                        ? { ...current, priority: e.target.value }
+                        : current,
+                    )
+                  }
+                  placeholder="0"
+                />
+              </label>
+              <label className="inline">
+                <input
+                  type="checkbox"
+                  checked={editingAccount.enabled}
+                  onChange={(e) =>
+                    setEditingAccount((current) =>
+                      current
+                        ? { ...current, enabled: e.target.checked }
+                        : current,
+                    )
+                  }
+                />
+                Enabled
+              </label>
+            </div>
+            <div className="inline wrap">
+              <button
+                className="btn"
+                disabled={
+                  isSavingEdit ||
+                  (isOAuthProvider(editingAccount.provider)
+                    ? !editingAccount.email.trim()
+                    : !editingAccount.accessToken.trim() ||
+                      (editingAccount.provider === "openai-compatible" &&
+                        !editingAccount.baseUrl.trim()))
+                }
+                onClick={() => void saveEditedAccount()}
+              >
+                {isSavingEdit
+                  ? isOAuthProvider(editingAccount.provider)
+                    ? "Starting OAuth..."
+                    : "Saving..."
+                  : isOAuthProvider(editingAccount.provider)
+                    ? "Start reauth"
+                    : "Save changes"}
+              </button>
+              <button className="btn ghost" onClick={closeEditModal}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {oauthDialog && (
+        <div className="modal-backdrop" onClick={closeOauthDialog}>
+          <div className="modal panel" onClick={(e) => e.stopPropagation()}>
+            <div className="inline wrap row-between">
+              <h2>
+                {oauthDialog.mode === "create"
+                  ? "Complete OpenAI OAuth"
+                  : "Complete OpenAI reauth"}
+              </h2>
+              <button className="btn ghost" onClick={closeOauthDialog}>
+                Close
+              </button>
+            </div>
+            <div className="grid modal-grid">
+              <label>
+                Email
+                <input value={oauthDialog.email} disabled />
+              </label>
+              <label>
+                Redirect URI
+                <input value={oauthDialog.expectedRedirectUri} disabled />
+              </label>
+              <label>
+                Callback URL
+                <textarea
+                  value={oauthDialog.callbackInput}
+                  onChange={(e) =>
+                    setOauthDialog((current) =>
+                      current
+                        ? { ...current, callbackInput: e.target.value }
+                        : current,
+                    )
+                  }
+                  placeholder="Paste the full URL after the browser reaches the callback page"
+                  rows={5}
+                />
+              </label>
+            </div>
+            <div className="muted">
+              Complete the OpenAI login in the opened browser tab. When the
+              browser reaches the callback page, copy the full URL and paste it
+              here. Do not paste access or refresh tokens.
+            </div>
+            <div className="inline wrap">
+              <button
+                className="btn"
+                onClick={() =>
+                  window.open(oauthDialog.authorizeUrl, "_blank", "noreferrer")
+                }
+              >
+                Open login page
+              </button>
+              <button
+                className="btn"
+                disabled={
+                  oauthDialog.isSubmitting || !oauthDialog.callbackInput.trim()
+                }
+                onClick={() => void submitOauthCallback()}
+              >
+                {oauthDialog.isSubmitting ? "Completing..." : "Complete OAuth"}
+              </button>
+              <button className="btn ghost" onClick={closeOauthDialog}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

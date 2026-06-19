@@ -1,0 +1,134 @@
+import os from "node:os";
+
+export const PORT = Number(process.env.PORT ?? 1455);
+export const STORE_PATH = process.env.STORE_PATH ?? "/data/accounts.json";
+export const OAUTH_STATE_PATH =
+  process.env.OAUTH_STATE_PATH ?? "/data/oauth-state.json";
+export const TRACE_FILE_PATH =
+  process.env.TRACE_FILE_PATH ?? "/data/requests-trace.jsonl";
+export const TRACE_STATS_HISTORY_PATH =
+  process.env.TRACE_STATS_HISTORY_PATH ?? "/data/requests-stats-history.jsonl";
+export const TRACE_INCLUDE_BODY =
+  (process.env.TRACE_INCLUDE_BODY ?? "false") === "true"; // disabling the body trace by default keeps disk writes smaller
+export const REQUEST_BODY_LIMIT = process.env.REQUEST_BODY_LIMIT ?? "100mb";
+export const TRACE_RETENTION_MAX = Math.max(
+  100,
+  Number(process.env.TRACE_RETENTION_MAX ?? 1000),
+); // Number of recent requests to keep with full text (metadata kept forever in history)
+export const CHATGPT_BASE_URL =
+  process.env.CHATGPT_BASE_URL ?? "https://chatgpt.com";
+export const MISTRAL_BASE_URL =
+  process.env.MISTRAL_BASE_URL ?? "https://api.mistral.ai";
+export const UPSTREAM_PATH =
+  process.env.UPSTREAM_PATH ?? "/backend-api/codex/responses";
+export const UPSTREAM_COMPACT_PATH =
+  process.env.UPSTREAM_COMPACT_PATH ?? "/backend-api/codex/responses/compact";
+export const MISTRAL_UPSTREAM_PATH =
+  process.env.MISTRAL_UPSTREAM_PATH ?? "/v1/responses";
+export const MISTRAL_COMPACT_UPSTREAM_PATH =
+  process.env.MISTRAL_COMPACT_UPSTREAM_PATH ?? "/v1/responses/compact";
+export const ZAI_BASE_URL = process.env.ZAI_BASE_URL ?? "https://api.z.ai";
+export const ZAI_UPSTREAM_PATH =
+  process.env.ZAI_UPSTREAM_PATH ?? "/v1/chat/completions";
+export const ZAI_COMPACT_UPSTREAM_PATH =
+  process.env.ZAI_COMPACT_UPSTREAM_PATH ?? "/v1/chat/completions";
+export const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "";
+export const MAX_ACCOUNT_RETRY_ATTEMPTS = Math.max(
+  1,
+  Number(process.env.MAX_ACCOUNT_RETRY_ATTEMPTS ?? 10),
+);
+export const MAX_UPSTREAM_RETRIES = Math.max(
+  0,
+  Number(process.env.MAX_UPSTREAM_RETRIES ?? 5),
+);
+export const UPSTREAM_BASE_DELAY_MS = Math.max(
+  100,
+  Number(process.env.UPSTREAM_BASE_DELAY_MS ?? 2000),
+);
+export const HANG_RETRY_INTERVAL_MS = Math.max(
+  1000,
+  Number(process.env.HANG_RETRY_INTERVAL_MS ?? 10_000),
+);
+export const HANG_RETRY_MAX_DURATION_MS = Math.max(
+  5000,
+  Number(process.env.HANG_RETRY_MAX_DURATION_MS ?? 120_000),
+);
+export const PI_USER_AGENT = `pi (${os.platform()} ${os.release()}; ${os.arch()})`;
+
+const DEFAULT_PROXY_MODELS = [
+  "gpt-5.5",
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.3-codex-spark",
+  "codex-auto-review",
+  "moonshotai/Kimi-K2.5",
+  "qwen3.6-35b-fast",
+  "glm-5.1",
+  "zai-org/GLM-5.1-FP8",
+  "qwen3.5-397b-fast",
+  "kimi-k2.6-fast",
+  "glm-5.1-fast",
+  "glm-5.2-fast",
+  "kimi-k2.5-fast",
+  "qwen3.5-397b",
+  "kimi-k2.6",
+  "glm-5.2",
+  "qwen3.6-35b",
+  "kimi-k2.7-code",
+].join(",");
+
+export const PROXY_MODELS = (
+  process.env.PROXY_MODELS ?? DEFAULT_PROXY_MODELS
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+export const MODELS_CLIENT_VERSION =
+  process.env.MODELS_CLIENT_VERSION ?? "1.0.0";
+export const MODELS_CACHE_MS = Number(
+  process.env.MODELS_CACHE_MS ?? 10 * 60_000,
+);
+
+export const TOKEN_REFRESH_MARGIN_MS = Number(
+  process.env.TOKEN_REFRESH_MARGIN_MS ?? 60_000,
+);
+
+export const ACCOUNT_FLUSH_INTERVAL_MS = Number(
+  process.env.ACCOUNT_FLUSH_INTERVAL_MS ?? 5_000,
+);
+
+// EXCLUDED_PROVIDER_MODELS: exclude a model from being routed to a specific provider.
+// Format: "provider1:modelA,provider1:modelB,provider2:modelC"
+// Example: "openai-compatible:gpt-5-codex,mistral:codestral-latest"
+// This is useful when multiple providers expose a model with the same name and you
+// want to ensure routing only targets the intended provider.
+export const EXCLUDED_PROVIDER_MODELS = (
+  process.env.EXCLUDED_PROVIDER_MODELS ?? ""
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean)
+  .reduce((map, entry) => {
+    const colonIdx = entry.indexOf(":");
+    if (colonIdx <= 0) return map; // skip malformed entries
+    const provider = entry.slice(0, colonIdx).trim();
+    const model = entry.slice(colonIdx + 1).trim().toLowerCase();
+    if (!provider || !model) return map;
+    if (!map.has(provider)) map.set(provider, new Set());
+    map.get(provider)!.add(model);
+    return map;
+  }, new Map<string, Set<string>>());
+
+// Empty response retry configuration
+export const EMPTY_RESPONSE_BLOCK_THRESHOLD = Math.max(
+  1,
+  Number(process.env.EMPTY_RESPONSE_BLOCK_THRESHOLD ?? 3),
+);
+export const EMPTY_RESPONSE_BLOCK_DURATION_MS = Math.max(
+  5_000,
+  Number(process.env.EMPTY_RESPONSE_BLOCK_DURATION_MS ?? 30_000),
+);
+export const EMPTY_RESPONSE_WINDOW_MS = Math.max(
+  60_000,
+  Number(process.env.EMPTY_RESPONSE_WINDOW_MS ?? 5 * 60_000),
+);

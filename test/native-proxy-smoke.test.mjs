@@ -636,3 +636,84 @@ test("proxy routes Cloudflare AI Gateway with cf-aig authorization", async () =>
     await closeServer(upstream);
   }
 });
+
+test("proxy routes Azure OpenAI v1 endpoints with api-key authorization", async () => {
+  let capturedRequest;
+  let capturedModelsApiKey;
+  let capturedModelsAuthorization;
+  let capturedResponsesApiKey;
+  let capturedResponsesAuthorization;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/openai/v1/models") {
+      capturedModelsApiKey = req.headers["api-key"];
+      capturedModelsAuthorization = req.headers.authorization;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "gpt-5.1-prod" }] }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/openai/v1/responses") {
+      capturedRequest = await readJson(req);
+      capturedResponsesApiKey = req.headers["api-key"];
+      capturedResponsesAuthorization = req.headers.authorization;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "resp_azure",
+          object: "response",
+          created_at: 1,
+          model: "gpt-5.1-prod",
+          status: "completed",
+          output: [
+            {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "output_text", text: "Azure OK" }],
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "azure-smoke",
+          provider: "openai-compatible",
+          providerId: "azure",
+          providerAdapter: "openai-compatible",
+          accessToken: "az-smoke-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}/openai`,
+          upstreamMode: "responses",
+          compatibilityMode: "responses",
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/responses`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "gpt-5.1-prod",
+            input: "Hello",
+            stream: false,
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.output[0].content[0].text, "Azure OK");
+        assert.equal(capturedModelsApiKey, "az-smoke-key");
+        assert.equal(capturedModelsAuthorization, undefined);
+        assert.equal(capturedResponsesApiKey, "az-smoke-key");
+        assert.equal(capturedResponsesAuthorization, undefined);
+        assert.equal(capturedRequest.model, "gpt-5.1-prod");
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});

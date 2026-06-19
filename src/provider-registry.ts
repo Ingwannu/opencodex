@@ -291,6 +291,42 @@ export function cloudflareAiGatewayBaseUrlFromOptions(
   )}/${encodeURIComponent(gatewayId.trim())}/openai`;
 }
 
+const AZURE_OPENAI_PROVIDER_IDS = new Set(["azure", "azure-cognitive-services"]);
+
+export function azureOpenAiBaseUrlFromOptions(
+  providerId: string,
+  options: Record<string, unknown> | undefined = {},
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  if (!AZURE_OPENAI_PROVIDER_IDS.has(sanitizeProviderId(providerId))) {
+    return undefined;
+  }
+
+  const explicit = firstStringValue(options, [
+    "baseURL",
+    "baseUrl",
+    "base_url",
+    "url",
+    "endpoint",
+  ]);
+  if (explicit && /^https?:\/\//.test(explicit)) return explicit;
+
+  const resourceName =
+    firstStringValue(options, [
+      "resourceName",
+      "resource_name",
+      "resource",
+      "resourceId",
+      "resource_id",
+    ]) ??
+    (sanitizeProviderId(providerId) === "azure-cognitive-services"
+      ? env.AZURE_COGNITIVE_SERVICES_RESOURCE_NAME
+      : env.AZURE_RESOURCE_NAME);
+
+  if (!resourceName?.trim()) return undefined;
+  return `https://${resourceName.trim()}.openai.azure.com/openai/v1`;
+}
+
 let modelsDevCache:
   | { at: number; entries: Map<string, ProviderRegistryEntry> }
   | undefined;
@@ -376,10 +412,15 @@ export function providerRegistryEntryFromMetadata(
     id === "cloudflare-ai-gateway"
       ? cloudflareAiGatewayBaseUrlFromOptions(source.options)
       : undefined;
+  const azureOpenAiBaseUrl = azureOpenAiBaseUrlFromOptions(id, source.options);
   const openAiCompatibleBaseUrl =
-    source.api ?? openAiCompatibleDefault?.baseUrl ?? cloudflareAiGatewayBaseUrl;
+    source.api ??
+    openAiCompatibleDefault?.baseUrl ??
+    cloudflareAiGatewayBaseUrl ??
+    azureOpenAiBaseUrl;
   const adapter =
-    id === "cloudflare-ai-gateway" && openAiCompatibleBaseUrl
+    ((id === "cloudflare-ai-gateway" || AZURE_OPENAI_PROVIDER_IDS.has(id)) &&
+      openAiCompatibleBaseUrl)
       ? "openai-compatible"
       : providerAdapterFromNpm(id, source.npm);
   const runtimeSupported = isRuntimeSupportedProvider(adapter);
@@ -410,12 +451,17 @@ export function providerRegistryEntryFromMetadata(
     openAiPathPrefix: openAiCompatibleDefault?.openAiPathPrefix,
     upstreamMode:
       adapter === "openai-compatible"
-        ? (openAiCompatibleDefault?.upstreamMode ?? "chat/completions")
+        ? (AZURE_OPENAI_PROVIDER_IDS.has(id)
+          ? "responses"
+          : (openAiCompatibleDefault?.upstreamMode ?? "chat/completions"))
         : undefined,
     compatibilityMode:
       adapter === "openai-compatible"
-        ? (openAiCompatibleDefault?.compatibilityMode ??
+        ? (AZURE_OPENAI_PROVIDER_IDS.has(id)
+          ? "responses"
+          : (openAiCompatibleDefault?.compatibilityMode ??
           "chat-completions-bridge")
+        )
         : undefined,
     tokenEnv: Array.isArray(source.env)
       ? source.env.filter((value): value is string => typeof value === "string")

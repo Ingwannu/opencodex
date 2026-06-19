@@ -262,6 +262,11 @@ function isCloudflareAiGatewayAccount(account: { providerId?: string }): boolean
   return String(account.providerId ?? "").toLowerCase() === "cloudflare-ai-gateway";
 }
 
+function isAzureOpenAiAccount(account: { providerId?: string }): boolean {
+  const providerId = String(account.providerId ?? "").toLowerCase();
+  return providerId === "azure" || providerId === "azure-cognitive-services";
+}
+
 function applyOpenAiCompatibleAuthHeaders(
   headers: Record<string, string>,
   account: Pick<Account, "accessToken" | "providerId">,
@@ -269,6 +274,9 @@ function applyOpenAiCompatibleAuthHeaders(
   if (isCloudflareAiGatewayAccount(account)) {
     delete headers.authorization;
     headers["cf-aig-authorization"] = `Bearer ${account.accessToken}`;
+  } else if (isAzureOpenAiAccount(account)) {
+    delete headers.authorization;
+    headers["api-key"] = account.accessToken;
   }
   return headers;
 }

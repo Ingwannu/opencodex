@@ -263,6 +263,22 @@ function cloudflareAiGatewayBaseUrlFromOptions(options = {}, env = process.env) 
   return `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(accountId.trim())}/${encodeURIComponent(gatewayId.trim())}/openai`;
 }
 
+const azureOpenAiProviderIds = new Set(["azure", "azure-cognitive-services"]);
+
+function azureOpenAiBaseUrlFromOptions(providerId, options = {}, env = process.env) {
+  const id = sanitizeProviderId(providerId);
+  if (!azureOpenAiProviderIds.has(id)) return undefined;
+  const explicit = firstStringValue(options, ["baseURL", "baseUrl", "base_url", "url", "endpoint"]);
+  if (explicit && /^https?:\/\//.test(explicit)) return explicit;
+  const resourceName =
+    firstStringValue(options, ["resourceName", "resource_name", "resource", "resourceId", "resource_id"]) ||
+    (id === "azure-cognitive-services"
+      ? env.AZURE_COGNITIVE_SERVICES_RESOURCE_NAME
+      : env.AZURE_RESOURCE_NAME);
+  if (!resourceName?.trim()) return undefined;
+  return `https://${resourceName.trim()}.openai.azure.com/openai/v1`;
+}
+
 function providerAdapterFromNpm(providerId, npmPackage) {
   const id = sanitizeProviderId(providerId);
   const npm = String(npmPackage || "").trim().toLowerCase();
@@ -297,10 +313,12 @@ function modelsDevProviderToPreset(providerId, source) {
     id === "cloudflare-ai-gateway"
       ? cloudflareAiGatewayBaseUrlFromOptions(source?.options)
       : undefined;
+  const azureOpenAiBaseUrl = azureOpenAiBaseUrlFromOptions(id, source?.options);
   const openAiCompatibleBaseUrl =
-    source?.api || openAiCompatibleDefault?.baseUrl || cloudflareAiGatewayBaseUrl;
+    source?.api || openAiCompatibleDefault?.baseUrl || cloudflareAiGatewayBaseUrl || azureOpenAiBaseUrl;
   const adapter =
-    id === "cloudflare-ai-gateway" && openAiCompatibleBaseUrl
+    ((id === "cloudflare-ai-gateway" || azureOpenAiProviderIds.has(id)) &&
+      openAiCompatibleBaseUrl)
       ? "openai-compatible"
       : providerAdapterFromNpm(id, source?.npm);
   const runtimeSupported = isRuntimeSupportedAdapter(adapter);
@@ -317,8 +335,8 @@ function modelsDevProviderToPreset(providerId, source) {
     providerDoc: source?.doc,
     baseUrl,
     openAiPathPrefix: openAiCompatibleDefault?.openAiPathPrefix,
-    upstreamMode: adapter === "openai-compatible" ? (openAiCompatibleDefault?.upstreamMode || "chat/completions") : undefined,
-    compatibilityMode: adapter === "openai-compatible" ? (openAiCompatibleDefault?.compatibilityMode || "chat-completions-bridge") : undefined,
+    upstreamMode: adapter === "openai-compatible" ? (azureOpenAiProviderIds.has(id) ? "responses" : (openAiCompatibleDefault?.upstreamMode || "chat/completions")) : undefined,
+    compatibilityMode: adapter === "openai-compatible" ? (azureOpenAiProviderIds.has(id) ? "responses" : (openAiCompatibleDefault?.compatibilityMode || "chat-completions-bridge")) : undefined,
     tokenEnv: Array.isArray(source?.env) ? source.env.filter((value) => typeof value === "string") : [],
     models: source?.models && typeof source.models === "object" ? source.models : undefined,
     runtimeSupported,

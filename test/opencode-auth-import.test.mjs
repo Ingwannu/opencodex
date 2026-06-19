@@ -223,3 +223,65 @@ test("imports Cloudflare AI Gateway from OpenCode config and env variables", () 
   assert.equal(cloudflare?.enabled, true);
   assert.ok(cloudflare?.providerModels?.["openai/gpt-5.1"]);
 });
+
+test("imports Azure OpenAI v1 endpoint from OpenCode config and env variables", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-azure-auth-"));
+  const storePath = path.join(dir, "accounts.json");
+  const authPath = path.join(dir, "auth.json");
+  const configPath = path.join(dir, "opencode.jsonc");
+
+  fs.writeFileSync(
+    authPath,
+    JSON.stringify(
+      {
+        azure: {
+          apiKey: "az-test-key",
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  fs.writeFileSync(
+    configPath,
+    `{
+      "provider": {
+        "azure": {
+          "options": {
+            "resourceName": "{env:AZURE_RESOURCE_NAME}"
+          },
+          "models": {
+            "gpt-5.1-prod": { "name": "GPT 5.1 Azure deployment" }
+          }
+        }
+      }
+    }`,
+  );
+
+  execFileSync(
+    process.execPath,
+    [cli, "auth", "import-opencode", authPath, "--config", configPath],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        AZURE_RESOURCE_NAME: "az-resource",
+        MULTICODEX_STORE_PATH: storePath,
+        MULTICODEX_DATA_DIR: dir,
+      },
+      encoding: "utf8",
+    },
+  );
+
+  const store = readStore(storePath);
+  const azure = store.accounts.find((account) => account.providerId === "azure");
+  assert.equal(azure?.provider, "openai-compatible");
+  assert.equal(azure?.providerAdapter, "openai-compatible");
+  assert.equal(azure?.providerLabel, "azure");
+  assert.equal(azure?.baseUrl, "https://az-resource.openai.azure.com/openai");
+  assert.equal(azure?.upstreamMode, "responses");
+  assert.equal(azure?.compatibilityMode, "responses");
+  assert.equal(azure?.accessToken, "az-test-key");
+  assert.equal(azure?.enabled, true);
+  assert.ok(azure?.providerModels?.["gpt-5.1-prod"]);
+});

@@ -1008,6 +1008,18 @@ test("OpenCode auth import preserves OAuth access refresh and expiry fields", as
   assert.ok(gitlab?.providerModels?.["duo-chat-sonnet-4-5"]);
 });
 
+test("GitLab Duo directory provider resolves to GitLab native adapter", async () => {
+  const entry = await resolveProviderRegistryEntry("gitlab-duo");
+
+  assert.equal(entry.id, "gitlab");
+  assert.equal(entry.providerId, "gitlab");
+  assert.equal(entry.provider, "gitlab");
+  assert.equal(entry.providerAdapter, "gitlab");
+  assert.equal(entry.runtimeSupported, true);
+  assert.equal(entry.baseUrl, "https://gitlab.com");
+  assert.deepEqual(entry.tokenEnv, ["GITLAB_TOKEN"]);
+});
+
 test("OpenCode auth import accepts stored credential records", async () => {
   const providerConfig = new Map([
     [
@@ -1738,6 +1750,20 @@ test("Azure registry metadata stays OpenAI-compatible when resource env is missi
   assert.equal(entry.compatibilityMode, "responses");
   assert.deepEqual(entry.tokenEnv, ["AZURE_RESOURCE_NAME", "AZURE_API_KEY"]);
   assert.ok(entry.models?.["gpt-5.1-prod"]);
+});
+
+test("Azure OpenAI directory provider resolves to OpenAI-compatible responses route", async () => {
+  const entry = await resolveProviderRegistryEntry("azure-openai");
+
+  assert.equal(entry.id, "azure");
+  assert.equal(entry.providerId, "azure");
+  assert.equal(entry.provider, "openai-compatible");
+  assert.equal(entry.providerAdapter, "openai-compatible");
+  assert.equal(entry.runtimeSupported, false);
+  assert.equal(entry.baseUrl, undefined);
+  assert.equal(entry.upstreamMode, "responses");
+  assert.equal(entry.compatibilityMode, "responses");
+  assert.deepEqual(entry.tokenEnv, ["AZURE_RESOURCE_NAME", "AZURE_API_KEY"]);
 });
 
 test("OpenCode auth import derives Azure endpoint from credential metadata", async () => {

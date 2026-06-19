@@ -387,7 +387,9 @@ const BUILTIN_PROVIDERS: ProviderRegistryEntry[] = [
 const PROVIDER_ALIASES: Record<string, string> = {
   "302.ai": "302ai",
   "302-ai": "302ai",
+  "azure-openai": "azure",
   chatgpt: "openai-chatgpt",
+  "gitlab-duo": "gitlab",
   "io.net": "io-net",
   "llm-gateway": "llmgateway",
   openai: "openai-api",

@@ -31,6 +31,7 @@ export function normalizeProvider(
   if (provider === "zai") return "zai";
   if (provider === "anthropic") return "anthropic";
   if (provider === "google") return "google";
+  if (provider === "cohere") return "cohere";
   if (provider === "azure") return "azure";
   if (provider === "amazon-bedrock") return "amazon-bedrock";
   if (provider === "vertex") return "vertex";
@@ -47,7 +48,8 @@ export function isRuntimeRoutableProvider(
     provider === "mistral" ||
     provider === "zai" ||
     provider === "anthropic" ||
-    provider === "google"
+    provider === "google" ||
+    provider === "cohere"
   );
 }
 

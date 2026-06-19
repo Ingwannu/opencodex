@@ -175,6 +175,20 @@ const BUILTIN_PROVIDERS: ProviderRegistryEntry[] = [
     runtimeSupported: true,
   },
   {
+    id: "cohere",
+    providerId: "cohere",
+    label: "Cohere",
+    provider: "cohere",
+    providerAdapter: "cohere",
+    providerNpm: "@ai-sdk/cohere",
+    providerSource: "builtin",
+    providerDoc: "https://docs.cohere.com/docs/models",
+    baseUrl: "https://api.cohere.com",
+    tokenEnv: ["COHERE_API_KEY"],
+    authType: "api-key",
+    runtimeSupported: true,
+  },
+  {
     id: "openai-compatible",
     providerId: "openai-compatible",
     label: "Generic OpenAI-compatible",
@@ -275,6 +289,7 @@ export function providerAdapterFromNpm(
   if (npm === "@ai-sdk/mistral") return "mistral";
   if (npm === "@ai-sdk/anthropic") return "anthropic";
   if (npm === "@ai-sdk/google") return "google";
+  if (npm === "@ai-sdk/cohere") return "cohere";
   if (npm === "@ai-sdk/azure") return "azure";
   if (npm === "@ai-sdk/amazon-bedrock") return "amazon-bedrock";
   if (npm.includes("google-vertex")) return "vertex";
@@ -288,7 +303,8 @@ export function isRuntimeSupportedProvider(adapter: ProviderAdapter): adapter is
     adapter === "mistral" ||
     adapter === "zai" ||
     adapter === "anthropic" ||
-    adapter === "google"
+    adapter === "google" ||
+    adapter === "cohere"
   );
 }
 
@@ -317,6 +333,8 @@ export function providerRegistryEntryFromMetadata(
               ? "https://api.anthropic.com"
               : adapter === "google"
                 ? "https://generativelanguage.googleapis.com"
+                : adapter === "cohere"
+                  ? "https://api.cohere.com"
                 : undefined),
         );
 

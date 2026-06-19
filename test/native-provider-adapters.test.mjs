@@ -144,10 +144,75 @@ test("Google adapter converts chat payloads, responses, and model lists", () => 
   ]);
 });
 
-test("OpenCode auth import enables native Anthropic and Google adapters", async () => {
+test("Cohere adapter converts chat payloads, responses, and model lists", () => {
+  const request = buildNativeProviderRequest(
+    "cohere",
+    { accessToken: "co-key" },
+    {
+      model: "command-a-03-2025",
+      messages: [
+        { role: "system", content: "Be concise." },
+        { role: "user", content: "Hello" },
+      ],
+      max_tokens: 64,
+      temperature: 0.2,
+      stream: true,
+    },
+    false,
+  );
+
+  assert.equal(request.path, "/v2/chat");
+  assert.equal(request.headers.authorization, "Bearer co-key");
+  assert.equal(request.body.stream, false);
+  assert.equal(request.body.max_tokens, 64);
+  assert.deepEqual(request.body.messages, [
+    { role: "system", content: "Be concise." },
+    { role: "user", content: "Hello" },
+  ]);
+
+  const converted = convertNativeProviderResponse(
+    "cohere",
+    {
+      id: "co_1",
+      finish_reason: "COMPLETE",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Hi Cohere" }],
+      },
+      usage: {
+        tokens: { input_tokens: 5, output_tokens: 2 },
+      },
+    },
+    "chat.completions",
+    "command-a-03-2025",
+  );
+
+  assert.equal(converted.object, "chat.completion");
+  assert.equal(converted.choices[0].message.content, "Hi Cohere");
+  assert.equal(converted.usage.total_tokens, 7);
+
+  const models = nativeProviderModelsFromResponse("cohere", {
+    models: [
+      {
+        name: "command-a-03-2025",
+        context_length: 256000,
+      },
+    ],
+  });
+  assert.deepEqual(models, [
+    {
+      id: "command-a-03-2025",
+      context_window: 256000,
+      max_output_tokens: null,
+    },
+  ]);
+});
+
+test("OpenCode auth import enables native Anthropic, Google, and Cohere adapters", async () => {
   const accounts = await accountsFromOpenCodeAuthPayload({
     anthropic: { apiKey: "ant-key" },
     google: { apiKey: "gem-key" },
+    cohere: { apiKey: "co-key" },
   });
   const byId = new Map(accounts.map((account) => [account.providerId, account]));
 
@@ -155,6 +220,9 @@ test("OpenCode auth import enables native Anthropic and Google adapters", async 
   assert.equal(byId.get("anthropic")?.enabled, true);
   assert.equal(byId.get("google")?.providerAdapter, "google");
   assert.equal(byId.get("google")?.enabled, true);
+  assert.equal(byId.get("cohere")?.providerAdapter, "cohere");
+  assert.equal(byId.get("cohere")?.baseUrl, "https://api.cohere.com");
+  assert.equal(byId.get("cohere")?.enabled, true);
 });
 
 test("OpenAI-compatible SDK providers are runtime-routable through the bridge", async () => {

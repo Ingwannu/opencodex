@@ -318,7 +318,7 @@ function accountBaseUrl(
   }
   if (provider === "mistral") return mistralBaseUrl;
   if (provider === "zai") return zaiBaseUrl;
-  if (provider === "anthropic" || provider === "google") {
+  if (provider === "anthropic" || provider === "google" || provider === "cohere") {
     return trimTrailingSlash(
       String(account.baseUrl ?? nativeProviderDefaultBaseUrl(provider)),
     );
@@ -340,7 +340,7 @@ function resolveUpstreamMode(
   if (isResponsesCompactPath) return "responses";
   if (account.upstreamMode) return account.upstreamMode;
   const provider = normalizeProvider(account);
-  if (provider === "anthropic" || provider === "google") {
+  if (provider === "anthropic" || provider === "google" || provider === "cohere") {
     return "chat/completions";
   }
   if (provider === "openai-compatible") {
@@ -447,6 +447,14 @@ function inferProviderFromModel(
 
   if (key.startsWith("claude")) return "anthropic";
   if (key.startsWith("gemini")) return "google";
+  if (
+    key.startsWith("command-") ||
+    key.startsWith("c4ai-") ||
+    key.startsWith("aya-") ||
+    key.startsWith("north-")
+  ) {
+    return "cohere";
+  }
 
   return "openai";
 }
@@ -607,7 +615,9 @@ async function discoverModels(
           const request = buildNativeProviderModelsRequest(provider, account);
           url = `${baseUrl}${request.path}`;
           Object.assign(headers, request.headers);
-          delete headers.authorization;
+          if (!("authorization" in request.headers)) {
+            delete headers.authorization;
+          }
         } else {
           const baseUrl = accountBaseUrl(
             account,
@@ -963,6 +973,7 @@ function buildRoutingCandidates(
       "zai",
       "anthropic",
       "google",
+      "cohere",
     ];
     for (const p of tryProviders) {
       if (!isModelExcludedFromProvider(requestModel, p)) {

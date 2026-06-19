@@ -173,6 +173,18 @@ const authProviderPresets = {
     tokenEnv: ["GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY"],
     runtimeSupported: true,
   },
+  cohere: {
+    label: "Cohere",
+    provider: "cohere",
+    providerId: "cohere",
+    providerAdapter: "cohere",
+    providerNpm: "@ai-sdk/cohere",
+    providerSource: "builtin",
+    providerDoc: "https://docs.cohere.com/docs/models",
+    baseUrl: "https://api.cohere.com",
+    tokenEnv: ["COHERE_API_KEY"],
+    runtimeSupported: true,
+  },
   "openai-compatible": {
     label: "Generic OpenAI-compatible endpoint",
     provider: "openai-compatible",
@@ -238,6 +250,7 @@ function providerAdapterFromNpm(providerId, npmPackage) {
   if (npm === "@ai-sdk/mistral") return "mistral";
   if (npm === "@ai-sdk/anthropic") return "anthropic";
   if (npm === "@ai-sdk/google") return "google";
+  if (npm === "@ai-sdk/cohere") return "cohere";
   if (npm === "@ai-sdk/azure") return "azure";
   if (npm === "@ai-sdk/amazon-bedrock") return "amazon-bedrock";
   if (npm.includes("google-vertex")) return "vertex";
@@ -245,7 +258,7 @@ function providerAdapterFromNpm(providerId, npmPackage) {
 }
 
 function isRuntimeSupportedAdapter(adapter) {
-  return adapter === "openai" || adapter === "openai-compatible" || adapter === "mistral" || adapter === "zai" || adapter === "anthropic" || adapter === "google";
+  return adapter === "openai" || adapter === "openai-compatible" || adapter === "mistral" || adapter === "zai" || adapter === "anthropic" || adapter === "google" || adapter === "cohere";
 }
 
 function providerForAdapter(providerId, adapter) {
@@ -259,7 +272,7 @@ function modelsDevProviderToPreset(providerId, source) {
   const openAiCompatibleDefault = openAiCompatibleSdkProviderDefaults[id];
   const baseUrl = adapter === "openai-compatible"
     ? normalizeOpenAiCompatibleBaseUrl(source?.api || openAiCompatibleDefault?.baseUrl)
-    : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : undefined));
+    : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : adapter === "cohere" ? "https://api.cohere.com" : undefined));
   return {
     label: source?.name || id,
     provider: providerForAdapter(id, adapter),

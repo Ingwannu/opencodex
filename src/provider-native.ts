@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Account } from "./types.js";
 
-export type NativeProviderId = "anthropic" | "google";
+export type NativeProviderId = "anthropic" | "google" | "cohere";
 export type NativeProviderResponseShape = "chat.completions" | "responses";
 
 type NativeProviderRequest = {
@@ -20,13 +20,14 @@ const ANTHROPIC_VERSION =
   process.env.ANTHROPIC_VERSION ?? "2023-06-01";
 
 export function isNativeProvider(provider: string): provider is NativeProviderId {
-  return provider === "anthropic" || provider === "google";
+  return provider === "anthropic" || provider === "google" || provider === "cohere";
 }
 
 export function nativeProviderDefaultBaseUrl(
   provider: NativeProviderId,
 ): string {
   if (provider === "anthropic") return "https://api.anthropic.com";
+  if (provider === "cohere") return "https://api.cohere.com";
   return "https://generativelanguage.googleapis.com";
 }
 
@@ -73,6 +74,15 @@ function outputLimit(payload: Record<string, unknown>): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 4096;
 }
 
+function optionalOutputLimit(payload: Record<string, unknown>): number | undefined {
+  const raw =
+    payload.max_tokens ??
+    payload.max_completion_tokens ??
+    payload.max_output_tokens;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+}
+
 function finishReasonFromAnthropic(reason: unknown): string {
   if (reason === "end_turn") return "stop";
   if (reason === "max_tokens") return "length";
@@ -85,6 +95,15 @@ function finishReasonFromGoogle(reason: unknown): string {
   if (reason === "STOP") return "stop";
   if (reason === "SAFETY") return "content_filter";
   return typeof reason === "string" && reason ? String(reason).toLowerCase() : "stop";
+}
+
+function finishReasonFromCohere(reason: unknown): string {
+  const normalized = String(reason ?? "").toLowerCase();
+  if (normalized === "complete") return "stop";
+  if (normalized === "max_tokens") return "length";
+  if (normalized === "tool_call") return "tool_calls";
+  if (normalized === "stop_sequence") return "stop";
+  return normalized || "stop";
 }
 
 function usageFromAnthropic(usage: unknown) {
@@ -108,6 +127,19 @@ function usageFromGoogle(usage: unknown) {
     prompt_tokens: prompt,
     completion_tokens: completion,
     total_tokens: total,
+  };
+}
+
+function usageFromCohere(usage: unknown) {
+  const u = usage && typeof usage === "object" ? (usage as Record<string, any>) : {};
+  const tokens = u.tokens && typeof u.tokens === "object" ? u.tokens : {};
+  const billed = u.billed_units && typeof u.billed_units === "object" ? u.billed_units : {};
+  const prompt = Number(tokens.input_tokens ?? billed.input_tokens ?? 0) || 0;
+  const completion = Number(tokens.output_tokens ?? billed.output_tokens ?? 0) || 0;
+  return {
+    prompt_tokens: prompt,
+    completion_tokens: completion,
+    total_tokens: prompt + completion,
   };
 }
 
@@ -237,6 +269,50 @@ function buildGooglePayload(payload: Record<string, unknown>) {
   return body;
 }
 
+function buildCoherePayload(payload: Record<string, unknown>) {
+  const messages = Array.isArray(payload.messages)
+    ? (payload.messages as Array<Record<string, unknown>>)
+    : [];
+  const body: Record<string, unknown> = {
+    model: payload.model,
+    messages: messages.length
+      ? messages.map((message) => ({
+          role:
+            message.role === "assistant" ||
+            message.role === "system" ||
+            message.role === "tool"
+              ? message.role
+              : "user",
+          content: textFromContent(message.content),
+        }))
+      : [{ role: "user", content: " " }],
+    stream: false,
+  };
+  const maxTokens = optionalOutputLimit(payload);
+  if (maxTokens !== undefined) body.max_tokens = maxTokens;
+  if (typeof payload.temperature === "number") body.temperature = payload.temperature;
+  if (Array.isArray(payload.stop)) body.stop_sequences = payload.stop;
+  if (Array.isArray(payload.tools)) {
+    body.tools = payload.tools
+      .map((tool: any) => {
+        const fn = tool?.function ?? tool;
+        if (!fn?.name) return null;
+        return {
+          type: "function",
+          function: {
+            name: fn.name,
+            description: fn.description,
+            parameters: fn.parameters ?? fn.input_schema ?? { type: "object" },
+          },
+        };
+      })
+      .filter(Boolean);
+  }
+  if (payload.tool_choice === "required") body.tool_choice = "REQUIRED";
+  if (payload.tool_choice === "none") body.tool_choice = "NONE";
+  return body;
+}
+
 export function buildNativeProviderRequest(
   provider: NativeProviderId,
   account: Pick<Account, "accessToken">,
@@ -253,6 +329,18 @@ export function buildNativeProviderRequest(
         "anthropic-version": ANTHROPIC_VERSION,
       },
       body: buildAnthropicPayload(payload),
+    };
+  }
+
+  if (provider === "cohere") {
+    return {
+      path: "/v2/chat",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        authorization: `Bearer ${account.accessToken}`,
+      },
+      body: buildCoherePayload(payload),
     };
   }
 
@@ -279,6 +367,15 @@ export function buildNativeProviderModelsRequest(
         accept: "application/json",
         "x-api-key": account.accessToken,
         "anthropic-version": ANTHROPIC_VERSION,
+      },
+    };
+  }
+  if (provider === "cohere") {
+    return {
+      path: "/v1/models?endpoint=chat&page_size=1000",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${account.accessToken}`,
       },
     };
   }
@@ -309,6 +406,19 @@ function googleText(response: Record<string, unknown>): string {
     : [];
   return parts
     .map((part: any) => (typeof part?.text === "string" ? part.text : ""))
+    .join("");
+}
+
+function cohereText(response: Record<string, unknown>): string {
+  const message = response.message && typeof response.message === "object"
+    ? (response.message as Record<string, unknown>)
+    : {};
+  if (typeof message.content === "string") return message.content;
+  const content = Array.isArray(message.content)
+    ? message.content as Array<Record<string, unknown>>
+    : [];
+  return content
+    .map((part) => (typeof part.text === "string" ? part.text : ""))
     .join("");
 }
 
@@ -367,10 +477,16 @@ export function convertNativeProviderResponse(
       ? String(body.model ?? fallbackModel)
       : fallbackModel;
   const content =
-    provider === "anthropic" ? anthropicText(body) : googleText(body);
+    provider === "anthropic"
+      ? anthropicText(body)
+      : provider === "cohere"
+        ? cohereText(body)
+        : googleText(body);
   const finishReason =
     provider === "anthropic"
       ? finishReasonFromAnthropic(body.stop_reason)
+      : provider === "cohere"
+        ? finishReasonFromCohere(body.finish_reason)
       : finishReasonFromGoogle(
           Array.isArray(body.candidates)
             ? (body.candidates[0] as any)?.finishReason
@@ -379,6 +495,8 @@ export function convertNativeProviderResponse(
   const usage =
     provider === "anthropic"
       ? usageFromAnthropic(body.usage)
+      : provider === "cohere"
+        ? usageFromCohere(body.usage)
       : usageFromGoogle(body.usageMetadata);
 
   if (shape === "responses") return responseObject(model, content, usage);
@@ -401,6 +519,23 @@ export function nativeProviderModelsFromResponse(
           : null,
         max_output_tokens: typeof entry.max_tokens === "number"
           ? entry.max_tokens
+          : null,
+      }))
+      .filter((entry) => entry.id);
+  }
+
+  if (provider === "cohere") {
+    const models = Array.isArray(body.models)
+      ? body.models as Array<Record<string, unknown>>
+      : [];
+    return models
+      .map((entry) => ({
+        id: String(entry.name ?? entry.id ?? "").trim(),
+        context_window: typeof entry.context_length === "number"
+          ? entry.context_length
+          : null,
+        max_output_tokens: typeof entry.max_output_tokens === "number"
+          ? entry.max_output_tokens
           : null,
       }))
       .filter((entry) => entry.id);

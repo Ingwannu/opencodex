@@ -47,6 +47,16 @@ async function waitForHealth(port) {
   throw new Error(`server on ${port} did not become healthy`);
 }
 
+async function closeServer(server) {
+  if (typeof server.closeAllConnections === "function") {
+    server.closeAllConnections();
+  }
+  await Promise.race([
+    new Promise((resolve) => server.close(resolve)),
+    new Promise((resolve) => setTimeout(resolve, 2_000)),
+  ]);
+}
+
 async function withProxy(accounts, fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-proxy-"));
   const portServer = http.createServer((_req, res) => {
@@ -80,13 +90,21 @@ async function withProxy(accounts, fn) {
   child.stderr.on("data", (chunk) => {
     stderr += String(chunk);
   });
+  const childExit = new Promise((resolve) => child.once("exit", resolve));
 
   try {
     await waitForHealth(port);
     await fn(`http://127.0.0.1:${port}`);
   } finally {
     child.kill("SIGTERM");
-    await new Promise((resolve) => child.once("exit", resolve));
+    const exited = await Promise.race([
+      childExit.then(() => true),
+      new Promise((resolve) => setTimeout(() => resolve(false), 2_000)),
+    ]);
+    if (!exited) {
+      child.kill("SIGKILL");
+      await childExit;
+    }
     fs.rmSync(dir, { recursive: true, force: true });
   }
 
@@ -156,7 +174,7 @@ test("proxy routes Anthropic chat completions through native Messages API", asyn
       },
     );
   } finally {
-    await new Promise((resolve) => upstream.close(resolve));
+    await closeServer(upstream);
   }
 });
 
@@ -225,7 +243,90 @@ test("proxy routes Google responses through native generateContent API", async (
       },
     );
   } finally {
-    await new Promise((resolve) => upstream.close(resolve));
+    await closeServer(upstream);
+  }
+});
+
+test("proxy routes Cohere chat completions through native v2 chat API", async () => {
+  let capturedRequest;
+  let capturedModelsAuth;
+  let capturedChatAuth;
+  const upstream = http.createServer(async (req, res) => {
+    if (
+      req.method === "GET" &&
+      req.url === "/v1/models?endpoint=chat&page_size=1000"
+    ) {
+      capturedModelsAuth = req.headers.authorization;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          models: [{ name: "command-smoke", context_length: 12345 }],
+        }),
+      );
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v2/chat") {
+      capturedRequest = await readJson(req);
+      capturedChatAuth = req.headers.authorization;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "co_smoke",
+          finish_reason: "COMPLETE",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "Cohere OK" }],
+          },
+          usage: {
+            tokens: { input_tokens: 5, output_tokens: 2 },
+          },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "cohere-smoke",
+          provider: "cohere",
+          providerId: "cohere",
+          providerAdapter: "cohere",
+          accessToken: "co-smoke",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "command-smoke",
+            messages: [
+              { role: "system", content: "Be concise." },
+              { role: "user", content: "Hello" },
+            ],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.choices[0].message.content, "Cohere OK");
+        assert.equal(capturedModelsAuth, "Bearer co-smoke");
+        assert.equal(capturedChatAuth, "Bearer co-smoke");
+        assert.equal(capturedRequest.model, "command-smoke");
+        assert.deepEqual(capturedRequest.messages, [
+          { role: "system", content: "Be concise." },
+          { role: "user", content: "Hello" },
+        ]);
+      },
+    );
+  } finally {
+    await closeServer(upstream);
   }
 });
 
@@ -295,7 +396,7 @@ test("proxy preserves OpenAI-compatible base paths that already contain /v1", as
       },
     );
   } finally {
-    await new Promise((resolve) => upstream.close(resolve));
+    await closeServer(upstream);
   }
 });
 
@@ -375,7 +476,7 @@ test("proxy exposes configured OpenCode models when upstream model listing is un
       },
     );
   } finally {
-    await new Promise((resolve) => upstream.close(resolve));
+    await closeServer(upstream);
   }
 });
 
@@ -450,6 +551,6 @@ test("proxy routes Perplexity Sonar compatibility without a /v1 prefix", async (
       },
     );
   } finally {
-    await new Promise((resolve) => upstream.close(resolve));
+    await closeServer(upstream);
   }
 });

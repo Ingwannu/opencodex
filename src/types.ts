@@ -4,7 +4,8 @@ export type RouteProviderId =
   | "mistral"
   | "zai"
   | "anthropic"
-  | "google";
+  | "google"
+  | "cohere";
 export type ProviderAdapter =
   | RouteProviderId
   | "azure"

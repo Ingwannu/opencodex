@@ -43,6 +43,9 @@ opencodex update
 opencodex uninstall
 ```
 
+Release status and next work are tracked in
+[docs/V0_STATUS_AND_NEXT.md](./docs/V0_STATUS_AND_NEXT.md).
+
 <p align="center">
 <a href="https://github.com/Ingwannu/opencodex/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/Ingwannu/opencodex?style=for-the-badge"/></a>
   <a href="https://github.com/Ingwannu/opencodex/network/members"><img alt="GitHub forks" src="https://img.shields.io/github/forks/Ingwannu/opencodex?style=for-the-badge"/></a>

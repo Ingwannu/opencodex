@@ -42,7 +42,7 @@
     "codex:uninstall": "node bin/codex-multicodex.js uninstall",
     "codex:auth": "node bin/codex-multicodex.js auth",
     "codex:doctor": "node bin/codex-multicodex.js doctor",
-    "test": "npm run build:api && node --test",
+    "test": "npm run build:api && node --test test/*.test.mjs && node --import tsx --test test/*.test.ts",
     "dev": "tsx watch src/server.ts",
     "build:api": "tsc -p tsconfig.json",
     "build:web": "npm --prefix web run build",

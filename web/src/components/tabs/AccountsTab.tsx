@@ -5,6 +5,10 @@ import type {
   TraceStats,
 } from "../../types";
 import React, { useEffect, useState } from "react";
+import {
+  describeProviderAuth,
+  isAuthOnlyAccount,
+} from "../../lib/account-ui";
 import { fmt, maskEmail, maskId } from "../../lib/ui";
 
 import { Metric } from "../Metric";
@@ -170,6 +174,7 @@ export function AccountsTab(props: Props) {
   }, [providers]);
 
   const selectedProvider = providerOptions.find((entry) => entry.id === provider);
+  const selectedProviderAuth = describeProviderAuth(selectedProvider);
 
   useEffect(() => {
     const closeMenu = () => setOpenMenu(null);
@@ -532,13 +537,7 @@ export function AccountsTab(props: Props) {
   const zaiCount = accounts.filter(
     (account) => (account.providerAdapter ?? account.provider) === "zai",
   ).length;
-  const authOnlyCount = accounts.filter(
-    (account) =>
-      account.providerAdapter &&
-      !["openai", "openai-compatible", "mistral", "zai", "anthropic", "google"].includes(
-        account.providerAdapter,
-      ),
-  ).length;
+  const authOnlyCount = accounts.filter(isAuthOnlyAccount).length;
   const blockedCount = accounts.filter(
     (account) => activeModelBlocks(account).length > 0,
   ).length;
@@ -718,6 +717,11 @@ export function AccountsTab(props: Props) {
                           adapter: {a.providerAdapter}
                         </span>
                       )}
+                      {a.providerAuthEnv?.length ? (
+                        <span className="mono muted">
+                          env: {a.providerAuthEnv.join(", ")}
+                        </span>
+                      ) : null}
                     </div>
                   </td>
                   <td>
@@ -741,6 +745,9 @@ export function AccountsTab(props: Props) {
                       >
                         {a.enabled ? "Enabled" : "Disabled"}
                       </span>
+                      {isAuthOnlyAccount(a) && (
+                        <span className="badge badge-warn">Auth-only</span>
+                      )}
                       {modelBlocks.map(([model, block]) => (
                         <span className="badge badge-warn" key={model}>
                           {`${model} blocked until ${fmt(block.until)}`}
@@ -894,6 +901,79 @@ export function AccountsTab(props: Props) {
                   ))}
                 </select>
               </label>
+              {selectedProviderAuth && (
+                <div className="provider-guidance">
+                  <div className="provider-guidance-head">
+                    <span
+                      className={
+                        selectedProviderAuth.statusTone === "live"
+                          ? "badge badge-live"
+                          : "badge badge-warn"
+                      }
+                    >
+                      {selectedProviderAuth.statusLabel}
+                    </span>
+                    <span className="badge">
+                      {selectedProviderAuth.authLabel}
+                    </span>
+                    {selectedProviderAuth.modelsLabel && (
+                      <span className="badge">
+                        {selectedProviderAuth.modelsLabel}
+                      </span>
+                    )}
+                  </div>
+                  <div className="provider-guidance-grid">
+                    <div>
+                      <span className="info-label">Endpoint</span>
+                      <span className="mono">
+                        {selectedProviderAuth.endpointLabel}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="info-label">Adapter</span>
+                      <span className="mono">
+                        {selectedProviderAuth.adapterLabel}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="info-label">Source</span>
+                      <span className="mono">
+                        {selectedProviderAuth.sourceLabel}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="info-label">Auth env</span>
+                      <span className="provider-env-list">
+                        {selectedProviderAuth.envVars.length ? (
+                          selectedProviderAuth.envVars.map((env) => (
+                            <span className="env-chip mono" key={env}>
+                              {env}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="muted">No provider env listed</span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="provider-guidance-foot">
+                    {selectedProviderAuth.packageName && (
+                      <span className="mono muted">
+                        package: {selectedProviderAuth.packageName}
+                      </span>
+                    )}
+                    {selectedProviderAuth.docsUrl && (
+                      <a
+                        href={selectedProviderAuth.docsUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Provider docs
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
               <label>
                 Email (optional)
                 <input

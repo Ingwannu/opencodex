@@ -1,0 +1,80 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  describeProviderAuth,
+  formatProviderEndpoint,
+  isAuthOnlyAccount,
+} from "../web/src/lib/account-ui";
+import type { Account, ProviderRegistryEntry } from "../web/src/types";
+
+test("isAuthOnlyAccount flags imported provider accounts disabled by runtime errors", () => {
+  const account: Account = {
+    id: "snowflake",
+    provider: "snowflake-cortex",
+    providerId: "snowflake-cortex",
+    providerAdapter: "openai-compatible",
+    providerLabel: "Snowflake Cortex",
+    providerSource: "opencode",
+    providerAuthEnv: ["SNOWFLAKE_ACCOUNT", "SNOWFLAKE_CORTEX_TOKEN"],
+    enabled: false,
+    state: {
+      lastError:
+        "Provider endpoint contains unresolved environment variables: SNOWFLAKE_ACCOUNT",
+    },
+  };
+
+  assert.equal(isAuthOnlyAccount(account), true);
+});
+
+test("isAuthOnlyAccount does not count a user-disabled routable account", () => {
+  const account: Account = {
+    id: "custom-openai-compatible",
+    provider: "openai-compatible",
+    providerAdapter: "openai-compatible",
+    enabled: false,
+    baseUrl: "https://api.example.test/v1",
+    accessToken: "sk-test",
+  };
+
+  assert.equal(isAuthOnlyAccount(account), false);
+});
+
+test("describeProviderAuth exposes OpenCode metadata needed for the add-account UI", () => {
+  const provider: ProviderRegistryEntry = {
+    id: "databricks",
+    providerId: "databricks",
+    label: "Databricks",
+    provider: "databricks",
+    providerAdapter: "openai-compatible",
+    providerNpm: "@ai-sdk/openai-compatible",
+    providerSource: "models.dev",
+    providerDoc: "https://opencode.ai/docs/providers/",
+    baseUrl: "https://dbc.example.test/serving-endpoints",
+    tokenEnv: ["DATABRICKS_TOKEN", "DATABRICKS_HOST"],
+    authType: "api-key",
+    runtimeSupported: false,
+    modelsCount: 4,
+  };
+
+  assert.deepEqual(describeProviderAuth(provider), {
+    statusLabel: "Auth-only",
+    statusTone: "warn",
+    authLabel: "API key",
+    envVars: ["DATABRICKS_TOKEN", "DATABRICKS_HOST"],
+    adapterLabel: "openai-compatible",
+    sourceLabel: "models.dev",
+    packageName: "@ai-sdk/openai-compatible",
+    docsUrl: "https://opencode.ai/docs/providers/",
+    endpointLabel: "https://dbc.example.test/serving-endpoints",
+    modelsLabel: "4 models",
+  });
+});
+
+test("formatProviderEndpoint distinguishes missing and configured endpoints", () => {
+  assert.equal(formatProviderEndpoint(undefined), "Endpoint not configured");
+  assert.equal(
+    formatProviderEndpoint("https://api.example.test/v1/"),
+    "https://api.example.test/v1/",
+  );
+});

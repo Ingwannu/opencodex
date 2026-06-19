@@ -747,6 +747,93 @@ test("proxy exposes configured model keys while routing metadata ids upstream", 
   }
 });
 
+test("proxy forwards OpenCode provider option headers to OpenAI-compatible upstreams", async () => {
+  let capturedModelsHeaders;
+  let capturedChatHeaders;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      capturedModelsHeaders = req.headers;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "header-model" }] }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/chat/completions") {
+      capturedChatHeaders = req.headers;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl-provider-headers",
+          object: "chat.completion",
+          created: 1,
+          model: "header-model",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Headers OK" },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "provider-headers-smoke",
+          provider: "openai-compatible",
+          providerId: "provider-headers",
+          providerAdapter: "openai-compatible",
+          accessToken: "configured-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          providerOptions: {
+            headers: {
+              "Helicone-Auth": "Bearer helicone-smoke",
+              "X-Provider-Route": "beta",
+            },
+          },
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          providerModels: {
+            "header-model": { name: "Header Model" },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const modelsRes = await fetch(`${baseUrl}/v1/models`);
+        const modelsJson = await modelsRes.json();
+        assert.equal(modelsRes.status, 200, JSON.stringify(modelsJson));
+        assert.equal(capturedModelsHeaders.authorization, "Bearer configured-key");
+        assert.equal(capturedModelsHeaders["helicone-auth"], "Bearer helicone-smoke");
+        assert.equal(capturedModelsHeaders["x-provider-route"], "beta");
+
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "header-model",
+            messages: [{ role: "user", content: "Hello" }],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+        assert.equal(json.choices[0].message.content, "Headers OK");
+        assert.equal(capturedChatHeaders.authorization, "Bearer configured-key");
+        assert.equal(capturedChatHeaders["helicone-auth"], "Bearer helicone-smoke");
+        assert.equal(capturedChatHeaders["x-provider-route"], "beta");
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy routes Perplexity Sonar compatibility without a /v1 prefix", async () => {
   let capturedRequest;
   const upstream = http.createServer(async (req, res) => {

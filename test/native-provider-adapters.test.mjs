@@ -2247,7 +2247,8 @@ test("OpenCode config secrets create accounts without auth.json entries", async 
         "options": {
           "baseURL": "https://headergenie.example/v1",
           "headers": {
-            "Authorization": "Bearer header-secret"
+            "Authorization": "Bearer header-secret",
+            "X-Provider-Route": "beta"
           }
         },
         "models": {
@@ -2272,6 +2273,10 @@ test("OpenCode config secrets create accounts without auth.json entries", async 
   assert.ok(byId.get("fhgenie")?.providerModels?.["Kimi-K2-Thinking"]);
   assert.equal(byId.get("headergenie")?.accessToken, "header-secret");
   assert.equal(byId.get("headergenie")?.baseUrl, "https://headergenie.example");
+  assert.deepEqual(byId.get("headergenie")?.providerOptions?.headers, {
+    Authorization: "Bearer header-secret",
+    "X-Provider-Route": "beta",
+  });
   assert.ok(byId.get("headergenie")?.providerModels?.["glm-5.2"]);
 });
 

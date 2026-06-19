@@ -321,6 +321,34 @@ function cloudflareWorkersAiGatewayId(
   return cloudflareGatewayIdFromOptions(account) ?? "default";
 }
 
+function setHeaderCaseInsensitive(
+  headers: Record<string, string>,
+  key: string,
+  value: string,
+): void {
+  const existing = Object.keys(headers).find(
+    (name) => name.toLowerCase() === key.toLowerCase(),
+  );
+  if (existing && existing !== key) delete headers[existing];
+  headers[key] = value;
+}
+
+function applyProviderOptionHeaders(
+  headers: Record<string, string>,
+  account: Pick<Account, "providerOptions">,
+): void {
+  const raw = account.providerOptions?.headers;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const name = key.trim();
+    if (!name || isHopByHopHeader(name)) continue;
+    if (typeof value === "string" && value.trim()) {
+      setHeaderCaseInsensitive(headers, name, value.trim());
+    }
+  }
+}
+
 function isAzureOpenAiAccount(account: { providerId?: string }): boolean {
   const providerId = String(account.providerId ?? "").toLowerCase();
   return providerId === "azure" || providerId === "azure-cognitive-services";
@@ -360,6 +388,7 @@ function applyOpenAiCompatibleAuthHeaders(
     delete headers.authorization;
     headers["api-key"] = account.accessToken;
   }
+  applyProviderOptionHeaders(headers, account);
   return headers;
 }
 

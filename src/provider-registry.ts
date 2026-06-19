@@ -46,6 +46,19 @@ type ModelsDevProvider = {
   options?: Record<string, unknown>;
 };
 
+const DISALLOWED_PROVIDER_OPTION_HEADERS = new Set([
+  "connection",
+  "content-length",
+  "host",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
+
 const BUILTIN_PROVIDERS: ProviderRegistryEntry[] = [
   {
     id: "openai-chatgpt",
@@ -596,6 +609,27 @@ function sourceOptionsCarrySecret(options: Record<string, unknown> | undefined):
       value.trim().length > 0 &&
       ["authorization", "x-api-key", "api-key"].includes(key.toLowerCase()),
   );
+}
+
+function providerHeadersFromOptions(
+  options: Record<string, unknown> | undefined,
+): Record<string, string> | undefined {
+  const headers = options?.headers;
+  if (!headers || typeof headers !== "object" || Array.isArray(headers)) {
+    return undefined;
+  }
+
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers as Record<string, unknown>)) {
+    const name = key.trim();
+    if (!name || DISALLOWED_PROVIDER_OPTION_HEADERS.has(name.toLowerCase())) {
+      continue;
+    }
+    if (typeof value === "string" && value.trim()) {
+      out[name] = value.trim();
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 function tokenEnvHasSecret(
@@ -1268,6 +1302,21 @@ export function providerRegistryEntryFromMetadata(
     !tokenEnvHasSecret(tokenEnv)
       ? "none"
       : "api-key";
+  const adapterProviderOptions =
+    adapter === "amazon-bedrock"
+      ? amazonBedrockProviderOptionsFromSource(source)
+      : adapter === "vertex" || adapter === "vertex-anthropic"
+        ? googleVertexProviderOptionsFromSource(source)
+      : adapter === "sap-ai-core"
+        ? sapAiCoreProviderOptionsFromSource(source)
+      : id === "cloudflare-ai-gateway" || id === "cloudflare-workers-ai"
+        ? cloudflareGatewayProviderOptionsFromSource(source)
+        : undefined;
+  const providerHeaders = providerHeadersFromOptions(source.options);
+  const providerOptions = {
+    ...(adapterProviderOptions ?? {}),
+    ...(providerHeaders ? { headers: providerHeaders } : {}),
+  };
 
   return {
     id,
@@ -1294,16 +1343,9 @@ export function providerRegistryEntryFromMetadata(
           "chat-completions-bridge")
         )
         : undefined,
-    providerOptions:
-      adapter === "amazon-bedrock"
-        ? amazonBedrockProviderOptionsFromSource(source)
-        : adapter === "vertex" || adapter === "vertex-anthropic"
-          ? googleVertexProviderOptionsFromSource(source)
-        : adapter === "sap-ai-core"
-          ? sapAiCoreProviderOptionsFromSource(source)
-        : id === "cloudflare-ai-gateway" || id === "cloudflare-workers-ai"
-          ? cloudflareGatewayProviderOptionsFromSource(source)
-          : undefined,
+    providerOptions: Object.keys(providerOptions).length
+      ? providerOptions
+      : undefined,
     tokenEnv,
     authType,
     runtimeSupported,

@@ -72,8 +72,8 @@ OpenCodex acts as an OpenAI-compatible gateway that lets you route requests acro
 - **Provider registry** from Models.dev with OpenCode-style provider IDs
 - **OpenCode auth import** from `~/.local/share/opencode/auth.json`, including
   custom provider endpoint metadata and provider-level `options.apiKey` /
-  `headers.Authorization` secrets from `opencode.json` / `opencode.jsonc`,
-  plus auth-free local OpenAI-compatible providers configured only in
+  `options.headers` secrets and custom upstream headers from `opencode.json` /
+  `opencode.jsonc`, plus auth-free local OpenAI-compatible providers configured only in
   `opencode.json` / `opencode.jsonc`
 - **Manual OpenAI-compatible connections** with custom `baseUrl` + API key
 - **Persistent account storage** across container restarts

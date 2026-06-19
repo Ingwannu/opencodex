@@ -71,9 +71,11 @@ import {
 } from "../../responses/payloads.js";
 import {
   AWS_BEDROCK_SIGV4_PLACEHOLDER,
+  GOOGLE_VERTEX_ADC_PLACEHOLDER,
   buildAwsSigV4Headers,
   buildGitLabDirectAccessRequest,
   buildGitLabProviderRequest,
+  buildGoogleOAuthTokenRequest,
   buildSapAiCoreDeploymentResolutionRequest,
   buildSapAiCoreProviderRequest,
   buildSapAiCoreTokenRequest,
@@ -87,6 +89,7 @@ import {
   nativeProviderModelsFromResponse,
   parseSapAiCoreServiceKey,
   resolveAwsBedrockCredentials,
+  resolveGoogleAuthCredentials,
   resolveSapAiCoreDeploymentIdFromResponse,
 } from "../../provider-native.js";
 import type { NativeProviderId } from "../../provider-native.js";
@@ -385,6 +388,16 @@ function accountUsesAwsBedrockSigV4(
   );
 }
 
+function accountUsesGoogleVertexAdc(
+  account: Pick<Account, "accessToken" | "provider" | "providerAdapter">,
+): boolean {
+  const provider = normalizeProvider(account);
+  return (
+    (provider === "vertex" || provider === "vertex-anthropic") &&
+    account.accessToken === GOOGLE_VERTEX_ADC_PLACEHOLDER
+  );
+}
+
 function signAwsBedrockHeadersForAccount(
   account: Pick<Account, "providerOptions">,
   input: {
@@ -405,6 +418,48 @@ function signAwsBedrockHeadersForAccount(
     body: input.body ?? "",
     credentials,
   });
+}
+
+async function mintGoogleVertexAccessTokenForAccount(
+  account: Pick<Account, "providerOptions">,
+): Promise<string> {
+  const credentials = resolveGoogleAuthCredentials(account.providerOptions);
+  if (!credentials) {
+    throw new Error("google-vertex ADC credentials were not found");
+  }
+  const tokenRequest = buildGoogleOAuthTokenRequest(credentials);
+  const response = await fetchCodexWithRetry(tokenRequest.url, {
+    method: "POST",
+    headers: tokenRequest.headers,
+    body: tokenRequest.body,
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `google-vertex oauth token ${response.status}: ${text.slice(0, 200)}`,
+    );
+  }
+  let json: Record<string, unknown>;
+  try {
+    json = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    throw new Error("google-vertex oauth token response was not JSON");
+  }
+  const token = typeof json.access_token === "string" ? json.access_token.trim() : "";
+  if (!token) {
+    throw new Error("google-vertex oauth token response did not include access_token");
+  }
+  return token;
+}
+
+async function googleVertexNativeAccount(
+  account: Account,
+): Promise<Account> {
+  if (!accountUsesGoogleVertexAdc(account)) return account;
+  return {
+    ...account,
+    accessToken: await mintGoogleVertexAccessTokenForAccount(account),
+  };
 }
 
 function resolveUpstreamMode(
@@ -702,7 +757,8 @@ async function discoverModels(
             zaiBaseUrl,
           );
           if (!baseUrl) continue;
-          const request = buildNativeProviderModelsRequest(provider, account);
+          const nativeAccount = await googleVertexNativeAccount(account);
+          const request = buildNativeProviderModelsRequest(provider, nativeAccount);
           url = `${baseUrl}${request.path}`;
           Object.assign(headers, request.headers);
           if (accountUsesAwsBedrockSigV4(account)) {
@@ -1722,9 +1778,10 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
               ? mistralCompactUpstreamPath
               : mistralUpstreamPath;
           } else if (isNativeProvider(candidate.provider)) {
+            const nativeAccount = await googleVertexNativeAccount(selected);
             const nativeRequest = buildNativeProviderRequest(
               candidate.provider,
-              selected,
+              nativeAccount,
               payloadToUpstream,
               clientRequestedStream,
             );

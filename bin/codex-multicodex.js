@@ -42,6 +42,7 @@ const WRAPPER_PATHS = {
 };
 const SHIM_MARKER = "codex-multicodex managed shim v1";
 const AWS_BEDROCK_SIGV4_PLACEHOLDER = "__opencodex_aws_sigv4__";
+const GOOGLE_VERTEX_ADC_PLACEHOLDER = "__opencodex_google_vertex_adc__";
 const DEFAULT_PROXY_MODELS = [
   "gpt-5.5",
   "gpt-5.4",
@@ -173,6 +174,60 @@ const authProviderPresets = {
     baseUrl: "https://generativelanguage.googleapis.com",
     tokenEnv: ["GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY"],
     runtimeSupported: true,
+  },
+  "google-vertex": {
+    label: "Google Vertex AI",
+    provider: "vertex",
+    providerId: "google-vertex",
+    providerAdapter: "vertex",
+    providerNpm: "@ai-sdk/google-vertex",
+    providerSource: "builtin",
+    providerDoc: "https://opencode.ai/docs/providers/",
+    baseUrl: vertexBaseUrlFromOptions(),
+    providerOptions: googleVertexProviderOptionsFromSource({
+      options: {
+        project: process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_VERTEX_PROJECT,
+        location: process.env.VERTEX_LOCATION || process.env.GOOGLE_VERTEX_LOCATION,
+        credentialsFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+      },
+    }),
+    tokenEnv: [
+      "GOOGLE_VERTEX_ACCESS_TOKEN",
+      "GOOGLE_ACCESS_TOKEN",
+      "GOOGLE_APPLICATION_CREDENTIALS",
+      "GOOGLE_CLOUD_PROJECT",
+      "GOOGLE_VERTEX_PROJECT",
+      "VERTEX_LOCATION",
+      "GOOGLE_VERTEX_LOCATION",
+    ],
+    runtimeSupported: Boolean(vertexBaseUrlFromOptions()),
+  },
+  "google-vertex-anthropic": {
+    label: "Google Vertex AI Anthropic",
+    provider: "vertex-anthropic",
+    providerId: "google-vertex-anthropic",
+    providerAdapter: "vertex-anthropic",
+    providerNpm: "@ai-sdk/google-vertex/anthropic",
+    providerSource: "builtin",
+    providerDoc: "https://opencode.ai/docs/providers/",
+    baseUrl: vertexBaseUrlFromOptions(),
+    providerOptions: googleVertexProviderOptionsFromSource({
+      options: {
+        project: process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_VERTEX_PROJECT,
+        location: process.env.VERTEX_LOCATION || process.env.GOOGLE_VERTEX_LOCATION,
+        credentialsFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+      },
+    }),
+    tokenEnv: [
+      "GOOGLE_VERTEX_ACCESS_TOKEN",
+      "GOOGLE_ACCESS_TOKEN",
+      "GOOGLE_APPLICATION_CREDENTIALS",
+      "GOOGLE_CLOUD_PROJECT",
+      "GOOGLE_VERTEX_PROJECT",
+      "VERTEX_LOCATION",
+      "GOOGLE_VERTEX_LOCATION",
+    ],
+    runtimeSupported: Boolean(vertexBaseUrlFromOptions()),
   },
   cohere: {
     label: "Cohere",
@@ -425,17 +480,162 @@ function vertexBaseUrlFromOptions(options = {}, env = process.env) {
   const explicit = firstStringValue(options, ["baseURL", "baseUrl", "base_url", "url", "endpoint"]);
   if (explicit && /^https?:\/\//.test(explicit)) return explicit;
   const project =
-    firstStringValue(options, ["project", "projectId", "projectID", "googleVertexProject"]) ||
+    firstStringValue(options, [
+      "project",
+      "projectId",
+      "projectID",
+      "googleCloudProject",
+      "google_cloud_project",
+      "googleVertexProject",
+      "google_vertex_project",
+    ]) ||
+    env.GOOGLE_CLOUD_PROJECT ||
+    env.GCLOUD_PROJECT ||
     env.GOOGLE_VERTEX_PROJECT;
   const location =
-    firstStringValue(options, ["location", "region", "googleVertexLocation"]) ||
+    firstStringValue(options, [
+      "location",
+      "region",
+      "vertexLocation",
+      "vertex_location",
+      "googleVertexLocation",
+      "google_vertex_location",
+    ]) ||
+    env.VERTEX_LOCATION ||
     env.GOOGLE_VERTEX_LOCATION;
-  if (!project?.trim() || !location?.trim()) return undefined;
-  const trimmedLocation = location.trim();
+  const resolvedLocation = location || (project?.trim() ? "global" : undefined);
+  if (!project?.trim() || !resolvedLocation?.trim()) return undefined;
+  const trimmedLocation = resolvedLocation.trim();
   const endpoint = trimmedLocation === "global"
     ? "https://aiplatform.googleapis.com"
     : `https://${trimmedLocation}-aiplatform.googleapis.com`;
   return `${endpoint}/v1/projects/${encodeURIComponent(project.trim())}/locations/${encodeURIComponent(trimmedLocation)}`;
+}
+
+function googleVertexProviderOptionsFromSource(source = {}) {
+  const options = source?.options || {};
+  const out = {};
+  const project = firstStringValue(options, [
+    "project",
+    "projectId",
+    "projectID",
+    "googleCloudProject",
+    "google_cloud_project",
+    "googleVertexProject",
+    "google_vertex_project",
+  ]);
+  const location = firstStringValue(options, [
+    "location",
+    "region",
+    "vertexLocation",
+    "vertex_location",
+    "googleVertexLocation",
+    "google_vertex_location",
+  ]);
+  if (project) out.project = project;
+  if (location) out.location = location;
+
+  for (const key of [
+    "credentialsFile",
+    "credentials_file",
+    "keyFile",
+    "keyfile",
+    "keyFilename",
+    "key_filename",
+    "googleApplicationCredentials",
+    "google_application_credentials",
+  ]) {
+    const value = options[key];
+    if (typeof value === "string" && value.trim()) {
+      out.credentialsFile = value.trim();
+      break;
+    }
+  }
+
+  for (const key of [
+    "googleAuthCredentials",
+    "authCredentials",
+    "credentials",
+    "serviceAccount",
+    "service_account",
+    "adcCredentials",
+    "adc_credentials",
+  ]) {
+    const value = options[key];
+    if (value && (typeof value === "string" || typeof value === "object")) {
+      out.googleAuthCredentials = value;
+      break;
+    }
+  }
+
+  return Object.keys(out).length ? out : undefined;
+}
+
+function parseGoogleAuthCredentials(value) {
+  const root = serviceKeyObjectFromUnknown(value) || {};
+  const source = root.credentials && typeof root.credentials === "object" && !Array.isArray(root.credentials)
+    ? root.credentials
+    : root;
+  if (source.type === "service_account") {
+    return typeof source.client_email === "string" &&
+      source.client_email.trim() &&
+      typeof source.private_key === "string" &&
+      source.private_key.trim()
+      ? source
+      : undefined;
+  }
+  if (source.type === "authorized_user") {
+    return typeof source.client_id === "string" &&
+      source.client_id.trim() &&
+      typeof source.client_secret === "string" &&
+      source.client_secret.trim() &&
+      typeof source.refresh_token === "string" &&
+      source.refresh_token.trim()
+      ? source
+      : undefined;
+  }
+  return undefined;
+}
+
+function googleAuthCredentialsFromFile(filePath) {
+  try {
+    return parseGoogleAuthCredentials(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveGoogleAuthCredentials(options = {}, env = process.env) {
+  for (const key of [
+    "googleAuthCredentials",
+    "authCredentials",
+    "credentials",
+    "serviceAccount",
+    "service_account",
+    "adcCredentials",
+    "adc_credentials",
+  ]) {
+    const parsed = parseGoogleAuthCredentials(options?.[key]);
+    if (parsed) return parsed;
+  }
+  const credentialsFile =
+    firstStringValue(options, [
+      "credentialsFile",
+      "credentials_file",
+      "keyFile",
+      "keyfile",
+      "keyFilename",
+      "key_filename",
+      "googleApplicationCredentials",
+      "google_application_credentials",
+      "credentials",
+    ]) ||
+    env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (credentialsFile?.trim()) {
+    const parsed = googleAuthCredentialsFromFile(credentialsFile.trim());
+    if (parsed) return parsed;
+  }
+  return googleAuthCredentialsFromFile(path.join(HOME, ".config", "gcloud", "application_default_credentials.json"));
 }
 
 function serviceKeyObjectFromUnknown(value) {
@@ -538,7 +738,15 @@ function tokenEnvForProvider(providerId, adapter, env) {
     adapter === "vertex" ||
     adapter === "vertex-anthropic"
   ) {
-    return ["GOOGLE_VERTEX_ACCESS_TOKEN", "GOOGLE_ACCESS_TOKEN"];
+    return [
+      "GOOGLE_VERTEX_ACCESS_TOKEN",
+      "GOOGLE_ACCESS_TOKEN",
+      "GOOGLE_APPLICATION_CREDENTIALS",
+      "GOOGLE_CLOUD_PROJECT",
+      "GOOGLE_VERTEX_PROJECT",
+      "VERTEX_LOCATION",
+      "GOOGLE_VERTEX_LOCATION",
+    ];
   }
   if (providerId === "sap-ai-core" || adapter === "sap-ai-core") {
     return ["AICORE_SERVICE_KEY"];
@@ -590,6 +798,8 @@ function modelsDevProviderToPreset(providerId, source) {
     compatibilityMode: adapter === "openai-compatible" ? (azureOpenAiProviderIds.has(id) ? "responses" : (openAiCompatibleDefault?.compatibilityMode || "chat-completions-bridge")) : undefined,
     providerOptions: adapter === "amazon-bedrock"
       ? amazonBedrockProviderOptionsFromSource(source)
+      : adapter === "vertex" || adapter === "vertex-anthropic"
+        ? googleVertexProviderOptionsFromSource(source)
       : adapter === "sap-ai-core"
         ? sapAiCoreProviderOptionsFromSource(source)
         : undefined,
@@ -1474,6 +1684,19 @@ function envSecretForProvider(providerId, preset, env = process.env) {
   ) {
     return normalizeSecret(env.AWS_BEARER_TOKEN_BEDROCK);
   }
+  if (
+    providerId === "google-vertex" ||
+    providerId === "google-vertex-anthropic" ||
+    providerAdapter === "vertex" ||
+    providerAdapter === "vertex-anthropic"
+  ) {
+    if (env.GOOGLE_VERTEX_ACCESS_TOKEN?.trim()) {
+      return normalizeSecret(env.GOOGLE_VERTEX_ACCESS_TOKEN);
+    }
+    if (env.GOOGLE_ACCESS_TOKEN?.trim()) {
+      return normalizeSecret(env.GOOGLE_ACCESS_TOKEN);
+    }
+  }
   return undefined;
 }
 
@@ -1482,6 +1705,16 @@ function credentialChainTokenForProvider(providerId, preset) {
   if (providerId === "amazon-bedrock" || providerAdapter === "amazon-bedrock") {
     return resolveAwsBedrockCredentials(preset.providerOptions)
       ? AWS_BEDROCK_SIGV4_PLACEHOLDER
+      : undefined;
+  }
+  if (
+    providerId === "google-vertex" ||
+    providerId === "google-vertex-anthropic" ||
+    providerAdapter === "vertex" ||
+    providerAdapter === "vertex-anthropic"
+  ) {
+    return resolveGoogleAuthCredentials(preset.providerOptions)
+      ? GOOGLE_VERTEX_ADC_PLACEHOLDER
       : undefined;
   }
   return undefined;
@@ -1497,6 +1730,13 @@ function baseUrlForPreset(preset, detectedBaseUrl) {
       detectedBaseUrl ||
         preset.baseUrl ||
         amazonBedrockBaseUrlFromOptions(preset.providerOptions),
+    );
+  }
+  if (providerAdapter === "vertex" || providerAdapter === "vertex-anthropic") {
+    return normalizeBaseUrl(
+      detectedBaseUrl ||
+        preset.baseUrl ||
+        vertexBaseUrlFromOptions(preset.providerOptions),
     );
   }
   return normalizeBaseUrl(detectedBaseUrl || preset.baseUrl);

@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomUUID } from "node:crypto";
+import { createHash, createHmac, createSign, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -18,6 +18,7 @@ export type NativeProviderId =
 export type NativeProviderResponseShape = "chat.completions" | "responses";
 
 export const AWS_BEDROCK_SIGV4_PLACEHOLDER = "__opencodex_aws_sigv4__";
+export const GOOGLE_VERTEX_ADC_PLACEHOLDER = "__opencodex_google_vertex_adc__";
 
 export type AwsBedrockCredentials = {
   accessKeyId: string;
@@ -28,6 +29,28 @@ export type AwsBedrockCredentials = {
 export type ResolvedAwsBedrockCredentials = AwsBedrockCredentials & {
   region: string;
 };
+
+export type GoogleServiceAccountCredentials = {
+  kind: "service_account";
+  projectId?: string;
+  clientEmail: string;
+  privateKey: string;
+  privateKeyId?: string;
+  tokenUri: string;
+};
+
+export type GoogleAuthorizedUserCredentials = {
+  kind: "authorized_user";
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
+  tokenUri: string;
+  quotaProjectId?: string;
+};
+
+export type GoogleAuthCredentials =
+  | GoogleServiceAccountCredentials
+  | GoogleAuthorizedUserCredentials;
 
 type NativeProviderRequest = {
   path: string;
@@ -199,6 +222,205 @@ function coerceJsonObject(value: unknown): Record<string, unknown> {
     } catch {}
   }
   return {};
+}
+
+const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GOOGLE_CLOUD_PLATFORM_SCOPE =
+  "https://www.googleapis.com/auth/cloud-platform";
+
+function googleCredentialsSource(value: unknown): Record<string, unknown> {
+  const root = coerceJsonObject(value);
+  const nested = root.credentials;
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    return nested as Record<string, unknown>;
+  }
+  return root;
+}
+
+export function parseGoogleAuthCredentials(
+  value: unknown,
+): GoogleAuthCredentials | undefined {
+  const source = googleCredentialsSource(value);
+  const type = typeof source.type === "string" ? source.type.trim() : "";
+
+  if (type === "service_account") {
+    const clientEmail =
+      typeof source.client_email === "string" ? source.client_email.trim() : "";
+    const privateKey =
+      typeof source.private_key === "string" ? source.private_key.trim() : "";
+    if (!clientEmail || !privateKey) return undefined;
+    const projectId =
+      typeof source.project_id === "string" && source.project_id.trim()
+        ? source.project_id.trim()
+        : undefined;
+    const privateKeyId =
+      typeof source.private_key_id === "string" && source.private_key_id.trim()
+        ? source.private_key_id.trim()
+        : undefined;
+    const tokenUri =
+      typeof source.token_uri === "string" && source.token_uri.trim()
+        ? source.token_uri.trim()
+        : GOOGLE_OAUTH_TOKEN_URL;
+    return {
+      kind: "service_account",
+      ...(projectId ? { projectId } : {}),
+      clientEmail,
+      privateKey,
+      ...(privateKeyId ? { privateKeyId } : {}),
+      tokenUri,
+    };
+  }
+
+  if (type === "authorized_user") {
+    const clientId =
+      typeof source.client_id === "string" ? source.client_id.trim() : "";
+    const clientSecret =
+      typeof source.client_secret === "string" ? source.client_secret.trim() : "";
+    const refreshToken =
+      typeof source.refresh_token === "string" ? source.refresh_token.trim() : "";
+    if (!clientId || !clientSecret || !refreshToken) return undefined;
+    const tokenUri =
+      typeof source.token_uri === "string" && source.token_uri.trim()
+        ? source.token_uri.trim()
+        : GOOGLE_OAUTH_TOKEN_URL;
+    const quotaProjectId =
+      typeof source.quota_project_id === "string" &&
+      source.quota_project_id.trim()
+        ? source.quota_project_id.trim()
+        : undefined;
+    return {
+      kind: "authorized_user",
+      clientId,
+      clientSecret,
+      refreshToken,
+      tokenUri,
+      ...(quotaProjectId ? { quotaProjectId } : {}),
+    };
+  }
+
+  return undefined;
+}
+
+function base64UrlJson(value: Record<string, unknown>): string {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+export function buildGoogleServiceAccountJwt(
+  credentials: GoogleServiceAccountCredentials,
+  now = new Date(),
+  scope = GOOGLE_CLOUD_PLATFORM_SCOPE,
+): string {
+  const issuedAt = Math.floor(now.getTime() / 1000);
+  const header: Record<string, unknown> = {
+    alg: "RS256",
+    typ: "JWT",
+  };
+  if (credentials.privateKeyId) header.kid = credentials.privateKeyId;
+  const claims = {
+    iss: credentials.clientEmail,
+    scope,
+    aud: credentials.tokenUri,
+    iat: issuedAt,
+    exp: issuedAt + 3600,
+  };
+  const signingInput = `${base64UrlJson(header)}.${base64UrlJson(claims)}`;
+  const signer = createSign("RSA-SHA256");
+  signer.update(signingInput);
+  signer.end();
+  const signature = signer.sign(credentials.privateKey).toString("base64url");
+  return `${signingInput}.${signature}`;
+}
+
+export function buildGoogleOAuthTokenRequest(
+  credentials: GoogleAuthCredentials | undefined,
+  now = new Date(),
+): {
+  url: string;
+  headers: Record<string, string>;
+  body: string;
+} {
+  if (!credentials) {
+    throw new Error("Google ADC credentials were not found");
+  }
+
+  const body = new URLSearchParams();
+  if (credentials.kind === "service_account") {
+    body.set("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer");
+    body.set("assertion", buildGoogleServiceAccountJwt(credentials, now));
+  } else {
+    body.set("grant_type", "refresh_token");
+    body.set("client_id", credentials.clientId);
+    body.set("client_secret", credentials.clientSecret);
+    body.set("refresh_token", credentials.refreshToken);
+  }
+
+  return {
+    url: credentials.tokenUri,
+    headers: {
+      accept: "application/json",
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body: body.toString(),
+  };
+}
+
+function googleAuthCredentialsFromFile(path: string): GoogleAuthCredentials | undefined {
+  try {
+    return parseGoogleAuthCredentials(readFileSync(path, "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+export function resolveGoogleAuthCredentials(
+  options: unknown = {},
+  env: Record<string, string | undefined> = process.env,
+): GoogleAuthCredentials | undefined {
+  const optionCredentials = [
+    firstStringFromUnknown(options, ["googleAuthCredentialsJson"]),
+    firstStringFromUnknown(options, ["credentialsJson", "credentials_json"]),
+  ];
+  for (const raw of optionCredentials) {
+    const parsed = parseGoogleAuthCredentials(raw);
+    if (parsed) return parsed;
+  }
+
+  if (options && typeof options === "object" && !Array.isArray(options)) {
+    const source = options as Record<string, unknown>;
+    for (const key of [
+      "googleAuthCredentials",
+      "authCredentials",
+      "credentials",
+      "serviceAccount",
+      "service_account",
+      "adcCredentials",
+      "adc_credentials",
+    ]) {
+      const parsed = parseGoogleAuthCredentials(source[key]);
+      if (parsed) return parsed;
+    }
+  }
+
+  const credentialsFile =
+    firstStringFromUnknown(options, [
+      "credentialsFile",
+      "credentials_file",
+      "keyFile",
+      "keyfile",
+      "keyFilename",
+      "key_filename",
+      "googleApplicationCredentials",
+      "google_application_credentials",
+      "credentials",
+    ]) ?? env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (credentialsFile?.trim()) {
+    const parsed = googleAuthCredentialsFromFile(credentialsFile.trim());
+    if (parsed) return parsed;
+  }
+
+  return googleAuthCredentialsFromFile(
+    join(homedir(), ".config", "gcloud", "application_default_credentials.json"),
+  );
 }
 
 function outputLimit(payload: Record<string, unknown>): number {

@@ -174,12 +174,15 @@ OpenCodex can route providers that map to the current runtime adapters:
 - Anthropic Claude through the native Messages API
 - Google Gemini through the native `generateContent` API
 - Google Vertex Gemini through the Vertex AI `generateContent` REST API when
-  `GOOGLE_VERTEX_PROJECT` / `GOOGLE_VERTEX_LOCATION` or equivalent OpenCode
-  provider options are available, and a bearer access token is supplied through
-  `GOOGLE_VERTEX_ACCESS_TOKEN`, `GOOGLE_ACCESS_TOKEN`, or provider config secret
+  `GOOGLE_CLOUD_PROJECT` / `GOOGLE_VERTEX_PROJECT` and `VERTEX_LOCATION` /
+  `GOOGLE_VERTEX_LOCATION` or equivalent OpenCode provider options are
+  available; auth can use `GOOGLE_VERTEX_ACCESS_TOKEN`, `GOOGLE_ACCESS_TOKEN`,
+  provider config secrets, `GOOGLE_APPLICATION_CREDENTIALS` service-account
+  JSON, or the gcloud ADC file at
+  `~/.config/gcloud/application_default_credentials.json`
 - Google Vertex Anthropic through the Vertex AI `rawPredict` REST API under
-  `publishers/anthropic` when Vertex project/location routing metadata and a
-  bearer access token are available
+  `publishers/anthropic` with the same Vertex project/location and bearer/ADC
+  auth flows
 - Cohere through the native v2 Chat API
 - Amazon Bedrock through the native Converse API using either
   `AWS_BEARER_TOKEN_BEDROCK`/OpenCode API key credentials or AWS SigV4
@@ -212,13 +215,14 @@ OpenCodex can route providers that map to the current runtime adapters:
   OpenAI-style model listing endpoint
 
 Credentials for providers whose native API adapter is not implemented yet, such
-as Azure without resource routing metadata, Google Vertex ADC/service-account
-credential flows without a bearer token, Cloudflare AI Gateway without
-account/gateway routing metadata, Bedrock credential flows that require AWS SDK
-providers such as SSO/IRSA/instance metadata, and other provider-specific SDK
-adapters, are imported and shown as auth-only disabled accounts. They are
-preserved for management, but are not sent through the proxy until a native
-adapter or exact compatibility bridge is added.
+as Azure without resource routing metadata, Google Vertex ADC variants that
+require metadata-server, workload identity federation, or external_account
+credential sources, Cloudflare AI Gateway without account/gateway routing
+metadata, Bedrock credential flows that require AWS SDK providers such as
+SSO/IRSA/instance metadata, and other provider-specific SDK adapters, are
+imported and shown as auth-only disabled accounts. They are preserved for
+management, but are not sent through the proxy until a native adapter or exact
+compatibility bridge is added.
 
 Default expected redirect URI:
 

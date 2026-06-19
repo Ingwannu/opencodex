@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -32,6 +33,19 @@ function readJson(req) {
       } catch (err) {
         reject(err);
       }
+    });
+  });
+}
+
+function readText(req) {
+  return new Promise((resolve) => {
+    let raw = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => {
+      raw += chunk;
+    });
+    req.on("end", () => {
+      resolve(raw);
     });
   });
 }
@@ -1058,6 +1072,138 @@ test("proxy routes Vertex chat completions through generateContent API", async (
         assert.equal(capturedRequest.systemInstruction.parts[0].text, "Be concise.");
         assert.equal(capturedRequest.contents[0].parts[0].text, "Hello");
         assert.equal(capturedRequest.generationConfig.maxOutputTokens, 64);
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
+test("proxy exchanges Vertex service-account ADC and routes chat completions through generateContent API", async () => {
+  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  let capturedRequest;
+  let capturedAuthorization;
+  let capturedTokenBody;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "POST" && req.url === "/token") {
+      capturedTokenBody = await readText(req);
+      assert.match(
+        String(req.headers["content-type"]),
+        /^application\/x-www-form-urlencoded/,
+      );
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          access_token: "vertex-oauth-smoke-token",
+          expires_in: 3600,
+          token_type: "Bearer",
+        }),
+      );
+      return;
+    }
+    if (
+      req.method === "GET" &&
+      req.url === "/v1/projects/test-project/locations/global/publishers/google/models"
+    ) {
+      capturedAuthorization = req.headers.authorization;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          publisherModels: [{ name: "publishers/google/models/gemini-vertex-adc-smoke" }],
+        }),
+      );
+      return;
+    }
+    if (
+      req.method === "POST" &&
+      req.url === "/v1/projects/test-project/locations/global/publishers/google/models/gemini-vertex-adc-smoke:generateContent"
+    ) {
+      capturedRequest = await readJson(req);
+      capturedAuthorization = req.headers.authorization;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          candidates: [
+            {
+              content: { role: "model", parts: [{ text: "Vertex ADC OK" }] },
+              finishReason: "STOP",
+            },
+          ],
+          usageMetadata: {
+            promptTokenCount: 5,
+            candidatesTokenCount: 3,
+            totalTokenCount: 8,
+          },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "vertex-adc-smoke",
+          provider: "vertex",
+          providerId: "google-vertex",
+          providerAdapter: "vertex",
+          accessToken: "__opencodex_google_vertex_adc__",
+          baseUrl: `http://127.0.0.1:${upstreamPort}/v1/projects/test-project/locations/global`,
+          providerOptions: {
+            googleAuthCredentials: {
+              type: "service_account",
+              project_id: "test-project",
+              private_key_id: "smoke-key-id",
+              private_key: privateKey.export({ type: "pkcs8", format: "pem" }),
+              client_email: "vertex-smoke@example.iam.gserviceaccount.com",
+              token_uri: `http://127.0.0.1:${upstreamPort}/token`,
+            },
+          },
+          providerModels: {
+            "gemini-vertex-adc-smoke": {
+              id: "gemini-vertex-adc-smoke",
+              name: "Gemini Vertex ADC Smoke",
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "gemini-vertex-adc-smoke",
+            messages: [
+              { role: "system", content: "Be concise." },
+              { role: "user", content: "Hello" },
+            ],
+            max_tokens: 64,
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.choices[0].message.content, "Vertex ADC OK");
+        assert.equal(capturedAuthorization, "Bearer vertex-oauth-smoke-token");
+        assert.equal(capturedRequest.systemInstruction.parts[0].text, "Be concise.");
+        assert.equal(capturedRequest.contents[0].parts[0].text, "Hello");
+
+        const tokenBody = new URLSearchParams(capturedTokenBody);
+        assert.equal(
+          tokenBody.get("grant_type"),
+          "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        );
+        const assertion = tokenBody.get("assertion");
+        assert.ok(assertion);
+        const claims = JSON.parse(
+          Buffer.from(assertion.split(".")[1], "base64url").toString("utf8"),
+        );
+        assert.equal(claims.iss, "vertex-smoke@example.iam.gserviceaccount.com");
+        assert.equal(claims.aud, `http://127.0.0.1:${upstreamPort}/token`);
+        assert.equal(claims.scope, "https://www.googleapis.com/auth/cloud-platform");
       },
     );
   } finally {

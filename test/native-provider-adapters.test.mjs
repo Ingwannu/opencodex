@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
   AWS_BEDROCK_SIGV4_PLACEHOLDER,
+  GOOGLE_VERTEX_ADC_PLACEHOLDER,
   buildAwsSigV4Headers,
+  buildGoogleOAuthTokenRequest,
   buildNativeProviderRequest,
   buildGitLabDirectAccessRequest,
   buildGitLabProviderRequest,
@@ -14,6 +20,7 @@ import {
   nativeProviderModelsFromResponse,
   parseSapAiCoreServiceKey,
   parseAwsCredentialsFile,
+  parseGoogleAuthCredentials,
   resolveAwsBedrockCredentials,
 } from "../dist/provider-native.js";
 import {
@@ -25,6 +32,10 @@ import {
 import {
   resolveProviderRegistryEntry,
 } from "../dist/provider-registry.js";
+
+function decodeJwtPart(token, index) {
+  return JSON.parse(Buffer.from(token.split(".")[index], "base64url").toString("utf8"));
+}
 
 test("Anthropic adapter converts chat payloads and responses", () => {
   const request = buildNativeProviderRequest(
@@ -208,6 +219,48 @@ test("Vertex adapter converts chat payloads and responses", () => {
   assert.equal(converted.object, "chat.completion");
   assert.equal(converted.choices[0].message.content, "Hi Vertex");
   assert.equal(converted.usage.total_tokens, 9);
+});
+
+test("Google Vertex service-account ADC credentials build OAuth JWT token requests", () => {
+  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const credentials = parseGoogleAuthCredentials({
+    type: "service_account",
+    project_id: "vertex-project",
+    private_key_id: "test-key-id",
+    private_key: privateKey.export({ type: "pkcs8", format: "pem" }),
+    client_email: "vertex-sa@example.iam.gserviceaccount.com",
+    token_uri: "https://oauth2.example/token",
+  });
+
+  assert.equal(credentials?.kind, "service_account");
+  assert.equal(credentials?.projectId, "vertex-project");
+  assert.equal(credentials?.clientEmail, "vertex-sa@example.iam.gserviceaccount.com");
+
+  const request = buildGoogleOAuthTokenRequest(
+    credentials,
+    new Date("2026-06-19T00:00:00.000Z"),
+  );
+  assert.equal(request.url, "https://oauth2.example/token");
+  assert.equal(
+    request.headers["content-type"],
+    "application/x-www-form-urlencoded",
+  );
+
+  const body = new URLSearchParams(request.body);
+  assert.equal(
+    body.get("grant_type"),
+    "urn:ietf:params:oauth:grant-type:jwt-bearer",
+  );
+  const assertion = body.get("assertion");
+  assert.ok(assertion);
+  assert.equal(decodeJwtPart(assertion, 0).alg, "RS256");
+  assert.equal(decodeJwtPart(assertion, 0).kid, "test-key-id");
+  const claims = decodeJwtPart(assertion, 1);
+  assert.equal(claims.iss, "vertex-sa@example.iam.gserviceaccount.com");
+  assert.equal(claims.scope, "https://www.googleapis.com/auth/cloud-platform");
+  assert.equal(claims.aud, "https://oauth2.example/token");
+  assert.equal(claims.iat, 1781827200);
+  assert.equal(claims.exp, 1781830800);
 });
 
 test("Vertex Anthropic adapter converts chat payloads and responses", () => {
@@ -656,6 +709,11 @@ test("OpenCode auth import enables native Anthropic, Google, Vertex, Vertex Anth
   assert.deepEqual(vertex?.providerAuthEnv, [
     "GOOGLE_VERTEX_ACCESS_TOKEN",
     "GOOGLE_ACCESS_TOKEN",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "GOOGLE_CLOUD_PROJECT",
+    "GOOGLE_VERTEX_PROJECT",
+    "VERTEX_LOCATION",
+    "GOOGLE_VERTEX_LOCATION",
   ]);
   assert.ok(vertex?.providerModels?.["gemini-2.5-pro"]);
 
@@ -680,6 +738,11 @@ test("OpenCode auth import enables native Anthropic, Google, Vertex, Vertex Anth
   assert.deepEqual(vertexAnthropic?.providerAuthEnv, [
     "GOOGLE_VERTEX_ACCESS_TOKEN",
     "GOOGLE_ACCESS_TOKEN",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "GOOGLE_CLOUD_PROJECT",
+    "GOOGLE_VERTEX_PROJECT",
+    "VERTEX_LOCATION",
+    "GOOGLE_VERTEX_LOCATION",
   ]);
   assert.ok(vertexAnthropic?.providerModels?.["claude-3-5-sonnet-v2@20241022"]);
 
@@ -807,6 +870,92 @@ test("OpenCode auth import enables Amazon Bedrock through AWS credential-chain c
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
+  }
+});
+
+test("OpenCode auth import enables Google Vertex through ADC service-account credentials", async () => {
+  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const dir = mkdtempSync(join(tmpdir(), "opencodex-vertex-adc-"));
+  const credentialsPath = join(dir, "service-account.json");
+  writeFileSync(
+    credentialsPath,
+    JSON.stringify({
+      type: "service_account",
+      project_id: "vertex-project",
+      private_key_id: "import-key-id",
+      private_key: privateKey.export({ type: "pkcs8", format: "pem" }),
+      client_email: "vertex-import@example.iam.gserviceaccount.com",
+      token_uri: "https://oauth2.example/token",
+    }),
+  );
+
+  const previous = {
+    GOOGLE_APPLICATION_CREDENTIALS: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+    GOOGLE_CLOUD_PROJECT: process.env.GOOGLE_CLOUD_PROJECT,
+    GOOGLE_VERTEX_PROJECT: process.env.GOOGLE_VERTEX_PROJECT,
+    VERTEX_LOCATION: process.env.VERTEX_LOCATION,
+    GOOGLE_VERTEX_LOCATION: process.env.GOOGLE_VERTEX_LOCATION,
+    GOOGLE_VERTEX_ACCESS_TOKEN: process.env.GOOGLE_VERTEX_ACCESS_TOKEN,
+    GOOGLE_ACCESS_TOKEN: process.env.GOOGLE_ACCESS_TOKEN,
+  };
+  process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
+  process.env.GOOGLE_CLOUD_PROJECT = "vertex-project";
+  process.env.VERTEX_LOCATION = "global";
+  delete process.env.GOOGLE_VERTEX_PROJECT;
+  delete process.env.GOOGLE_VERTEX_LOCATION;
+  delete process.env.GOOGLE_VERTEX_ACCESS_TOKEN;
+  delete process.env.GOOGLE_ACCESS_TOKEN;
+
+  try {
+    const payload = parseOpenCodeConfigPayload(`{
+      "provider": {
+        "google-vertex": {
+          "npm": "@ai-sdk/google-vertex",
+          "options": {
+            "project": "vertex-project",
+            "location": "global"
+          },
+          "models": {
+            "gemini-2.5-pro": { "name": "Gemini 2.5 Pro" }
+          }
+        }
+      }
+    }`);
+    const accounts = await accountsFromOpenCodeAuthPayload(
+      { "google-vertex": {} },
+      {
+        providerConfig: providerConfigFromOpenCodeConfigPayload(payload),
+        providerConfigSecrets: providerSecretsFromOpenCodeConfigPayload(payload),
+      },
+    );
+    const vertex = accounts.find((account) => account.providerId === "google-vertex");
+
+    assert.equal(vertex?.provider, "vertex");
+    assert.equal(vertex?.providerAdapter, "vertex");
+    assert.equal(vertex?.accessToken, GOOGLE_VERTEX_ADC_PLACEHOLDER);
+    assert.equal(
+      vertex?.baseUrl,
+      "https://aiplatform.googleapis.com/v1/projects/vertex-project/locations/global",
+    );
+    assert.equal(vertex?.providerOptions?.project, "vertex-project");
+    assert.equal(vertex?.providerOptions?.location, "global");
+    assert.equal(vertex?.enabled, true);
+    assert.deepEqual(vertex?.providerAuthEnv, [
+      "GOOGLE_VERTEX_ACCESS_TOKEN",
+      "GOOGLE_ACCESS_TOKEN",
+      "GOOGLE_APPLICATION_CREDENTIALS",
+      "GOOGLE_CLOUD_PROJECT",
+      "GOOGLE_VERTEX_PROJECT",
+      "VERTEX_LOCATION",
+      "GOOGLE_VERTEX_LOCATION",
+    ]);
+    assert.ok(vertex?.providerModels?.["gemini-2.5-pro"]);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

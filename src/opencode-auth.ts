@@ -8,10 +8,13 @@ import {
   providerRegistryEntryFromMetadata,
   resolveProviderRegistryEntry,
   sanitizeProviderId,
+  vertexBaseUrlFromOptions,
   type ProviderRegistryEntry,
 } from "./provider-registry.js";
 import {
   AWS_BEDROCK_SIGV4_PLACEHOLDER,
+  GOOGLE_VERTEX_ADC_PLACEHOLDER,
+  resolveGoogleAuthCredentials,
   resolveAwsBedrockCredentials,
 } from "./provider-native.js";
 
@@ -150,6 +153,19 @@ function envSecretForProvider(
   ) {
     return normalizeSecret(env.AWS_BEARER_TOKEN_BEDROCK);
   }
+  if (
+    providerId === "google-vertex" ||
+    providerId === "google-vertex-anthropic" ||
+    registry.providerAdapter === "vertex" ||
+    registry.providerAdapter === "vertex-anthropic"
+  ) {
+    if (env.GOOGLE_VERTEX_ACCESS_TOKEN?.trim()) {
+      return normalizeSecret(env.GOOGLE_VERTEX_ACCESS_TOKEN);
+    }
+    if (env.GOOGLE_ACCESS_TOKEN?.trim()) {
+      return normalizeSecret(env.GOOGLE_ACCESS_TOKEN);
+    }
+  }
   return undefined;
 }
 
@@ -163,6 +179,16 @@ function credentialChainTokenForProvider(
   ) {
     return resolveAwsBedrockCredentials(registry.providerOptions)
       ? AWS_BEDROCK_SIGV4_PLACEHOLDER
+      : undefined;
+  }
+  if (
+    providerId === "google-vertex" ||
+    providerId === "google-vertex-anthropic" ||
+    registry.providerAdapter === "vertex" ||
+    registry.providerAdapter === "vertex-anthropic"
+  ) {
+    return resolveGoogleAuthCredentials(registry.providerOptions)
+      ? GOOGLE_VERTEX_ADC_PLACEHOLDER
       : undefined;
   }
   return undefined;
@@ -180,6 +206,16 @@ function baseUrlForRegistry(
       detectedBaseUrl ||
         registry.baseUrl ||
         amazonBedrockBaseUrlFromOptions(registry.providerOptions),
+    );
+  }
+  if (
+    registry.providerAdapter === "vertex" ||
+    registry.providerAdapter === "vertex-anthropic"
+  ) {
+    return normalizeBaseUrl(
+      detectedBaseUrl ||
+        registry.baseUrl ||
+        vertexBaseUrlFromOptions(registry.providerOptions),
     );
   }
   return normalizeBaseUrl(detectedBaseUrl || registry.baseUrl);

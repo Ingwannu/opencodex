@@ -177,6 +177,64 @@ const BUILTIN_PROVIDERS: ProviderRegistryEntry[] = [
     runtimeSupported: true,
   },
   {
+    id: "google-vertex",
+    providerId: "google-vertex",
+    label: "Google Vertex AI",
+    provider: "vertex",
+    providerAdapter: "vertex",
+    providerNpm: "@ai-sdk/google-vertex",
+    providerSource: "builtin",
+    providerDoc: "https://opencode.ai/docs/providers/",
+    baseUrl: vertexBaseUrlFromOptions(),
+    providerOptions: googleVertexProviderOptionsFromSource({
+      options: {
+        project: process.env.GOOGLE_CLOUD_PROJECT ?? process.env.GOOGLE_VERTEX_PROJECT,
+        location: process.env.VERTEX_LOCATION ?? process.env.GOOGLE_VERTEX_LOCATION,
+        credentialsFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+      },
+    }),
+    tokenEnv: [
+      "GOOGLE_VERTEX_ACCESS_TOKEN",
+      "GOOGLE_ACCESS_TOKEN",
+      "GOOGLE_APPLICATION_CREDENTIALS",
+      "GOOGLE_CLOUD_PROJECT",
+      "GOOGLE_VERTEX_PROJECT",
+      "VERTEX_LOCATION",
+      "GOOGLE_VERTEX_LOCATION",
+    ],
+    authType: "api-key",
+    runtimeSupported: Boolean(vertexBaseUrlFromOptions()),
+  },
+  {
+    id: "google-vertex-anthropic",
+    providerId: "google-vertex-anthropic",
+    label: "Google Vertex AI Anthropic",
+    provider: "vertex-anthropic",
+    providerAdapter: "vertex-anthropic",
+    providerNpm: "@ai-sdk/google-vertex/anthropic",
+    providerSource: "builtin",
+    providerDoc: "https://opencode.ai/docs/providers/",
+    baseUrl: vertexBaseUrlFromOptions(),
+    providerOptions: googleVertexProviderOptionsFromSource({
+      options: {
+        project: process.env.GOOGLE_CLOUD_PROJECT ?? process.env.GOOGLE_VERTEX_PROJECT,
+        location: process.env.VERTEX_LOCATION ?? process.env.GOOGLE_VERTEX_LOCATION,
+        credentialsFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+      },
+    }),
+    tokenEnv: [
+      "GOOGLE_VERTEX_ACCESS_TOKEN",
+      "GOOGLE_ACCESS_TOKEN",
+      "GOOGLE_APPLICATION_CREDENTIALS",
+      "GOOGLE_CLOUD_PROJECT",
+      "GOOGLE_VERTEX_PROJECT",
+      "VERTEX_LOCATION",
+      "GOOGLE_VERTEX_LOCATION",
+    ],
+    authType: "api-key",
+    runtimeSupported: Boolean(vertexBaseUrlFromOptions()),
+  },
+  {
     id: "cohere",
     providerId: "cohere",
     label: "Cohere",
@@ -410,20 +468,88 @@ export function vertexBaseUrlFromOptions(
     "project",
     "projectId",
     "projectID",
+    "googleCloudProject",
+    "google_cloud_project",
     "googleVertexProject",
-  ]) ?? env.GOOGLE_VERTEX_PROJECT;
+    "google_vertex_project",
+  ]) ?? env.GOOGLE_CLOUD_PROJECT ?? env.GCLOUD_PROJECT ?? env.GOOGLE_VERTEX_PROJECT;
   const location = firstStringValue(options, [
     "location",
     "region",
+    "vertexLocation",
+    "vertex_location",
     "googleVertexLocation",
-  ]) ?? env.GOOGLE_VERTEX_LOCATION;
-  if (!project?.trim() || !location?.trim()) return undefined;
+    "google_vertex_location",
+  ]) ?? env.VERTEX_LOCATION ?? env.GOOGLE_VERTEX_LOCATION;
+  const resolvedLocation = location ?? (project?.trim() ? "global" : undefined);
+  if (!project?.trim() || !resolvedLocation?.trim()) return undefined;
 
-  const trimmedLocation = location.trim();
+  const trimmedLocation = resolvedLocation.trim();
   const endpoint = trimmedLocation === "global"
     ? "https://aiplatform.googleapis.com"
     : `https://${trimmedLocation}-aiplatform.googleapis.com`;
   return `${endpoint}/v1/projects/${encodeURIComponent(project.trim())}/locations/${encodeURIComponent(trimmedLocation)}`;
+}
+
+function googleVertexProviderOptionsFromSource(
+  source: ModelsDevProvider,
+): Record<string, unknown> | undefined {
+  const options = source.options ?? {};
+  const out: Record<string, unknown> = {};
+  const project = firstStringValue(options, [
+    "project",
+    "projectId",
+    "projectID",
+    "googleCloudProject",
+    "google_cloud_project",
+    "googleVertexProject",
+    "google_vertex_project",
+  ]);
+  const location = firstStringValue(options, [
+    "location",
+    "region",
+    "vertexLocation",
+    "vertex_location",
+    "googleVertexLocation",
+    "google_vertex_location",
+  ]);
+  if (project) out.project = project;
+  if (location) out.location = location;
+
+  for (const key of [
+    "credentialsFile",
+    "credentials_file",
+    "keyFile",
+    "keyfile",
+    "keyFilename",
+    "key_filename",
+    "googleApplicationCredentials",
+    "google_application_credentials",
+  ]) {
+    const value = options[key];
+    if (typeof value === "string" && value.trim()) {
+      out.credentialsFile = value.trim();
+      break;
+    }
+  }
+
+  for (const key of [
+    "googleAuthCredentials",
+    "authCredentials",
+    "credentials",
+    "serviceAccount",
+    "service_account",
+    "adcCredentials",
+    "adc_credentials",
+  ]) {
+    const value = options[key];
+    if (value && (typeof value === "string" || typeof value === "object")) {
+      out.googleAuthCredentials = value;
+      break;
+    }
+  }
+
+  return Object.keys(out).length ? out : undefined;
 }
 
 function serviceKeyObjectFromUnknown(
@@ -657,7 +783,15 @@ function tokenEnvForProvider(
     adapter === "vertex" ||
     adapter === "vertex-anthropic"
   ) {
-    return ["GOOGLE_VERTEX_ACCESS_TOKEN", "GOOGLE_ACCESS_TOKEN"];
+    return [
+      "GOOGLE_VERTEX_ACCESS_TOKEN",
+      "GOOGLE_ACCESS_TOKEN",
+      "GOOGLE_APPLICATION_CREDENTIALS",
+      "GOOGLE_CLOUD_PROJECT",
+      "GOOGLE_VERTEX_PROJECT",
+      "VERTEX_LOCATION",
+      "GOOGLE_VERTEX_LOCATION",
+    ];
   }
   if (providerId === "sap-ai-core" || adapter === "sap-ai-core") {
     return ["AICORE_SERVICE_KEY"];
@@ -760,6 +894,8 @@ export function providerRegistryEntryFromMetadata(
     providerOptions:
       adapter === "amazon-bedrock"
         ? amazonBedrockProviderOptionsFromSource(source)
+        : adapter === "vertex" || adapter === "vertex-anthropic"
+          ? googleVertexProviderOptionsFromSource(source)
         : adapter === "sap-ai-core"
           ? sapAiCoreProviderOptionsFromSource(source)
           : undefined,

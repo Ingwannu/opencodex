@@ -1439,6 +1439,79 @@ test("Cloudflare AI Gateway registry metadata stays OpenAI-compatible when endpo
   assert.ok(entry.models?.["openai/gpt-5.1"]);
 });
 
+test("OpenCode auth import derives Cloudflare endpoints from credential metadata", async () => {
+  const gatewayRegistry = providerRegistryEntryFromMetadata("cloudflare-ai-gateway", {
+    id: "cloudflare-ai-gateway",
+    name: "Cloudflare AI Gateway",
+    npm: "ai-gateway-provider",
+    models: {
+      "openai/gpt-5.1": { name: "GPT 5.1 through Cloudflare" },
+    },
+  });
+  const workersRegistry = providerRegistryEntryFromMetadata("cloudflare-workers-ai", {
+    id: "cloudflare-workers-ai",
+    name: "Cloudflare Workers AI",
+    npm: "@ai-sdk/openai-compatible",
+    models: {
+      "@cf/moonshotai/kimi-k2.6": { name: "Kimi K2.6" },
+    },
+  });
+
+  const accounts = await accountsFromOpenCodeAuthPayload(
+    {
+      "cloudflare-ai-gateway": {
+        type: "api",
+        key: "cf-gateway-token",
+        metadata: {
+          accountId: "cf-account",
+          gatewayId: "team-gateway",
+        },
+      },
+      "cloudflare-workers-ai": {
+        type: "api",
+        key: "cf-workers-token",
+        metadata: {
+          accountId: "cf-workers-account",
+          gatewayId: "workers-gateway",
+        },
+      },
+    },
+    {
+      providerConfig: new Map([
+        ["cloudflare-ai-gateway", gatewayRegistry],
+        ["cloudflare-workers-ai", workersRegistry],
+      ]),
+    },
+  );
+  const byId = new Map(accounts.map((account) => [account.providerId, account]));
+
+  assert.equal(byId.get("cloudflare-ai-gateway")?.provider, "openai-compatible");
+  assert.equal(
+    byId.get("cloudflare-ai-gateway")?.baseUrl,
+    "https://gateway.ai.cloudflare.com/v1/cf-account/team-gateway/openai",
+  );
+  assert.deepEqual(
+    byId.get("cloudflare-ai-gateway")?.providerOptions,
+    { gatewayId: "team-gateway" },
+  );
+  assert.equal(byId.get("cloudflare-ai-gateway")?.accessToken, "cf-gateway-token");
+  assert.equal(byId.get("cloudflare-ai-gateway")?.enabled, true);
+  assert.ok(byId.get("cloudflare-ai-gateway")?.providerModels?.["openai/gpt-5.1"]);
+
+  assert.equal(byId.get("cloudflare-workers-ai")?.provider, "openai-compatible");
+  assert.equal(
+    byId.get("cloudflare-workers-ai")?.baseUrl,
+    "https://api.cloudflare.com/client/v4/accounts/cf-workers-account/ai",
+  );
+  assert.deepEqual(
+    byId.get("cloudflare-workers-ai")?.providerOptions,
+    { gatewayId: "workers-gateway" },
+  );
+  assert.equal(byId.get("cloudflare-workers-ai")?.accessToken, "cf-workers-token");
+  assert.equal(byId.get("cloudflare-workers-ai")?.enabled, true);
+  assert.ok(byId.get("cloudflare-workers-ai")?.providerModels?.["@cf/moonshotai/kimi-k2.6"]);
+});
+
 test("OpenCode config preserves Cloudflare AI Gateway REST endpoint gateway options", async () => {
   const previous = {
     CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,

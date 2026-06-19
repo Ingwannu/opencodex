@@ -806,6 +806,112 @@ test("imports Cloudflare AI Gateway from OpenCode config and env variables", () 
   assert.ok(cloudflare?.providerModels?.["openai/gpt-5.1"]);
 });
 
+test("imports Cloudflare endpoints from OpenCode auth metadata through the CLI", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-cloudflare-metadata-auth-"));
+  const storePath = path.join(dir, "accounts.json");
+  const authPath = path.join(dir, "auth.json");
+  const configPath = path.join(dir, "opencode.jsonc");
+
+  fs.writeFileSync(
+    authPath,
+    JSON.stringify(
+      {
+        "cloudflare-ai-gateway": {
+          type: "api",
+          key: "cf-gateway-token",
+          metadata: {
+            accountId: "cf-account",
+            gatewayId: "team-gateway",
+          },
+        },
+        "cloudflare-workers-ai": {
+          type: "api",
+          key: "cf-workers-token",
+          metadata: {
+            accountId: "cf-workers-account",
+            gatewayId: "workers-gateway",
+          },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify(
+      {
+        provider: {
+          "cloudflare-ai-gateway": {
+            npm: "ai-gateway-provider",
+            models: {
+              "openai/gpt-5.1": { name: "GPT 5.1 through Cloudflare" },
+            },
+          },
+          "cloudflare-workers-ai": {
+            npm: "@ai-sdk/openai-compatible",
+            models: {
+              "@cf/moonshotai/kimi-k2.6": { name: "Kimi K2.6" },
+            },
+          },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  execFileSync(
+    process.execPath,
+    [cli, "auth", "import-opencode", authPath, "--config", configPath],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        MULTICODEX_STORE_PATH: storePath,
+        MULTICODEX_DATA_DIR: dir,
+      },
+      encoding: "utf8",
+    },
+  );
+
+  const store = readStore(storePath);
+  const byProviderId = new Map(
+    store.accounts.map((account) => [account.providerId, account]),
+  );
+
+  assert.equal(byProviderId.get("cloudflare-ai-gateway")?.provider, "openai-compatible");
+  assert.equal(
+    byProviderId.get("cloudflare-ai-gateway")?.baseUrl,
+    "https://gateway.ai.cloudflare.com/v1/cf-account/team-gateway/openai",
+  );
+  assert.deepEqual(
+    byProviderId.get("cloudflare-ai-gateway")?.providerOptions,
+    { gatewayId: "team-gateway" },
+  );
+  assert.equal(
+    byProviderId.get("cloudflare-ai-gateway")?.accessToken,
+    "cf-gateway-token",
+  );
+  assert.equal(byProviderId.get("cloudflare-ai-gateway")?.enabled, true);
+  assert.ok(byProviderId.get("cloudflare-ai-gateway")?.providerModels?.["openai/gpt-5.1"]);
+
+  assert.equal(byProviderId.get("cloudflare-workers-ai")?.provider, "openai-compatible");
+  assert.equal(
+    byProviderId.get("cloudflare-workers-ai")?.baseUrl,
+    "https://api.cloudflare.com/client/v4/accounts/cf-workers-account/ai",
+  );
+  assert.deepEqual(
+    byProviderId.get("cloudflare-workers-ai")?.providerOptions,
+    { gatewayId: "workers-gateway" },
+  );
+  assert.equal(byProviderId.get("cloudflare-workers-ai")?.accessToken, "cf-workers-token");
+  assert.equal(byProviderId.get("cloudflare-workers-ai")?.enabled, true);
+  assert.ok(
+    byProviderId.get("cloudflare-workers-ai")?.providerModels?.["@cf/moonshotai/kimi-k2.6"],
+  );
+});
+
 test("imports Azure OpenAI v1 endpoint from OpenCode config and env variables", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-azure-auth-"));
   const storePath = path.join(dir, "accounts.json");

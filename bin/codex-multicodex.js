@@ -501,6 +501,26 @@ function cloudflareAiGatewayBaseUrlFromOptions(options = {}, env = process.env) 
   return `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(accountId.trim())}/${encodeURIComponent(gatewayId.trim())}/openai`;
 }
 
+function cloudflareWorkersAiBaseUrlFromOptions(options = {}, env = process.env) {
+  const explicit = firstStringValue(options, ["baseURL", "baseUrl", "base_url", "url", "endpoint"]);
+  if (explicit && /^https?:\/\//.test(explicit)) return explicit;
+  const accountId =
+    firstStringValue(options, ["accountId", "accountID", "account_id", "account"]) ||
+    env.CLOUDFLARE_ACCOUNT_ID;
+  if (!accountId?.trim()) return undefined;
+  return `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId.trim())}/ai`;
+}
+
+function cloudflareGatewayProviderOptionsFromSource(source = {}, env = process.env) {
+  const options = source?.options || {};
+  for (const key of ["gatewayId", "gatewayID", "gateway_id", "gateway"]) {
+    const value = options[key];
+    if (typeof value === "string" && value.trim()) return { gatewayId: value.trim() };
+  }
+  if (env.CLOUDFLARE_GATEWAY_ID?.trim()) return { gatewayId: env.CLOUDFLARE_GATEWAY_ID.trim() };
+  return undefined;
+}
+
 const azureOpenAiProviderIds = new Set(["azure", "azure-cognitive-services"]);
 
 function isAzureOpenAiProviderSource(providerId, npmPackage) {
@@ -912,6 +932,13 @@ function tokenEnvForProvider(providerId, adapter, env) {
       "SNOWFLAKE_CORTEX_PAT",
     ];
   }
+  if (providerId === "cloudflare-workers-ai") {
+    return [
+      "CLOUDFLARE_ACCOUNT_ID",
+      "CLOUDFLARE_API_KEY",
+      "CLOUDFLARE_GATEWAY_ID",
+    ];
+  }
   if (providerId === "sap-ai-core" || adapter === "sap-ai-core") {
     return ["AICORE_SERVICE_KEY"];
   }
@@ -926,6 +953,10 @@ function modelsDevProviderToPreset(providerId, source) {
   const cloudflareAiGatewayBaseUrl =
     id === "cloudflare-ai-gateway"
       ? cloudflareAiGatewayBaseUrlFromOptions(source?.options)
+      : undefined;
+  const cloudflareWorkersAiBaseUrl =
+    id === "cloudflare-workers-ai"
+      ? cloudflareWorkersAiBaseUrlFromOptions(source?.options)
       : undefined;
   const isAzureOpenAiProvider = isAzureOpenAiProviderSource(id, source?.npm);
   const azureOpenAiBaseUrl = isAzureOpenAiProvider
@@ -945,9 +976,9 @@ function modelsDevProviderToPreset(providerId, source) {
       ? (source?.api || "https://ai-gateway.vercel.sh/v3/ai")
       : undefined;
   const openAiCompatibleBaseUrl =
-    source?.api || openAiCompatibleDefault?.baseUrl || cloudflareAiGatewayBaseUrl || azureOpenAiBaseUrl;
+    source?.api || openAiCompatibleDefault?.baseUrl || cloudflareAiGatewayBaseUrl || cloudflareWorkersAiBaseUrl || azureOpenAiBaseUrl;
   const requiresOpenAiCompatibleEndpoint =
-    id === "cloudflare-ai-gateway" || isAzureOpenAiProvider;
+    id === "cloudflare-ai-gateway" || id === "cloudflare-workers-ai" || isAzureOpenAiProvider;
   const adapter =
     requiresOpenAiCompatibleEndpoint
       ? "openai-compatible"
@@ -988,6 +1019,8 @@ function modelsDevProviderToPreset(providerId, source) {
         ? googleVertexProviderOptionsFromSource(source)
       : adapter === "sap-ai-core"
         ? sapAiCoreProviderOptionsFromSource(source)
+      : id === "cloudflare-ai-gateway" || id === "cloudflare-workers-ai"
+        ? cloudflareGatewayProviderOptionsFromSource(source)
         : undefined,
     tokenEnv,
     authType,
@@ -2243,17 +2276,61 @@ function credentialMetadataOptions(value) {
     ? value.metadata
     : {};
   Object.assign(out, metadata);
-  for (const key of ["resourceName", "resource_name", "resource", "resourceId", "resource_id"]) {
+  for (const key of [
+    "accountId",
+    "accountID",
+    "account_id",
+    "account",
+    "gatewayId",
+    "gatewayID",
+    "gateway_id",
+    "gateway",
+    "resourceName",
+    "resource_name",
+    "resource",
+    "resourceId",
+    "resource_id",
+  ]) {
     if (typeof value[key] === "string" && value[key].trim()) out[key] = value[key];
   }
   return Object.keys(out).length ? out : undefined;
 }
 
 function detectedBaseUrlForAuthEntry(providerId, body) {
+  const id = sanitizeProviderId(providerId);
+  const metadataOptions = credentialMetadataOptions(body);
   return (
     findBaseUrlInObject(body) ||
-    azureOpenAiBaseUrlFromOptions(providerId, credentialMetadataOptions(body))
+    (id === "cloudflare-ai-gateway"
+      ? cloudflareAiGatewayBaseUrlFromOptions(metadataOptions)
+      : id === "cloudflare-workers-ai"
+        ? cloudflareWorkersAiBaseUrlFromOptions(metadataOptions)
+        : undefined) ||
+    azureOpenAiBaseUrlFromOptions(providerId, metadataOptions)
   );
+}
+
+function gatewayIdFromOptions(options) {
+  if (!options) return undefined;
+  for (const key of ["gatewayId", "gatewayID", "gateway_id", "gateway"]) {
+    const value = options[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function providerOptionsForAuthEntry(providerId, preset, body) {
+  const base = preset.providerOptions || {};
+  const id = sanitizeProviderId(providerId);
+  const gatewayId =
+    id === "cloudflare-ai-gateway" || id === "cloudflare-workers-ai"
+      ? gatewayIdFromOptions(credentialMetadataOptions(body))
+      : undefined;
+  const merged = {
+    ...base,
+    ...(gatewayId ? { gatewayId } : {}),
+  };
+  return Object.keys(merged).length ? merged : undefined;
 }
 
 function stripJsonComments(source) {
@@ -2291,8 +2368,10 @@ function providerConfigFromOpenCodeConfigPayload(payload) {
               ? options.base_url
               : sanitizeProviderId(providerId) === "cloudflare-ai-gateway"
                 ? cloudflareAiGatewayBaseUrlFromOptions(options)
-                : sanitizeProviderId(providerId) === "sap-ai-core"
-                  ? sapAiCoreBaseUrlFromOptions(options)
+                : sanitizeProviderId(providerId) === "cloudflare-workers-ai"
+                  ? cloudflareWorkersAiBaseUrlFromOptions(options)
+                  : sanitizeProviderId(providerId) === "sap-ai-core"
+                    ? sapAiCoreBaseUrlFromOptions(options)
                 : undefined,
       env: Array.isArray(raw.env)
         ? raw.env.filter((value) => typeof value === "string")
@@ -2417,7 +2496,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         providerDoc: preset.providerDoc,
         providerAuthEnv: preset.tokenEnv,
         providerAuthType: credential.providerAuthType || preset.authType,
-        providerOptions: preset.providerOptions,
+        providerOptions: providerOptionsForAuthEntry(providerKey, preset, body),
         providerModels: baseProviderModelsForPreset(preset),
         upstreamMode: preset.upstreamMode,
         compatibilityMode: preset.compatibilityMode,

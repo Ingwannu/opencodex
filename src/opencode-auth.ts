@@ -550,6 +550,14 @@ function credentialMetadataOptions(value: unknown): Record<string, unknown> | un
     : {};
   Object.assign(out, metadata);
   for (const key of [
+    "accountId",
+    "accountID",
+    "account_id",
+    "account",
+    "gatewayId",
+    "gatewayID",
+    "gateway_id",
+    "gateway",
     "resourceName",
     "resource_name",
     "resource",
@@ -567,10 +575,46 @@ function detectedBaseUrlForAuthEntry(
   providerId: string,
   body: unknown,
 ): string | undefined {
+  const id = sanitizeProviderId(providerId);
+  const metadataOptions = credentialMetadataOptions(body);
   return (
     findBaseUrlInObject(body) ??
-    azureOpenAiBaseUrlFromOptions(providerId, credentialMetadataOptions(body))
+    (id === "cloudflare-ai-gateway"
+      ? cloudflareAiGatewayBaseUrlFromOptions(metadataOptions)
+      : id === "cloudflare-workers-ai"
+        ? cloudflareWorkersAiBaseUrlFromOptions(metadataOptions)
+        : undefined) ??
+    azureOpenAiBaseUrlFromOptions(providerId, metadataOptions)
   );
+}
+
+function gatewayIdFromOptions(
+  options: Record<string, unknown> | undefined,
+): string | undefined {
+  if (!options) return undefined;
+  for (const key of ["gatewayId", "gatewayID", "gateway_id", "gateway"]) {
+    const value = options[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function providerOptionsForAuthEntry(
+  providerId: string,
+  registry: ProviderRegistryEntry,
+  body: unknown,
+): Record<string, unknown> | undefined {
+  const base = registry.providerOptions ?? {};
+  const id = sanitizeProviderId(providerId);
+  const gatewayId =
+    id === "cloudflare-ai-gateway" || id === "cloudflare-workers-ai"
+      ? gatewayIdFromOptions(credentialMetadataOptions(body))
+      : undefined;
+  const merged = {
+    ...base,
+    ...(gatewayId ? { gatewayId } : {}),
+  };
+  return Object.keys(merged).length ? merged : undefined;
 }
 
 type OpenCodeAuthEntry = {
@@ -731,7 +775,7 @@ export async function accountsFromOpenCodeAuthPayload(
       providerDoc: registry.providerDoc,
       providerAuthEnv: registry.tokenEnv,
       providerAuthType: credential.providerAuthType ?? registry.authType,
-      providerOptions: registry.providerOptions,
+      providerOptions: providerOptionsForAuthEntry(providerKey, registry, body),
       providerModels: baseProviderModelsForRegistry(registry),
       upstreamMode: registry.upstreamMode,
       compatibilityMode: registry.compatibilityMode,

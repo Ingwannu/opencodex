@@ -27,6 +27,7 @@ import {
   parseOpenCodeConfigPayload,
   providerConfigFromOpenCodeConfigPayload,
   providerSecretsFromOpenCodeConfigPayload,
+  readOpenCodeAuthPayloadFromPath,
 } from "../../opencode-auth.js";
 import {
   accountFromOAuth,
@@ -427,8 +428,7 @@ export function createAdminRouter(options: AdminRoutesOptions) {
     const providerConfigSecrets = configPayload
       ? providerSecretsFromOpenCodeConfigPayload(configPayload)
       : undefined;
-    const raw = await fs.readFile(filePath, "utf8");
-    const payload = JSON.parse(raw);
+    const payload = await readOpenCodeAuthPayloadFromPath(filePath);
     const accounts = await accountsFromOpenCodeAuthPayload(payload, {
       providerConfig,
       providerConfigSecrets,

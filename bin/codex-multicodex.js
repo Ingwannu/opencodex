@@ -1852,6 +1852,61 @@ function entriesFromOpenCodeAuthPayload(payload) {
   return [];
 }
 
+function isSqliteDatabase(bytes) {
+  return Buffer.from(bytes.subarray(0, 16)).toString("latin1") === "SQLite format 3\u0000";
+}
+
+function parseCredentialRowValue(value) {
+  if (typeof value === "string" && value.trim()) return JSON.parse(value);
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  return undefined;
+}
+
+async function readOpenCodeCredentialDatabase(filePath) {
+  let sqliteModule;
+  try {
+    sqliteModule = await import("node:sqlite");
+  } catch {
+    throw new Error(
+      "OpenCode opencode.db import requires a Node.js runtime with node:sqlite support. Export credentials to JSON or run with Node 22.5+/24+.",
+    );
+  }
+
+  const db = new sqliteModule.DatabaseSync(filePath, { readOnly: true });
+  try {
+    const rows = db
+      .prepare(
+        "SELECT id, integration_id, label, value FROM credential WHERE integration_id IS NOT NULL ORDER BY time_created",
+      )
+      .all();
+    return rows.flatMap((row) => {
+      const integrationID = trimmedString(row.integration_id);
+      const value = parseCredentialRowValue(row.value);
+      if (!integrationID || !value) return [];
+      const label = trimmedString(row.label) || "default";
+      const id = trimmedString(row.id);
+      return [
+        {
+          ...(id ? { id } : {}),
+          integrationID,
+          label,
+          value,
+        },
+      ];
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function readOpenCodeAuthPayloadFromPath(filePath) {
+  const bytes = fs.readFileSync(filePath);
+  if (isSqliteDatabase(bytes)) {
+    return readOpenCodeCredentialDatabase(filePath);
+  }
+  return JSON.parse(bytes.toString("utf8"));
+}
+
 function findSecretInHeaders(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   for (const [key, raw] of Object.entries(value)) {
@@ -2086,7 +2141,7 @@ function inferAuthPresetFromName(name, body) {
 
 async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
   if (!fs.existsSync(filePath)) throw new Error(`OpenCode auth file not found: ${filePath}`);
-  const payload = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  const payload = await readOpenCodeAuthPayloadFromPath(filePath);
   const providerConfig = readOpenCodeProviderConfig(opts);
   const entries = entriesFromOpenCodeAuthPayload(payload);
   let imported = 0;

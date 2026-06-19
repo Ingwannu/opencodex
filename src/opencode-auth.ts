@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import {
   NO_AUTH_ACCESS_TOKEN,
   type Account,
@@ -589,6 +590,64 @@ function entriesFromAuthPayload(payload: unknown): OpenCodeAuthEntry[] {
     return entriesFromAuthArray(payload);
   }
   return [];
+}
+
+function isSqliteDatabase(bytes: Uint8Array): boolean {
+  const header = Buffer.from(bytes.subarray(0, 16)).toString("latin1");
+  return header === "SQLite format 3\u0000";
+}
+
+function parseCredentialRowValue(value: unknown): unknown | undefined {
+  if (typeof value === "string" && value.trim()) return JSON.parse(value);
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  return undefined;
+}
+
+async function readOpenCodeCredentialDatabase(filePath: string): Promise<unknown[]> {
+  let sqliteModule: any;
+  try {
+    sqliteModule = await import("node:sqlite" as string);
+  } catch {
+    throw new Error(
+      "OpenCode opencode.db import requires a Node.js runtime with node:sqlite support. Export credentials to JSON or run with Node 22.5+/24+.",
+    );
+  }
+
+  const db = new sqliteModule.DatabaseSync(filePath, { readOnly: true });
+  try {
+    const rows = db
+      .prepare(
+        "SELECT id, integration_id, label, value FROM credential WHERE integration_id IS NOT NULL ORDER BY time_created",
+      )
+      .all() as Array<Record<string, unknown>>;
+    return rows.flatMap((row) => {
+      const integrationID = trimmedString(row.integration_id);
+      const value = parseCredentialRowValue(row.value);
+      if (!integrationID || !value) return [];
+      const label = trimmedString(row.label) ?? "default";
+      const id = trimmedString(row.id);
+      return [
+        {
+          ...(id ? { id } : {}),
+          integrationID,
+          label,
+          value,
+        },
+      ];
+    });
+  } finally {
+    db.close();
+  }
+}
+
+export async function readOpenCodeAuthPayloadFromPath(
+  filePath: string,
+): Promise<unknown> {
+  const bytes = await readFile(filePath);
+  if (isSqliteDatabase(bytes)) {
+    return readOpenCodeCredentialDatabase(filePath);
+  }
+  return JSON.parse(bytes.toString("utf8"));
 }
 
 export async function accountsFromOpenCodeAuthPayload(

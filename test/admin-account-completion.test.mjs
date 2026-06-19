@@ -10,6 +10,65 @@ import { createAdminRouter } from "../dist/routes/admin/index.js";
 import { AccountStore, OAuthStateStore } from "../dist/store.js";
 import { createTraceManager } from "../dist/traces.js";
 
+async function createOpenCodeCredentialDb(filePath) {
+  let sqlite;
+  try {
+    sqlite = await import("node:sqlite");
+  } catch {
+    return false;
+  }
+
+  const db = new sqlite.DatabaseSync(filePath);
+  try {
+    db.exec(`
+      CREATE TABLE credential (
+        id text PRIMARY KEY,
+        integration_id text,
+        label text NOT NULL,
+        value text NOT NULL,
+        connector_id text,
+        method_id text,
+        active integer,
+        time_created integer NOT NULL,
+        time_updated integer NOT NULL
+      );
+    `);
+    const insert = db.prepare(`
+      INSERT INTO credential (
+        id,
+        integration_id,
+        label,
+        value,
+        connector_id,
+        method_id,
+        active,
+        time_created,
+        time_updated
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    insert.run(
+      "cred_work",
+      "gitlab",
+      "Work",
+      JSON.stringify({
+        type: "oauth",
+        methodID: "oauth",
+        access: "db-oauth-access",
+        refresh: "db-oauth-refresh",
+        expires: 9999999999999,
+      }),
+      null,
+      null,
+      1,
+      1,
+      1,
+    );
+  } finally {
+    db.close();
+  }
+  return true;
+}
+
 function listen(server) {
   return new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -133,6 +192,70 @@ test("admin patch promotes an OpenCode auth-only OpenAI-compatible account to ro
     assert.equal(stored?.accessToken, "db-token");
     assert.equal(stored?.state, undefined);
   } finally {
+    await closeServer(server);
+  }
+});
+
+test("admin OpenCode import reads current opencode.db credential records", async (t) => {
+  const { store, server, baseUrl } = await createAdminFixture();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-admin-db-"));
+  const dbPath = path.join(dir, "opencode.db");
+  const configPath = path.join(dir, "opencode.jsonc");
+  if (!(await createOpenCodeCredentialDb(dbPath))) {
+    t.skip("node:sqlite is unavailable in this Node runtime");
+    await closeServer(server);
+    return;
+  }
+
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify(
+      {
+        provider: {
+          gitlab: {
+            npm: "gitlab-ai-provider",
+            options: {
+              baseURL: "https://gitlab.com",
+            },
+            models: {
+              "duo-chat-sonnet-4-5": { name: "Duo Chat Sonnet 4.5" },
+            },
+          },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  let timeout;
+  try {
+    const controller = new AbortController();
+    timeout = setTimeout(() => controller.abort(), 2_000);
+    const res = await fetch(`${baseUrl}/auth/import-opencode`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: dbPath, configPath }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    const payload = await res.json();
+
+    assert.equal(res.status, 200, JSON.stringify(payload));
+    assert.equal(payload.ok, true);
+    assert.equal(payload.imported, 1);
+    assert.equal(payload.accounts[0]?.id, "gitlab-work");
+
+    const gitlab = (await store.listAccounts()).find(
+      (account) => account.providerId === "gitlab",
+    );
+    assert.equal(gitlab?.accessToken, "db-oauth-access");
+    assert.equal(gitlab?.refreshToken, "db-oauth-refresh");
+    assert.equal(gitlab?.expiresAt, 9999999999999);
+    assert.equal(gitlab?.providerAuthType, "oauth");
+    assert.ok(gitlab?.providerModels?.["duo-chat-sonnet-4-5"]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
     await closeServer(server);
   }
 });

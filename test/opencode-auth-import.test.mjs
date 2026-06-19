@@ -12,6 +12,59 @@ function readStore(storePath) {
   return JSON.parse(fs.readFileSync(storePath, "utf8"));
 }
 
+async function createOpenCodeCredentialDb(filePath, credential) {
+  let sqlite;
+  try {
+    sqlite = await import("node:sqlite");
+  } catch {
+    return false;
+  }
+
+  const db = new sqlite.DatabaseSync(filePath);
+  try {
+    db.exec(`
+      CREATE TABLE credential (
+        id text PRIMARY KEY,
+        integration_id text,
+        label text NOT NULL,
+        value text NOT NULL,
+        connector_id text,
+        method_id text,
+        active integer,
+        time_created integer NOT NULL,
+        time_updated integer NOT NULL
+      );
+    `);
+    const insert = db.prepare(`
+      INSERT INTO credential (
+        id,
+        integration_id,
+        label,
+        value,
+        connector_id,
+        method_id,
+        active,
+        time_created,
+        time_updated
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    insert.run(
+      credential.id,
+      credential.integrationID,
+      credential.label,
+      JSON.stringify(credential.value),
+      null,
+      null,
+      1,
+      1,
+      1,
+    );
+  } finally {
+    db.close();
+  }
+  return true;
+}
+
 test("imports OpenCode auth entries through Models.dev provider metadata", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-auth-"));
   const storePath = path.join(dir, "accounts.json");
@@ -223,6 +276,75 @@ test("imports OpenCode stored credential records through the CLI", () => {
   assert.equal(gitlab?.id, "gitlab-work");
   assert.equal(gitlab?.accessToken, "stored-oauth-access");
   assert.equal(gitlab?.refreshToken, "stored-oauth-refresh");
+  assert.equal(gitlab?.expiresAt, 9999999999999);
+  assert.equal(gitlab?.providerAuthType, "oauth");
+  assert.ok(gitlab?.providerModels?.["duo-chat-sonnet-4-5"]);
+});
+
+test("imports OpenCode opencode.db credentials through the CLI", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-db-auth-"));
+  const storePath = path.join(dir, "accounts.json");
+  const authPath = path.join(dir, "opencode.db");
+  const configPath = path.join(dir, "opencode.jsonc");
+  if (
+    !(await createOpenCodeCredentialDb(authPath, {
+      id: "cred_work",
+      integrationID: "gitlab",
+      label: "Work",
+      value: {
+        type: "oauth",
+        methodID: "oauth",
+        access: "db-oauth-access",
+        refresh: "db-oauth-refresh",
+        expires: 9999999999999,
+      },
+    }))
+  ) {
+    t.skip("node:sqlite is unavailable in this Node runtime");
+    return;
+  }
+
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify(
+      {
+        provider: {
+          gitlab: {
+            npm: "gitlab-ai-provider",
+            options: {
+              baseURL: "https://gitlab.com",
+            },
+            models: {
+              "duo-chat-sonnet-4-5": { name: "Duo Chat Sonnet 4.5" },
+            },
+          },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  execFileSync(
+    process.execPath,
+    [cli, "auth", "import-opencode", authPath, "--config", configPath],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        MULTICODEX_STORE_PATH: storePath,
+        MULTICODEX_DATA_DIR: dir,
+      },
+      encoding: "utf8",
+    },
+  );
+
+  const store = readStore(storePath);
+  const gitlab = store.accounts.find((account) => account.providerId === "gitlab");
+
+  assert.equal(gitlab?.id, "gitlab-work");
+  assert.equal(gitlab?.accessToken, "db-oauth-access");
+  assert.equal(gitlab?.refreshToken, "db-oauth-refresh");
   assert.equal(gitlab?.expiresAt, 9999999999999);
   assert.equal(gitlab?.providerAuthType, "oauth");
   assert.ok(gitlab?.providerModels?.["duo-chat-sonnet-4-5"]);

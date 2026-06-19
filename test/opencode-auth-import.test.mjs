@@ -352,3 +352,62 @@ test("imports Azure OpenAI v1 endpoint from OpenCode config and env variables", 
   assert.equal(azure?.enabled, true);
   assert.ok(azure?.providerModels?.["gpt-5.1-prod"]);
 });
+
+test("imports Snowflake Cortex from OpenCode config and env PAT/JWT token", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-snowflake-auth-"));
+  const storePath = path.join(dir, "accounts.json");
+  const authPath = path.join(dir, "auth.json");
+  const configPath = path.join(dir, "opencode.jsonc");
+
+  fs.writeFileSync(authPath, JSON.stringify({ "snowflake-cortex": {} }, null, 2));
+  fs.writeFileSync(
+    configPath,
+    `{
+      "provider": {
+        "snowflake-cortex": {
+          "npm": "@ai-sdk/openai-compatible",
+          "name": "Snowflake Cortex",
+          "options": {
+            "baseURL": "https://\${SNOWFLAKE_ACCOUNT}.snowflakecomputing.com/api/v2/cortex"
+          },
+          "models": {
+            "claude-sonnet-4-5": { "name": "Claude Sonnet 4.5" }
+          }
+        }
+      }
+    }`,
+  );
+
+  execFileSync(
+    process.execPath,
+    [cli, "auth", "import-opencode", authPath, "--config", configPath],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        SNOWFLAKE_ACCOUNT: "acme-test",
+        SNOWFLAKE_CORTEX_TOKEN: "snowflake-env-token",
+        MULTICODEX_STORE_PATH: storePath,
+        MULTICODEX_DATA_DIR: dir,
+      },
+      encoding: "utf8",
+    },
+  );
+
+  const store = readStore(storePath);
+  const snowflake = store.accounts.find(
+    (account) => account.providerId === "snowflake-cortex",
+  );
+  assert.equal(snowflake?.provider, "openai-compatible");
+  assert.equal(snowflake?.providerAdapter, "openai-compatible");
+  assert.equal(snowflake?.providerLabel, "Snowflake Cortex");
+  assert.equal(
+    snowflake?.baseUrl,
+    "https://acme-test.snowflakecomputing.com/api/v2/cortex",
+  );
+  assert.equal(snowflake?.upstreamMode, "chat/completions");
+  assert.equal(snowflake?.compatibilityMode, "chat-completions-bridge");
+  assert.equal(snowflake?.accessToken, "snowflake-env-token");
+  assert.equal(snowflake?.enabled, true);
+  assert.ok(snowflake?.providerModels?.["claude-sonnet-4-5"]);
+});

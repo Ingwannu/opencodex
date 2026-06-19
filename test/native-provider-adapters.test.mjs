@@ -988,6 +988,100 @@ test("OpenAI-compatible SDK providers are runtime-routable through the bridge", 
   assert.ok(perplexity.models?.["sonar-pro"]);
 });
 
+test("Snowflake Cortex provider metadata expands account env templates and token env aliases", () => {
+  const previous = {
+    SNOWFLAKE_ACCOUNT: process.env.SNOWFLAKE_ACCOUNT,
+  };
+  process.env.SNOWFLAKE_ACCOUNT = "acme-test";
+  try {
+    const entry = providerConfigFromOpenCodeConfigPayload(
+      parseOpenCodeConfigPayload(`{
+        "provider": {
+          "snowflake-cortex": {
+            "npm": "@ai-sdk/openai-compatible",
+            "options": {
+              "baseURL": "https://\${SNOWFLAKE_ACCOUNT}.snowflakecomputing.com/api/v2/cortex"
+            },
+            "models": {
+              "claude-sonnet-4-5": { "name": "Claude Sonnet 4.5" }
+            }
+          }
+        }
+      }`),
+    ).get("snowflake-cortex");
+
+    assert.equal(entry?.provider, "openai-compatible");
+    assert.equal(entry?.providerAdapter, "openai-compatible");
+    assert.equal(
+      entry?.baseUrl,
+      "https://acme-test.snowflakecomputing.com/api/v2/cortex",
+    );
+    assert.equal(entry?.upstreamMode, "chat/completions");
+    assert.equal(entry?.compatibilityMode, "chat-completions-bridge");
+    assert.deepEqual(entry?.tokenEnv, [
+      "SNOWFLAKE_ACCOUNT",
+      "SNOWFLAKE_CORTEX_TOKEN",
+      "SNOWFLAKE_CORTEX_PAT",
+    ]);
+    assert.equal(entry?.runtimeSupported, true);
+    assert.ok(entry?.models?.["claude-sonnet-4-5"]);
+  } finally {
+    if (previous.SNOWFLAKE_ACCOUNT === undefined) delete process.env.SNOWFLAKE_ACCOUNT;
+    else process.env.SNOWFLAKE_ACCOUNT = previous.SNOWFLAKE_ACCOUNT;
+  }
+});
+
+test("OpenCode auth import enables Snowflake Cortex through env PAT/JWT token", async () => {
+  const previous = {
+    SNOWFLAKE_ACCOUNT: process.env.SNOWFLAKE_ACCOUNT,
+    SNOWFLAKE_CORTEX_TOKEN: process.env.SNOWFLAKE_CORTEX_TOKEN,
+    SNOWFLAKE_CORTEX_PAT: process.env.SNOWFLAKE_CORTEX_PAT,
+  };
+  process.env.SNOWFLAKE_ACCOUNT = "acme-test";
+  process.env.SNOWFLAKE_CORTEX_TOKEN = "snowflake-env-token";
+  delete process.env.SNOWFLAKE_CORTEX_PAT;
+  try {
+    const payload = parseOpenCodeConfigPayload(`{
+      "provider": {
+        "snowflake-cortex": {
+          "npm": "@ai-sdk/openai-compatible",
+          "options": {
+            "baseURL": "https://\${SNOWFLAKE_ACCOUNT}.snowflakecomputing.com/api/v2/cortex"
+          },
+          "models": {
+            "claude-sonnet-4-5": { "name": "Claude Sonnet 4.5" }
+          }
+        }
+      }
+    }`);
+    const accounts = await accountsFromOpenCodeAuthPayload(
+      { "snowflake-cortex": {} },
+      {
+        providerConfig: providerConfigFromOpenCodeConfigPayload(payload),
+        providerConfigSecrets: providerSecretsFromOpenCodeConfigPayload(payload),
+      },
+    );
+    const snowflake = accounts.find(
+      (account) => account.providerId === "snowflake-cortex",
+    );
+
+    assert.equal(snowflake?.provider, "openai-compatible");
+    assert.equal(snowflake?.providerAdapter, "openai-compatible");
+    assert.equal(
+      snowflake?.baseUrl,
+      "https://acme-test.snowflakecomputing.com/api/v2/cortex",
+    );
+    assert.equal(snowflake?.accessToken, "snowflake-env-token");
+    assert.equal(snowflake?.enabled, true);
+    assert.ok(snowflake?.providerModels?.["claude-sonnet-4-5"]);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test("OpenCode auth import preserves configured model metadata", async () => {
   const config = new Map([
     [

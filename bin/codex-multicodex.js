@@ -346,6 +346,28 @@ function firstStringValue(source, keys) {
   return undefined;
 }
 
+function expandEnvTemplates(value, env = process.env) {
+  let missing = false;
+  const expanded = String(value || "")
+    .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, name) => {
+      const found = env[String(name)];
+      if (found === undefined || found === "") {
+        missing = true;
+        return "";
+      }
+      return found;
+    })
+    .replace(/\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, name) => {
+      const found = env[String(name)];
+      if (found === undefined || found === "") {
+        missing = true;
+        return "";
+      }
+      return found;
+    });
+  return missing ? undefined : expanded;
+}
+
 function cloudflareAiGatewayBaseUrlFromOptions(options = {}, env = process.env) {
   const explicit = firstStringValue(options, ["baseURL", "baseUrl", "base_url", "url", "endpoint"]);
   if (explicit && /^https?:\/\//.test(explicit)) return explicit;
@@ -748,6 +770,13 @@ function tokenEnvForProvider(providerId, adapter, env) {
       "GOOGLE_VERTEX_LOCATION",
     ];
   }
+  if (providerId === "snowflake-cortex") {
+    return [
+      "SNOWFLAKE_ACCOUNT",
+      "SNOWFLAKE_CORTEX_TOKEN",
+      "SNOWFLAKE_CORTEX_PAT",
+    ];
+  }
   if (providerId === "sap-ai-core" || adapter === "sap-ai-core") {
     return ["AICORE_SERVICE_KEY"];
   }
@@ -778,12 +807,15 @@ function modelsDevProviderToPreset(providerId, source) {
       openAiCompatibleBaseUrl)
       ? "openai-compatible"
       : providerAdapterFromNpm(id, source?.npm);
-  const runtimeSupported =
-    isRuntimeSupportedAdapter(adapter) &&
-    ((adapter !== "vertex" && adapter !== "vertex-anthropic") || Boolean(vertexBaseUrl));
   const baseUrl = adapter === "openai-compatible"
     ? normalizeOpenAiCompatibleBaseUrl(openAiCompatibleBaseUrl)
     : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : adapter === "cohere" ? "https://api.cohere.com" : adapter === "amazon-bedrock" ? bedrockBaseUrl : adapter === "vertex" || adapter === "vertex-anthropic" ? vertexBaseUrl : adapter === "gitlab" ? "https://gitlab.com" : adapter === "sap-ai-core" ? sapBaseUrl : undefined));
+  const runtimeSupported =
+    isRuntimeSupportedAdapter(adapter) &&
+    ((adapter !== "vertex" && adapter !== "vertex-anthropic") || Boolean(vertexBaseUrl)) &&
+    (adapter !== "openai-compatible" ||
+      openAiCompatibleBaseUrl === undefined ||
+      Boolean(baseUrl));
   return {
     label: source?.name || id,
     provider: providerForAdapter(id, adapter),
@@ -1339,15 +1371,17 @@ function optionValue(opts, ...names) {
 function normalizeBaseUrl(value) {
   const raw = String(value ?? "").trim();
   if (!raw) return undefined;
+  const expanded = expandEnvTemplates(raw);
+  if (!expanded?.trim()) return undefined;
   try {
-    const parsed = new URL(raw);
+    const parsed = new URL(expanded);
     if (!["http:", "https:"].includes(parsed.protocol)) {
       throw new Error("base URL must use http or https");
     }
   } catch (err) {
-    throw new Error(`Invalid base URL "${raw}": ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(`Invalid base URL "${expanded}": ${err instanceof Error ? err.message : String(err)}`);
   }
-  return raw.replace(/\/+$/, "");
+  return expanded.replace(/\/+$/, "");
 }
 
 function normalizeOpenAiCompatibleBaseUrl(value) {
@@ -1676,13 +1710,25 @@ function findSecretInProviderConfig(value) {
   return findSecretInObject(options) || findSecretInHeaders(options.headers) || findSecretInHeaders(value.headers);
 }
 
+function isSecretEnvName(name) {
+  return /(API_)?KEY|TOKEN|PAT|SECRET|BEARER/i.test(name);
+}
+
+function envSecretFromTokenEnv(tokenEnv, env) {
+  for (const name of tokenEnv || []) {
+    if (!isSecretEnvName(name)) continue;
+    const value = env[name];
+    if (value?.trim()) return normalizeSecret(value);
+  }
+  return undefined;
+}
+
 function envSecretForProvider(providerId, preset, env = process.env) {
   const providerAdapter = preset.providerAdapter || preset.provider;
-  if (
-    (providerId === "amazon-bedrock" || providerAdapter === "amazon-bedrock") &&
-    env.AWS_BEARER_TOKEN_BEDROCK?.trim()
-  ) {
-    return normalizeSecret(env.AWS_BEARER_TOKEN_BEDROCK);
+  if (providerId === "amazon-bedrock" || providerAdapter === "amazon-bedrock") {
+    return env.AWS_BEARER_TOKEN_BEDROCK?.trim()
+      ? normalizeSecret(env.AWS_BEARER_TOKEN_BEDROCK)
+      : undefined;
   }
   if (
     providerId === "google-vertex" ||
@@ -1696,8 +1742,9 @@ function envSecretForProvider(providerId, preset, env = process.env) {
     if (env.GOOGLE_ACCESS_TOKEN?.trim()) {
       return normalizeSecret(env.GOOGLE_ACCESS_TOKEN);
     }
+    return undefined;
   }
-  return undefined;
+  return envSecretFromTokenEnv(preset.tokenEnv, env);
 }
 
 function credentialChainTokenForProvider(providerId, preset) {

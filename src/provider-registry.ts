@@ -360,6 +360,31 @@ function firstStringValue(
   return undefined;
 }
 
+function expandEnvTemplates(
+  value: string,
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  let missing = false;
+  const expanded = value
+    .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, name) => {
+      const found = env[String(name)];
+      if (found === undefined || found === "") {
+        missing = true;
+        return "";
+      }
+      return found;
+    })
+    .replace(/\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, name) => {
+      const found = env[String(name)];
+      if (found === undefined || found === "") {
+        missing = true;
+        return "";
+      }
+      return found;
+    });
+  return missing ? undefined : expanded;
+}
+
 export function cloudflareAiGatewayBaseUrlFromOptions(
   options: Record<string, unknown> | undefined = {},
   env: Record<string, string | undefined> = process.env,
@@ -689,11 +714,13 @@ export function sanitizeProviderId(value: unknown): string {
 export function normalizeBaseUrl(value: unknown): string | undefined {
   const raw = String(value ?? "").trim();
   if (!raw) return undefined;
-  const parsed = new URL(raw);
+  const expanded = expandEnvTemplates(raw);
+  if (!expanded?.trim()) return undefined;
+  const parsed = new URL(expanded);
   if (!["http:", "https:"].includes(parsed.protocol)) {
     throw new Error("base URL must use http or https");
   }
-  return raw.replace(/\/+$/, "");
+  return expanded.replace(/\/+$/, "");
 }
 
 export function normalizeOpenAiCompatibleBaseUrl(value: unknown): string | undefined {
@@ -793,6 +820,13 @@ function tokenEnvForProvider(
       "GOOGLE_VERTEX_LOCATION",
     ];
   }
+  if (providerId === "snowflake-cortex") {
+    return [
+      "SNOWFLAKE_ACCOUNT",
+      "SNOWFLAKE_CORTEX_TOKEN",
+      "SNOWFLAKE_CORTEX_PAT",
+    ];
+  }
   if (providerId === "sap-ai-core" || adapter === "sap-ai-core") {
     return ["AICORE_SERVICE_KEY"];
   }
@@ -840,10 +874,6 @@ export function providerRegistryEntryFromMetadata(
       openAiCompatibleBaseUrl)
       ? "openai-compatible"
       : providerAdapterFromNpm(id, source.npm);
-  const runtimeSupported =
-    isRuntimeSupportedProvider(adapter) &&
-    ((adapter !== "vertex" && adapter !== "vertex-anthropic") ||
-      Boolean(vertexBaseUrl));
   const baseUrl =
     adapter === "openai-compatible"
       ? normalizeOpenAiCompatibleBaseUrl(openAiCompatibleBaseUrl)
@@ -865,6 +895,13 @@ export function providerRegistryEntryFromMetadata(
                         ? sapBaseUrl
                     : undefined),
         );
+  const runtimeSupported =
+    isRuntimeSupportedProvider(adapter) &&
+    ((adapter !== "vertex" && adapter !== "vertex-anthropic") ||
+      Boolean(vertexBaseUrl)) &&
+    (adapter !== "openai-compatible" ||
+      openAiCompatibleBaseUrl === undefined ||
+      Boolean(baseUrl));
 
   return {
     id,

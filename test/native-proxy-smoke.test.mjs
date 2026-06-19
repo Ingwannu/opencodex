@@ -737,6 +737,86 @@ test("proxy routes Azure OpenAI v1 endpoints with api-key authorization", async 
   }
 });
 
+test("proxy routes Snowflake Cortex through OpenAI-compatible chat completions", async () => {
+  let capturedRequest;
+  let capturedModelsAuthorization;
+  let capturedChatAuthorization;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/api/v2/cortex/v1/models") {
+      capturedModelsAuthorization = req.headers.authorization;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "claude-sonnet-4-5" }] }));
+      return;
+    }
+    if (
+      req.method === "POST" &&
+      req.url === "/api/v2/cortex/v1/chat/completions"
+    ) {
+      capturedRequest = await readJson(req);
+      capturedChatAuthorization = req.headers.authorization;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl-snowflake",
+          object: "chat.completion",
+          created: 1,
+          model: "claude-sonnet-4-5",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Snowflake OK" },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "snowflake-smoke",
+          provider: "openai-compatible",
+          providerId: "snowflake-cortex",
+          providerAdapter: "openai-compatible",
+          accessToken: "snowflake-smoke-token",
+          baseUrl: `http://127.0.0.1:${upstreamPort}/api/v2/cortex`,
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-5",
+            messages: [{ role: "user", content: "Hello" }],
+            max_tokens: 64,
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.choices[0].message.content, "Snowflake OK");
+        assert.equal(capturedModelsAuthorization, "Bearer snowflake-smoke-token");
+        assert.equal(capturedChatAuthorization, "Bearer snowflake-smoke-token");
+        assert.equal(capturedRequest.model, "claude-sonnet-4-5");
+        assert.equal(capturedRequest.messages[0].content, "Hello");
+        assert.equal(capturedRequest.max_tokens, undefined);
+        assert.equal(capturedRequest.max_completion_tokens, 64);
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy routes v0 through OpenAI-compatible chat completions", async () => {
   let capturedRequest;
   let capturedModelsAuthorization;

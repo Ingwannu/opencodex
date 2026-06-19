@@ -141,17 +141,34 @@ function findSecretInProviderConfig(value: unknown): string | undefined {
   );
 }
 
+function isSecretEnvName(name: string): boolean {
+  return /(API_)?KEY|TOKEN|PAT|SECRET|BEARER/i.test(name);
+}
+
+function envSecretFromTokenEnv(
+  tokenEnv: string[] | undefined,
+  env: Record<string, string | undefined>,
+): string | undefined {
+  for (const name of tokenEnv ?? []) {
+    if (!isSecretEnvName(name)) continue;
+    const value = env[name];
+    if (value?.trim()) return normalizeSecret(value);
+  }
+  return undefined;
+}
+
 function envSecretForProvider(
   providerId: string,
   registry: ProviderRegistryEntry,
   env: Record<string, string | undefined> = process.env,
 ): string | undefined {
   if (
-    (providerId === "amazon-bedrock" ||
-      registry.providerAdapter === "amazon-bedrock") &&
-    env.AWS_BEARER_TOKEN_BEDROCK?.trim()
+    providerId === "amazon-bedrock" ||
+    registry.providerAdapter === "amazon-bedrock"
   ) {
-    return normalizeSecret(env.AWS_BEARER_TOKEN_BEDROCK);
+    return env.AWS_BEARER_TOKEN_BEDROCK?.trim()
+      ? normalizeSecret(env.AWS_BEARER_TOKEN_BEDROCK)
+      : undefined;
   }
   if (
     providerId === "google-vertex" ||
@@ -165,8 +182,9 @@ function envSecretForProvider(
     if (env.GOOGLE_ACCESS_TOKEN?.trim()) {
       return normalizeSecret(env.GOOGLE_ACCESS_TOKEN);
     }
+    return undefined;
   }
-  return undefined;
+  return envSecretFromTokenEnv(registry.tokenEnv, env);
 }
 
 function credentialChainTokenForProvider(

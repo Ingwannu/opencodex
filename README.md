@@ -198,6 +198,10 @@ OpenCodex can route providers that map to the current runtime adapters:
   Perplexity Sonar, Vercel AI Gateway, v0, Venice, AIHubMix, Merge Gateway, and
   Cloudflare AI Gateway when `CLOUDFLARE_ACCOUNT_ID` and
   `CLOUDFLARE_GATEWAY_ID` or equivalent OpenCode provider options are available
+- Snowflake Cortex through its OpenAI-compatible Cortex REST endpoint at
+  `/api/v2/cortex/v1`, with `${SNOWFLAKE_ACCOUNT}` endpoint templates expanded
+  from env and auth imported from `SNOWFLAKE_CORTEX_TOKEN` or
+  `SNOWFLAKE_CORTEX_PAT`
 - Azure OpenAI v1 endpoints when `AZURE_RESOURCE_NAME` or an equivalent
   OpenCode `resourceName` / `baseURL` provider option is available; requests use
   Azure's `api-key` header and `/openai/v1` API shape
@@ -213,6 +217,9 @@ OpenCodex can route providers that map to the current runtime adapters:
 - OpenCode provider `models` metadata for custom and Models.dev providers, so
   configured models remain visible even when the upstream does not expose an
   OpenAI-style model listing endpoint
+- OpenCode and Models.dev endpoint templates that use `${ENV_NAME}` or
+  `{env:ENV_NAME}` placeholders; unresolved endpoint templates are kept
+  auth-only instead of being routed to a literal placeholder host
 
 Credentials for providers whose native API adapter is not implemented yet, such
 as Azure without resource routing metadata, Google Vertex ADC variants that

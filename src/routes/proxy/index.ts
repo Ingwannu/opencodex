@@ -283,6 +283,19 @@ function isAzureOpenAiAccount(account: { providerId?: string }): boolean {
   return providerId === "azure" || providerId === "azure-cognitive-services";
 }
 
+function isSnowflakeCortexAccount(account: { providerId?: string }): boolean {
+  return String(account.providerId ?? "").toLowerCase() === "snowflake-cortex";
+}
+
+function normalizeSnowflakeCortexChatPayload(payload: any): any {
+  if (!payload || typeof payload !== "object") return payload;
+  if (payload.max_completion_tokens === undefined && payload.max_tokens !== undefined) {
+    payload.max_completion_tokens = payload.max_tokens;
+  }
+  delete payload.max_tokens;
+  return payload;
+}
+
 function applyOpenAiCompatibleAuthHeaders(
   headers: Record<string, string>,
   account: Pick<Account, "accessToken" | "providerId">,
@@ -1659,6 +1672,9 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
           payloadToUpstream = sanitizeGenericChatCompletionsPayload(
             payloadToUpstream,
           );
+        }
+        if (shouldSendChatCompletions && isSnowflakeCortexAccount(selected)) {
+          payloadToUpstream = normalizeSnowflakeCortexChatPayload(payloadToUpstream);
         }
 
         if (

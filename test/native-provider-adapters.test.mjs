@@ -1401,6 +1401,128 @@ test("OpenCode auth import derives Google Vertex endpoint for MaaS model overrid
   }
 });
 
+test("OpenCode auth import routes Amazon Bedrock Mantle model overrides through Responses", async () => {
+  const previous = {
+    AWS_REGION: process.env.AWS_REGION,
+    AWS_BEARER_TOKEN_BEDROCK: process.env.AWS_BEARER_TOKEN_BEDROCK,
+  };
+  process.env.AWS_REGION = "us-east-1";
+  process.env.AWS_BEARER_TOKEN_BEDROCK = "bedrock-api-key";
+  try {
+    const registry = providerRegistryEntryFromMetadata("amazon-bedrock", {
+      id: "amazon-bedrock",
+      name: "Amazon Bedrock",
+      npm: "@ai-sdk/amazon-bedrock",
+      env: ["AWS_BEARER_TOKEN_BEDROCK", "AWS_REGION"],
+      models: {
+        "anthropic.claude-3-5-sonnet-20241022-v2:0": {
+          id: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+          name: "Claude 3.5 Sonnet",
+        },
+        "openai.gpt-oss-120b": {
+          id: "openai.gpt-oss-120b",
+          name: "GPT OSS 120B",
+          provider: {
+            npm: "@ai-sdk/amazon-bedrock/mantle",
+            api: "https://bedrock-mantle.${AWS_REGION}.api.aws/v1",
+            shape: "responses",
+          },
+        },
+      },
+    });
+
+    const accounts = await accountsFromOpenCodeAuthPayload(
+      { "amazon-bedrock": {} },
+      { providerConfig: new Map([["amazon-bedrock", registry]]) },
+    );
+    const parent = accounts.find(
+      (account) =>
+        account.providerId === "amazon-bedrock" &&
+        account.providerAdapter === "amazon-bedrock",
+    );
+    const mantle = accounts.find(
+      (account) =>
+        account.providerId === "amazon-bedrock" &&
+        account.providerAdapter === "openai-compatible",
+    );
+
+    assert.ok(parent?.providerModels?.["anthropic.claude-3-5-sonnet-20241022-v2:0"]);
+    assert.equal(parent?.providerModels?.["openai.gpt-oss-120b"], undefined);
+
+    assert.equal(mantle?.provider, "openai-compatible");
+    assert.equal(mantle?.baseUrl, "https://bedrock-mantle.us-east-1.api.aws");
+    assert.equal(mantle?.upstreamMode, "responses");
+    assert.equal(mantle?.compatibilityMode, "responses");
+    assert.equal(mantle?.accessToken, "bedrock-api-key");
+    assert.equal(mantle?.enabled, true);
+    assert.ok(mantle?.providerModels?.["openai.gpt-oss-120b"]);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test("OpenCode auth import keeps Cloudflare AI Gateway no-api provider hints on the parent account", async () => {
+  const previous = {
+    CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
+    CLOUDFLARE_GATEWAY_ID: process.env.CLOUDFLARE_GATEWAY_ID,
+    CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN,
+  };
+  process.env.CLOUDFLARE_ACCOUNT_ID = "cf-account";
+  process.env.CLOUDFLARE_GATEWAY_ID = "cf-gateway";
+  process.env.CLOUDFLARE_API_TOKEN = "cf-token";
+  try {
+    const registry = providerRegistryEntryFromMetadata("cloudflare-ai-gateway", {
+      id: "cloudflare-ai-gateway",
+      name: "Cloudflare AI Gateway",
+      npm: "ai-gateway-provider",
+      env: [
+        "CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_GATEWAY_ID",
+      ],
+      models: {
+        "anthropic/claude-opus-4-7": {
+          id: "anthropic/claude-opus-4-7",
+          name: "Claude Opus 4.7",
+          provider: {
+            npm: "@ai-sdk/anthropic",
+          },
+        },
+      },
+    });
+
+    const accounts = await accountsFromOpenCodeAuthPayload(
+      { "cloudflare-ai-gateway": {} },
+      { providerConfig: new Map([["cloudflare-ai-gateway", registry]]) },
+    );
+    const parent = accounts.find(
+      (account) =>
+        account.providerId === "cloudflare-ai-gateway" &&
+        account.providerAdapter === "openai-compatible",
+    );
+    const anthropic = accounts.find(
+      (account) =>
+        account.providerId === "cloudflare-ai-gateway" &&
+        account.providerAdapter === "anthropic",
+    );
+
+    assert.equal(anthropic, undefined);
+    assert.equal(
+      parent?.baseUrl,
+      "https://gateway.ai.cloudflare.com/v1/cf-account/cf-gateway/openai",
+    );
+    assert.ok(parent?.providerModels?.["anthropic/claude-opus-4-7"]);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test("Snowflake Cortex provider metadata expands account env templates and token env aliases", () => {
   const previous = {
     SNOWFLAKE_ACCOUNT: process.env.SNOWFLAKE_ACCOUNT,

@@ -341,6 +341,13 @@ function modelOverrideBaseUrl(
   );
 }
 
+function canShareRegistryBaseForModelOverride(
+  registry: ProviderRegistryEntry,
+  adapter: RouteProviderId,
+): boolean {
+  return registry.providerAdapter === "vertex" && adapter === "vertex-anthropic";
+}
+
 function modelProviderOverrideForMetadata(
   registry: ProviderRegistryEntry,
   modelId: string,
@@ -361,16 +368,31 @@ function modelProviderOverrideForMetadata(
     "url",
     "endpoint",
   ]);
+  if (!api && !canShareRegistryBaseForModelOverride(registry, adapter)) {
+    return undefined;
+  }
   const baseUrl = modelOverrideBaseUrl(adapter, api, registry);
   if (adapter === "openai-compatible" && !baseUrl) return undefined;
+  const shape = firstProviderOverrideString(provider, ["shape"]);
+  const upstreamMode =
+    adapter === "openai-compatible" && shape === "responses"
+      ? "responses"
+      : adapter === "openai-compatible"
+        ? "chat/completions"
+        : undefined;
+  const compatibilityMode =
+    upstreamMode === "responses"
+      ? "responses"
+      : upstreamMode === "chat/completions"
+        ? "chat-completions-bridge"
+        : undefined;
 
   return {
     adapter,
     providerNpm: npm,
     baseUrl,
-    upstreamMode: adapter === "openai-compatible" ? "chat/completions" : undefined,
-    compatibilityMode:
-      adapter === "openai-compatible" ? "chat-completions-bridge" : undefined,
+    upstreamMode,
+    compatibilityMode,
     models: { [modelId]: metadata },
   };
 }
@@ -381,7 +403,7 @@ function baseProviderModelsForRegistry(
   if (!registry.models || typeof registry.models !== "object") return undefined;
   const out: Record<string, unknown> = {};
   for (const [modelId, metadata] of Object.entries(registry.models)) {
-    if (providerOverrideObject(metadata)) continue;
+    if (modelProviderOverrideForMetadata(registry, modelId, metadata)) continue;
     out[modelId] = metadata;
   }
   return Object.keys(out).length ? out : undefined;

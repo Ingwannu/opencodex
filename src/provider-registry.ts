@@ -893,6 +893,7 @@ export function providerAdapterFromNpm(
   if (npm === "@ai-sdk/cohere") return "cohere";
   if (npm === "@ai-sdk/vercel") return "openai-compatible";
   if (npm === "@ai-sdk/azure") return "azure";
+  if (npm === "@ai-sdk/amazon-bedrock/mantle") return "openai-compatible";
   if (npm === "@ai-sdk/amazon-bedrock") return "amazon-bedrock";
   if (npm === "@ai-sdk/google-vertex/anthropic") return "vertex-anthropic";
   if (npm === "@ai-sdk/google-vertex") return "vertex";

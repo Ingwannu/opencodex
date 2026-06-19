@@ -372,6 +372,24 @@ test("imports ordinary bundled OpenAI-compatible SDK packages through the CLI", 
               "llama-3.3-70b-versatile": { name: "Llama 3.3 70B" },
             },
           },
+          "custom-xai": {
+            npm: "@ai-sdk/xai",
+            options: {
+              apiKey: "xai-secret",
+            },
+            models: {
+              "grok-4": { name: "Grok 4" },
+            },
+          },
+          "custom-openrouter": {
+            npm: "@openrouter/ai-sdk-provider",
+            options: {
+              apiKey: "openrouter-secret",
+            },
+            models: {
+              "openai/gpt-5": { name: "GPT-5" },
+            },
+          },
           "custom-perplexity": {
             npm: "@ai-sdk/perplexity",
             options: {
@@ -380,6 +398,15 @@ test("imports ordinary bundled OpenAI-compatible SDK packages through the CLI", 
             },
             models: {
               "sonar-pro": { name: "Sonar Pro" },
+            },
+          },
+          "custom-vercel-v0": {
+            npm: "@ai-sdk/vercel",
+            options: {
+              apiKey: "vercel-secret",
+            },
+            models: {
+              "v0-1.5-md": { name: "v0 1.5 MD" },
             },
           },
         },
@@ -412,10 +439,28 @@ test("imports ordinary bundled OpenAI-compatible SDK packages through the CLI", 
   assert.equal(byId.get("custom-groq")?.enabled, true);
   assert.ok(byId.get("custom-groq")?.providerModels?.["llama-3.3-70b-versatile"]);
 
+  assert.equal(byId.get("custom-xai")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("custom-xai")?.baseUrl, "https://api.x.ai");
+  assert.equal(byId.get("custom-xai")?.accessToken, "xai-secret");
+  assert.equal(byId.get("custom-xai")?.enabled, true);
+  assert.ok(byId.get("custom-xai")?.providerModels?.["grok-4"]);
+
+  assert.equal(byId.get("custom-openrouter")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("custom-openrouter")?.baseUrl, "https://openrouter.ai/api");
+  assert.equal(byId.get("custom-openrouter")?.accessToken, "openrouter-secret");
+  assert.equal(byId.get("custom-openrouter")?.enabled, true);
+  assert.ok(byId.get("custom-openrouter")?.providerModels?.["openai/gpt-5"]);
+
   assert.equal(byId.get("custom-perplexity")?.providerAdapter, "openai-compatible");
   assert.equal(byId.get("custom-perplexity")?.baseUrl, "https://api.perplexity.ai");
   assert.equal(byId.get("custom-perplexity")?.openAiPathPrefix, "none");
   assert.equal(byId.get("custom-perplexity")?.enabled, true);
+
+  assert.equal(byId.get("custom-vercel-v0")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("custom-vercel-v0")?.baseUrl, "https://api.v0.dev");
+  assert.equal(byId.get("custom-vercel-v0")?.accessToken, "vercel-secret");
+  assert.equal(byId.get("custom-vercel-v0")?.enabled, true);
+  assert.ok(byId.get("custom-vercel-v0")?.providerModels?.["v0-1.5-md"]);
 });
 
 test("imports OpenCode config provider secrets without auth.json entries", () => {

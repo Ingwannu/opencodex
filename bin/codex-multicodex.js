@@ -386,6 +386,9 @@ const openAiCompatibleSdkPackageDefaults = {
     compatibilityMode: "chat-completions-bridge",
   },
   "@ai-sdk/togetherai": { baseUrl: "https://api.together.xyz/v1" },
+  "@ai-sdk/vercel": { baseUrl: "https://api.v0.dev/v1" },
+  "@ai-sdk/xai": { baseUrl: "https://api.x.ai/v1" },
+  "@openrouter/ai-sdk-provider": { baseUrl: "https://openrouter.ai/api/v1" },
 };
 
 function openAiCompatibleDefaultFromNpm(npmPackage) {

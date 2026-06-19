@@ -1988,6 +1988,24 @@ test("OpenCode config imports ordinary bundled OpenAI-compatible SDK packages", 
           "llama-3.3-70b-versatile": { "name": "Llama 3.3 70B" }
         }
       },
+      "custom-xai": {
+        "npm": "@ai-sdk/xai",
+        "options": {
+          "apiKey": "xai-secret"
+        },
+        "models": {
+          "grok-4": { "name": "Grok 4" }
+        }
+      },
+      "custom-openrouter": {
+        "npm": "@openrouter/ai-sdk-provider",
+        "options": {
+          "apiKey": "openrouter-secret"
+        },
+        "models": {
+          "openai/gpt-5": { "name": "GPT-5" }
+        }
+      },
       "custom-deepinfra": {
         "npm": "@ai-sdk/deepinfra",
         "options": {
@@ -2037,6 +2055,15 @@ test("OpenCode config imports ordinary bundled OpenAI-compatible SDK packages", 
         "models": {
           "qwen-plus": { "name": "Qwen Plus" }
         }
+      },
+      "custom-vercel-v0": {
+        "npm": "@ai-sdk/vercel",
+        "options": {
+          "apiKey": "vercel-secret"
+        },
+        "models": {
+          "v0-1.5-md": { "name": "v0 1.5 MD" }
+        }
       }
     }
   }`);
@@ -2054,6 +2081,18 @@ test("OpenCode config imports ordinary bundled OpenAI-compatible SDK packages", 
   assert.equal(byId.get("custom-groq")?.accessToken, "groq-secret");
   assert.equal(byId.get("custom-groq")?.enabled, true);
   assert.ok(byId.get("custom-groq")?.providerModels?.["llama-3.3-70b-versatile"]);
+
+  assert.equal(byId.get("custom-xai")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("custom-xai")?.baseUrl, "https://api.x.ai");
+  assert.equal(byId.get("custom-xai")?.accessToken, "xai-secret");
+  assert.equal(byId.get("custom-xai")?.enabled, true);
+  assert.ok(byId.get("custom-xai")?.providerModels?.["grok-4"]);
+
+  assert.equal(byId.get("custom-openrouter")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("custom-openrouter")?.baseUrl, "https://openrouter.ai/api");
+  assert.equal(byId.get("custom-openrouter")?.accessToken, "openrouter-secret");
+  assert.equal(byId.get("custom-openrouter")?.enabled, true);
+  assert.ok(byId.get("custom-openrouter")?.providerModels?.["openai/gpt-5"]);
 
   assert.equal(byId.get("custom-deepinfra")?.providerAdapter, "openai-compatible");
   assert.equal(byId.get("custom-deepinfra")?.baseUrl, "https://api.deepinfra.com/v1/openai");
@@ -2078,6 +2117,12 @@ test("OpenCode config imports ordinary bundled OpenAI-compatible SDK packages", 
     "https://dashscope.aliyuncs.com/compatible-mode",
   );
   assert.equal(byId.get("custom-alibaba")?.enabled, true);
+
+  assert.equal(byId.get("custom-vercel-v0")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("custom-vercel-v0")?.baseUrl, "https://api.v0.dev");
+  assert.equal(byId.get("custom-vercel-v0")?.accessToken, "vercel-secret");
+  assert.equal(byId.get("custom-vercel-v0")?.enabled, true);
+  assert.ok(byId.get("custom-vercel-v0")?.providerModels?.["v0-1.5-md"]);
 });
 
 test("OpenCode auth import enables OpenAI-compatible SDK providers", async () => {

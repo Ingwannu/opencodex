@@ -742,6 +742,9 @@ export function providerAdapterFromNpm(
   if (OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS[id]) {
     return "openai-compatible";
   }
+  if (id === "cloudflare-ai-gateway" || npm.includes("ai-gateway-provider")) {
+    return "openai-compatible";
+  }
   if (npm === "@ai-sdk/openai" || npm.includes("openai-compatible")) {
     return "openai-compatible";
   }
@@ -869,9 +872,10 @@ export function providerRegistryEntryFromMetadata(
     openAiCompatibleDefault?.baseUrl ??
     cloudflareAiGatewayBaseUrl ??
     azureOpenAiBaseUrl;
+  const requiresOpenAiCompatibleEndpoint =
+    id === "cloudflare-ai-gateway" || AZURE_OPENAI_PROVIDER_IDS.has(id);
   const adapter =
-    ((id === "cloudflare-ai-gateway" || AZURE_OPENAI_PROVIDER_IDS.has(id)) &&
-      openAiCompatibleBaseUrl)
+    requiresOpenAiCompatibleEndpoint
       ? "openai-compatible"
       : providerAdapterFromNpm(id, source.npm);
   const baseUrl =
@@ -899,6 +903,7 @@ export function providerRegistryEntryFromMetadata(
     isRuntimeSupportedProvider(adapter) &&
     ((adapter !== "vertex" && adapter !== "vertex-anthropic") ||
       Boolean(vertexBaseUrl)) &&
+    (!requiresOpenAiCompatibleEndpoint || Boolean(baseUrl)) &&
     (adapter !== "openai-compatible" ||
       openAiCompatibleBaseUrl === undefined ||
       Boolean(baseUrl));

@@ -715,6 +715,7 @@ function providerAdapterFromNpm(providerId, npmPackage) {
   if (id === "mistral") return "mistral";
   if (id === "zai") return "zai";
   if (openAiCompatibleSdkProviderDefaults[id]) return "openai-compatible";
+  if (id === "cloudflare-ai-gateway" || npm.includes("ai-gateway-provider")) return "openai-compatible";
   if (npm === "@ai-sdk/openai" || npm.includes("openai-compatible")) return "openai-compatible";
   if (npm === "@openrouter/ai-sdk-provider") return "openai-compatible";
   if (npm === "@ai-sdk/mistral") return "mistral";
@@ -802,9 +803,10 @@ function modelsDevProviderToPreset(providerId, source) {
   const sapBaseUrl = id === "sap-ai-core" ? sapAiCoreBaseUrlFromOptions(source?.options) : undefined;
   const openAiCompatibleBaseUrl =
     source?.api || openAiCompatibleDefault?.baseUrl || cloudflareAiGatewayBaseUrl || azureOpenAiBaseUrl;
+  const requiresOpenAiCompatibleEndpoint =
+    id === "cloudflare-ai-gateway" || azureOpenAiProviderIds.has(id);
   const adapter =
-    ((id === "cloudflare-ai-gateway" || azureOpenAiProviderIds.has(id)) &&
-      openAiCompatibleBaseUrl)
+    requiresOpenAiCompatibleEndpoint
       ? "openai-compatible"
       : providerAdapterFromNpm(id, source?.npm);
   const baseUrl = adapter === "openai-compatible"
@@ -813,6 +815,7 @@ function modelsDevProviderToPreset(providerId, source) {
   const runtimeSupported =
     isRuntimeSupportedAdapter(adapter) &&
     ((adapter !== "vertex" && adapter !== "vertex-anthropic") || Boolean(vertexBaseUrl)) &&
+    (!requiresOpenAiCompatibleEndpoint || Boolean(baseUrl)) &&
     (adapter !== "openai-compatible" ||
       openAiCompatibleBaseUrl === undefined ||
       Boolean(baseUrl));

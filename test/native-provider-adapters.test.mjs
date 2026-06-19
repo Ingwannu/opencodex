@@ -30,6 +30,7 @@ import {
   providerSecretsFromOpenCodeConfigPayload,
 } from "../dist/opencode-auth.js";
 import {
+  providerRegistryEntryFromMetadata,
   resolveProviderRegistryEntry,
 } from "../dist/provider-registry.js";
 
@@ -986,6 +987,56 @@ test("OpenAI-compatible SDK providers are runtime-routable through the bridge", 
   const perplexity = await resolveProviderRegistryEntry("perplexity");
   assert.equal(perplexity.openAiPathPrefix, "none");
   assert.ok(perplexity.models?.["sonar-pro"]);
+});
+
+test("Cloudflare AI Gateway registry metadata stays OpenAI-compatible when endpoint env is missing", () => {
+  const entry = providerRegistryEntryFromMetadata("cloudflare-ai-gateway", {
+    id: "cloudflare-ai-gateway",
+    name: "Cloudflare AI Gateway",
+    npm: "ai-gateway-provider",
+    env: [
+      "CLOUDFLARE_API_TOKEN",
+      "CLOUDFLARE_ACCOUNT_ID",
+      "CLOUDFLARE_GATEWAY_ID",
+    ],
+    models: {
+      "openai/gpt-5.1": { name: "GPT 5.1 through Cloudflare" },
+    },
+  });
+
+  assert.equal(entry.provider, "openai-compatible");
+  assert.equal(entry.providerAdapter, "openai-compatible");
+  assert.equal(entry.runtimeSupported, false);
+  assert.equal(entry.baseUrl, undefined);
+  assert.equal(entry.upstreamMode, "chat/completions");
+  assert.equal(entry.compatibilityMode, "chat-completions-bridge");
+  assert.deepEqual(entry.tokenEnv, [
+    "CLOUDFLARE_API_TOKEN",
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_GATEWAY_ID",
+  ]);
+  assert.ok(entry.models?.["openai/gpt-5.1"]);
+});
+
+test("Azure registry metadata stays OpenAI-compatible when resource env is missing", () => {
+  const entry = providerRegistryEntryFromMetadata("azure", {
+    id: "azure",
+    name: "Azure",
+    npm: "@ai-sdk/azure",
+    env: ["AZURE_RESOURCE_NAME", "AZURE_API_KEY"],
+    models: {
+      "gpt-5.1-prod": { name: "GPT 5.1 Azure deployment" },
+    },
+  });
+
+  assert.equal(entry.provider, "openai-compatible");
+  assert.equal(entry.providerAdapter, "openai-compatible");
+  assert.equal(entry.runtimeSupported, false);
+  assert.equal(entry.baseUrl, undefined);
+  assert.equal(entry.upstreamMode, "responses");
+  assert.equal(entry.compatibilityMode, "responses");
+  assert.deepEqual(entry.tokenEnv, ["AZURE_RESOURCE_NAME", "AZURE_API_KEY"]);
+  assert.ok(entry.models?.["gpt-5.1-prod"]);
 });
 
 test("Snowflake Cortex provider metadata expands account env templates and token env aliases", () => {

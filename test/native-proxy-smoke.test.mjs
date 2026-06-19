@@ -731,6 +731,95 @@ test("proxy routes Cloudflare AI Gateway with cf-aig authorization", async () =>
   }
 });
 
+test("proxy routes Cloudflare AI Gateway REST endpoint with standard authorization", async () => {
+  let capturedRequest;
+  let capturedModelsAuthorization;
+  let capturedModelsGatewayId;
+  let capturedModelsCfAuth;
+  let capturedChatAuthorization;
+  let capturedChatGatewayId;
+  let capturedChatCfAuth;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/client/v4/accounts/cf-account/ai/v1/models") {
+      capturedModelsAuthorization = req.headers.authorization;
+      capturedModelsGatewayId = req.headers["cf-aig-gateway-id"];
+      capturedModelsCfAuth = req.headers["cf-aig-authorization"];
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "openai/gpt-5.1" }] }));
+      return;
+    }
+    if (
+      req.method === "POST" &&
+      req.url === "/client/v4/accounts/cf-account/ai/v1/chat/completions"
+    ) {
+      capturedRequest = await readJson(req);
+      capturedChatAuthorization = req.headers.authorization;
+      capturedChatGatewayId = req.headers["cf-aig-gateway-id"];
+      capturedChatCfAuth = req.headers["cf-aig-authorization"];
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl-cloudflare-rest",
+          object: "chat.completion",
+          created: 1,
+          model: "openai/gpt-5.1",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Cloudflare REST OK" },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "cloudflare-rest-smoke",
+          provider: "openai-compatible",
+          providerId: "cloudflare-ai-gateway",
+          providerAdapter: "openai-compatible",
+          accessToken: "cf-rest-token",
+          baseUrl: `http://127.0.0.1:${upstreamPort}/client/v4/accounts/cf-account/ai`,
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          providerOptions: { gatewayId: "team-gateway" },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "openai/gpt-5.1",
+            messages: [{ role: "user", content: "Hello" }],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.choices[0].message.content, "Cloudflare REST OK");
+        assert.equal(capturedModelsAuthorization, "Bearer cf-rest-token");
+        assert.equal(capturedModelsGatewayId, "team-gateway");
+        assert.equal(capturedModelsCfAuth, undefined);
+        assert.equal(capturedChatAuthorization, "Bearer cf-rest-token");
+        assert.equal(capturedChatGatewayId, "team-gateway");
+        assert.equal(capturedChatCfAuth, undefined);
+        assert.equal(capturedRequest.model, "openai/gpt-5.1");
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy routes Cloudflare Workers AI through REST OpenAI-compatible endpoint", async () => {
   let capturedRequest;
   let capturedModelsAuthorization;

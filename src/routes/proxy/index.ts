@@ -279,19 +279,39 @@ function isCloudflareAiGatewayAccount(account: { providerId?: string }): boolean
   return String(account.providerId ?? "").toLowerCase() === "cloudflare-ai-gateway";
 }
 
+function isCloudflareRestApiBaseUrl(account: { baseUrl?: string }): boolean {
+  const value = String(account.baseUrl ?? "");
+  if (!value) return false;
+  try {
+    const { hostname, pathname } = new URL(value);
+    return (
+      hostname === "api.cloudflare.com" ||
+      /\/client\/v4\/accounts\/[^/]+\/ai(?:\/|$)/i.test(pathname)
+    );
+  } catch {
+    return /\/client\/v4\/accounts\/[^/]+\/ai(?:\/|$)/i.test(value);
+  }
+}
+
 function isCloudflareWorkersAiAccount(account: { providerId?: string }): boolean {
   return String(account.providerId ?? "").toLowerCase() === "cloudflare-workers-ai";
 }
 
-function cloudflareWorkersAiGatewayId(
+function cloudflareGatewayIdFromOptions(
   account: Pick<Account, "providerOptions">,
-): string {
+): string | undefined {
   const options = account.providerOptions ?? {};
   for (const key of ["gatewayId", "gatewayID", "gateway_id", "gateway"]) {
     const value = options[key];
     if (typeof value === "string" && value.trim()) return value.trim();
   }
-  return "default";
+  return undefined;
+}
+
+function cloudflareWorkersAiGatewayId(
+  account: Pick<Account, "providerOptions">,
+): string {
+  return cloudflareGatewayIdFromOptions(account) ?? "default";
 }
 
 function isAzureOpenAiAccount(account: { providerId?: string }): boolean {
@@ -314,16 +334,19 @@ function normalizeSnowflakeCortexChatPayload(payload: any): any {
 
 function applyOpenAiCompatibleAuthHeaders(
   headers: Record<string, string>,
-  account: Pick<Account, "accessToken" | "providerId" | "providerAuthType" | "providerOptions">,
+  account: Pick<Account, "accessToken" | "providerId" | "providerAuthType" | "providerOptions" | "baseUrl">,
 ): Record<string, string> {
   if (
     account.providerAuthType === "none" ||
     account.accessToken === NO_AUTH_ACCESS_TOKEN
   ) {
     delete headers.authorization;
-  } else if (isCloudflareAiGatewayAccount(account)) {
+  } else if (isCloudflareAiGatewayAccount(account) && !isCloudflareRestApiBaseUrl(account)) {
     delete headers.authorization;
     headers["cf-aig-authorization"] = `Bearer ${account.accessToken}`;
+  } else if (isCloudflareAiGatewayAccount(account)) {
+    const gatewayId = cloudflareGatewayIdFromOptions(account);
+    if (gatewayId) headers["cf-aig-gateway-id"] = gatewayId;
   } else if (isCloudflareWorkersAiAccount(account)) {
     headers["cf-aig-gateway-id"] = cloudflareWorkersAiGatewayId(account);
   } else if (isAzureOpenAiAccount(account)) {

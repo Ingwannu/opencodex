@@ -539,7 +539,7 @@ export function cloudflareWorkersAiBaseUrlFromOptions(
   )}/ai`;
 }
 
-function cloudflareWorkersAiProviderOptionsFromSource(
+function cloudflareGatewayProviderOptionsFromSource(
   source: ModelsDevProvider,
   env: Record<string, string | undefined> = process.env,
 ): Record<string, unknown> | undefined {
@@ -1100,8 +1100,8 @@ export function providerRegistryEntryFromMetadata(
           ? googleVertexProviderOptionsFromSource(source)
         : adapter === "sap-ai-core"
           ? sapAiCoreProviderOptionsFromSource(source)
-        : id === "cloudflare-workers-ai"
-          ? cloudflareWorkersAiProviderOptionsFromSource(source)
+        : id === "cloudflare-ai-gateway" || id === "cloudflare-workers-ai"
+          ? cloudflareGatewayProviderOptionsFromSource(source)
           : undefined,
     tokenEnv,
     authType,

@@ -535,7 +535,7 @@ export function AccountsTab(props: Props) {
   const authOnlyCount = accounts.filter(
     (account) =>
       account.providerAdapter &&
-      !["openai", "openai-compatible", "mistral", "zai"].includes(
+      !["openai", "openai-compatible", "mistral", "zai", "anthropic", "google"].includes(
         account.providerAdapter,
       ),
   ).length;

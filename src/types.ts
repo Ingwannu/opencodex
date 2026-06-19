@@ -1,8 +1,12 @@
-export type RouteProviderId = "openai" | "openai-compatible" | "mistral" | "zai";
+export type RouteProviderId =
+  | "openai"
+  | "openai-compatible"
+  | "mistral"
+  | "zai"
+  | "anthropic"
+  | "google";
 export type ProviderAdapter =
   | RouteProviderId
-  | "anthropic"
-  | "google"
   | "azure"
   | "amazon-bedrock"
   | "vertex"

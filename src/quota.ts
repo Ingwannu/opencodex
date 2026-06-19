@@ -45,7 +45,9 @@ export function isRuntimeRoutableProvider(
     provider === "openai" ||
     provider === "openai-compatible" ||
     provider === "mistral" ||
-    provider === "zai"
+    provider === "zai" ||
+    provider === "anthropic" ||
+    provider === "google"
   );
 }
 

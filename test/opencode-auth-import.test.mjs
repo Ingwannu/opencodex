@@ -27,6 +27,9 @@ test("imports OpenCode auth entries through Models.dev provider metadata", () =>
         anthropic: {
           apiKey: "ant-test-key",
         },
+        google: {
+          apiKey: "gem-test-key",
+        },
         "custom-local": {
           token: "local-test-key",
           options: {
@@ -69,8 +72,17 @@ test("imports OpenCode auth entries through Models.dev provider metadata", () =>
   assert.equal(anthropic?.providerLabel, "Anthropic");
   assert.equal(anthropic?.providerNpm, "@ai-sdk/anthropic");
   assert.equal(anthropic?.accessToken, "ant-test-key");
-  assert.equal(anthropic?.enabled, false);
-  assert.match(anthropic?.state?.lastError ?? "", /adapter not implemented/i);
+  assert.equal(anthropic?.enabled, true);
+  assert.equal(anthropic?.baseUrl, "https://api.anthropic.com");
+
+  const google = byProviderId.get("google");
+  assert.equal(google?.provider, "google");
+  assert.equal(google?.providerAdapter, "google");
+  assert.equal(google?.providerLabel, "Google");
+  assert.equal(google?.providerNpm, "@ai-sdk/google");
+  assert.equal(google?.baseUrl, "https://generativelanguage.googleapis.com");
+  assert.equal(google?.accessToken, "gem-test-key");
+  assert.equal(google?.enabled, true);
 
   const custom = byProviderId.get("custom-local");
   assert.equal(custom?.provider, "openai-compatible");

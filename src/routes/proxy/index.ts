@@ -67,6 +67,14 @@ import {
   responsesToChatCompletionsPayload,
   sanitizeGenericChatCompletionsPayload,
 } from "../../responses/payloads.js";
+import {
+  buildNativeProviderModelsRequest,
+  buildNativeProviderRequest,
+  convertNativeProviderResponse,
+  isNativeProvider,
+  nativeProviderDefaultBaseUrl,
+  nativeProviderModelsFromResponse,
+} from "../../provider-native.js";
 
 import { AccountStore } from "../../store.js";
 import type { OAuthConfig } from "../../oauth.js";
@@ -246,6 +254,11 @@ function accountBaseUrl(
   }
   if (provider === "mistral") return mistralBaseUrl;
   if (provider === "zai") return zaiBaseUrl;
+  if (provider === "anthropic" || provider === "google") {
+    return trimTrailingSlash(
+      String(account.baseUrl ?? nativeProviderDefaultBaseUrl(provider)),
+    );
+  }
   if (!isRuntimeRoutableProvider(provider)) return "";
   return openaiBaseUrl;
 }
@@ -263,6 +276,9 @@ function resolveUpstreamMode(
   if (isResponsesCompactPath) return "responses";
   if (account.upstreamMode) return account.upstreamMode;
   const provider = normalizeProvider(account);
+  if (provider === "anthropic" || provider === "google") {
+    return "chat/completions";
+  }
   if (provider === "openai-compatible") {
     if (account.compatibilityMode === "responses") return "responses";
     return "chat/completions";
@@ -364,6 +380,9 @@ function inferProviderFromModel(
   ) {
     return "zai";
   }
+
+  if (key.startsWith("claude")) return "anthropic";
+  if (key.startsWith("gemini")) return "google";
 
   return "openai";
 }
@@ -512,6 +531,18 @@ async function discoverModels(
           url = `${accountBaseUrl(account, openaiBaseUrl, mistralBaseUrl, zaiBaseUrl)}/backend-api/codex/models?client_version=${encodeURIComponent(
             MODELS_CLIENT_VERSION,
           )}`;
+        } else if (isNativeProvider(provider)) {
+          const baseUrl = accountBaseUrl(
+            account,
+            openaiBaseUrl,
+            mistralBaseUrl,
+            zaiBaseUrl,
+          );
+          if (!baseUrl) continue;
+          const request = buildNativeProviderModelsRequest(provider, account);
+          url = `${baseUrl}${request.path}`;
+          Object.assign(headers, request.headers);
+          delete headers.authorization;
         } else {
           const baseUrl = accountBaseUrl(
             account,
@@ -541,6 +572,22 @@ async function discoverModels(
               mergeModelAvailability(
                 byId.get(slug),
                 modelObject(slug, provider, entry),
+                provider,
+                account.id,
+              ),
+            );
+          }
+          continue;
+        }
+
+        if (isNativeProvider(provider)) {
+          for (const entry of nativeProviderModelsFromResponse(provider, json)) {
+            if (isModelExcludedFromProvider(entry.id, provider)) continue;
+            byId.set(
+              entry.id,
+              mergeModelAvailability(
+                byId.get(entry.id),
+                modelObject(entry.id, provider, entry),
                 provider,
                 account.id,
               ),
@@ -633,6 +680,21 @@ function isModelAllowed(model: string | undefined): boolean {
   if (!model) return true; // No model specified, let it pass
   const key = normalizeModelLookupKey(model);
   return modelsValidationCache.validModelKeys.has(key);
+}
+
+async function ensureModelValidationCache(
+  store: AccountStore,
+  openaiBaseUrl: string,
+  mistralBaseUrl: string,
+  zaiBaseUrl: string,
+): Promise<void> {
+  if (
+    modelsValidationCache.validModelKeys.size > 0 &&
+    Date.now() - modelsValidationCache.at < MODELS_VALIDATION_CACHE_MS
+  ) {
+    return;
+  }
+  await discoverModels(store, openaiBaseUrl, mistralBaseUrl, zaiBaseUrl);
 }
 
 function startBackgroundModelRefresh(
@@ -825,7 +887,14 @@ function buildRoutingCandidates(
   const fallbackProvider = inferProviderFromModel(requestModel, discoveredModels);
   if (isModelExcludedFromProvider(requestModel, fallbackProvider)) {
     // Try providers in order until we find a non-excluded one
-    const tryProviders: RouteProviderId[] = ["openai", "openai-compatible", "mistral", "zai"];
+    const tryProviders: RouteProviderId[] = [
+      "openai",
+      "openai-compatible",
+      "mistral",
+      "zai",
+      "anthropic",
+      "google",
+    ];
     for (const p of tryProviders) {
       if (!isModelExcludedFromProvider(requestModel, p)) {
         return [
@@ -1265,6 +1334,13 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
         ? (rawEffort as EffortTier)
         : undefined;
 
+    await ensureModelValidationCache(
+      store,
+      openaiBaseUrl,
+      mistralBaseUrl,
+      zaiBaseUrl,
+    );
+
     // Fast O(1) validation against cached model set
     if (!isModelAllowed(requestModel)) {
       return res.status(400).json({
@@ -1337,7 +1413,11 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
           : isChatCompletions
             ? chatCompletionsToResponsesPayload(req.body, sessionId)
             : normalizeResponsesPayload(req.body, sessionId);
-        if (shouldSendChatCompletions && candidate.provider === "openai-compatible") {
+        if (
+          shouldSendChatCompletions &&
+          (candidate.provider === "openai-compatible" ||
+            isNativeProvider(candidate.provider))
+        ) {
           payloadToUpstream = sanitizeGenericChatCompletionsPayload(
             payloadToUpstream,
           );
@@ -1447,12 +1527,24 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
           let upstreamPath = isResponsesCompactPath
             ? UPSTREAM_COMPACT_PATH
             : UPSTREAM_PATH;
+          let upstreamHeaders = headers;
+          let upstreamBody = payloadToUpstream;
 
           if (candidate.provider === "mistral") {
             upstreamBaseUrl = mistralBaseUrl;
             upstreamPath = isResponsesCompactPath
               ? mistralCompactUpstreamPath
               : mistralUpstreamPath;
+          } else if (isNativeProvider(candidate.provider)) {
+            const nativeRequest = buildNativeProviderRequest(
+              candidate.provider,
+              selected,
+              payloadToUpstream,
+              clientRequestedStream,
+            );
+            upstreamPath = nativeRequest.path;
+            upstreamHeaders = nativeRequest.headers;
+            upstreamBody = nativeRequest.body;
           } else if (candidate.provider === "openai-compatible") {
             upstreamPath = shouldSendChatCompletions
               ? "/v1/chat/completions"
@@ -1471,13 +1563,132 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
             upstreamUrl,
             {
               method: "POST",
-              headers,
-              body: JSON.stringify(payloadToUpstream),
+              headers: upstreamHeaders,
+              body: JSON.stringify(upstreamBody),
             },
           );
 
           const contentType = upstream.headers.get("content-type") ?? "";
           const isStream = contentType.includes("text/event-stream");
+
+          if (isNativeProvider(candidate.provider)) {
+            let text = await upstream.text();
+            const upstreamEmptyBody = !text;
+            if (!text) {
+              text = JSON.stringify({
+                error: `upstream ${upstream.status} with empty body`,
+              });
+            }
+            const upstreamError = !upstream.ok ? text.slice(0, 500) : undefined;
+            let parsed: any = undefined;
+            try {
+              parsed = JSON.parse(text);
+            } catch {}
+
+            if (!upstream.ok) {
+              recordTrace({
+                at: Date.now(),
+                route: req.path,
+                accountId: selected.id,
+                accountEmail: selected.email,
+                model: tracedModel,
+                ...traceModelResolution,
+                status: upstream.status,
+                stream: false,
+                latencyMs: Date.now() - startedAt,
+                requestBody,
+                upstreamError,
+                upstreamContentType: contentType,
+                upstreamEmptyBody,
+              });
+              if (upstream.status === 429 || isQuotaErrorText(text)) {
+                markQuotaHit(
+                  selected,
+                  blockModel,
+                  `quota/rate-limit: ${upstream.status}`,
+                );
+                await store.upsertAccount(selected);
+                continue;
+              }
+              rememberError(
+                selected,
+                `upstream ${upstream.status}: ${text.slice(0, 200)}`,
+              );
+              res.status(upstream.status).type(contentType || "application/json").send(text);
+              return;
+            }
+
+            if (!parsed || typeof parsed !== "object") {
+              await retryEmptyAssistantOutput(
+                "native provider returned unparsable response",
+                clientRequestedStream,
+                {
+                  upstreamContentType: contentType,
+                  upstreamEmptyBody,
+                },
+              );
+              continue;
+            }
+
+            const converted = convertNativeProviderResponse(
+              candidate.provider,
+              parsed,
+              shouldReturnChatCompletions ? "chat.completions" : "responses",
+              req.body?.model ?? payloadToUpstream?.model ?? "unknown",
+            );
+            const hasOutput = shouldReturnChatCompletions
+              ? chatCompletionHasAssistantOutput(converted)
+              : responseHasAssistantOutput(converted);
+            if (!hasOutput) {
+              await retryEmptyAssistantOutput(
+                "empty assistant output in native provider response",
+                clientRequestedStream,
+                {
+                  usage: converted?.usage,
+                  upstreamContentType: contentType,
+                  upstreamEmptyBody,
+                  tracePayload: converted,
+                },
+              );
+              continue;
+            }
+
+            clearEmptyResponseHistory(selected, blockModel);
+            await store.upsertAccount(selected);
+
+            if (clientRequestedStream) {
+              res.status(200);
+              res.set("Content-Type", "text/event-stream");
+              res.set("Cache-Control", "no-cache");
+              res.set("Connection", "keep-alive");
+              res.write(
+                shouldReturnChatCompletions
+                  ? chatCompletionObjectToSSE(converted)
+                  : responseObjectToSSE(converted),
+              );
+              res.end();
+            } else {
+              res.status(200).json(converted);
+            }
+
+            recordTrace({
+              at: Date.now(),
+              route: req.path,
+              accountId: selected.id,
+              accountEmail: selected.email,
+              model: tracedModel,
+              ...traceModelResolution,
+              status: upstream.status,
+              stream: clientRequestedStream,
+              latencyMs: Date.now() - startedAt,
+              usage: converted?.usage,
+              requestBody,
+              upstreamContentType: contentType,
+              upstreamEmptyBody,
+              ...inspectAssistantPayload(converted),
+            });
+            return;
+          }
 
           if (isStream) {
             if (shouldReturnChatCompletions && clientRequestedStream) {

@@ -170,14 +170,16 @@ OpenCodex can route providers that map to the current runtime adapters:
 - OpenAI API through `/v1/responses`
 - Mistral
 - z.ai
+- Anthropic Claude through the native Messages API
+- Google Gemini through the native `generateContent` API
 - OpenAI-compatible providers from Models.dev, including OpenRouter, Requesty,
   local OpenAI-compatible servers, and custom OpenCode providers using
   `@ai-sdk/openai-compatible`
 
 Credentials for providers whose native API adapter is not implemented yet, such
-as Anthropic, Google, Amazon Bedrock, and Vertex, are imported and shown as
-auth-only disabled accounts. They are preserved for management, but are not sent
-through the proxy until a native adapter is added.
+as Azure, Amazon Bedrock, Vertex, and other provider-specific SDK adapters, are
+imported and shown as auth-only disabled accounts. They are preserved for
+management, but are not sent through the proxy until a native adapter is added.
 
 Default expected redirect URI:
 

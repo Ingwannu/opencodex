@@ -157,8 +157,21 @@ const authProviderPresets = {
     providerNpm: "@ai-sdk/anthropic",
     providerSource: "builtin",
     providerDoc: "https://docs.anthropic.com/en/docs/about-claude/models",
+    baseUrl: "https://api.anthropic.com",
     tokenEnv: ["ANTHROPIC_API_KEY"],
-    runtimeSupported: false,
+    runtimeSupported: true,
+  },
+  google: {
+    label: "Google",
+    provider: "google",
+    providerId: "google",
+    providerAdapter: "google",
+    providerNpm: "@ai-sdk/google",
+    providerSource: "builtin",
+    providerDoc: "https://ai.google.dev/gemini-api/docs/models",
+    baseUrl: "https://generativelanguage.googleapis.com",
+    tokenEnv: ["GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY"],
+    runtimeSupported: true,
   },
   "openai-compatible": {
     label: "Generic OpenAI-compatible endpoint",
@@ -211,7 +224,7 @@ function providerAdapterFromNpm(providerId, npmPackage) {
 }
 
 function isRuntimeSupportedAdapter(adapter) {
-  return adapter === "openai" || adapter === "openai-compatible" || adapter === "mistral" || adapter === "zai";
+  return adapter === "openai" || adapter === "openai-compatible" || adapter === "mistral" || adapter === "zai" || adapter === "anthropic" || adapter === "google";
 }
 
 function providerForAdapter(providerId, adapter) {
@@ -224,7 +237,7 @@ function modelsDevProviderToPreset(providerId, source) {
   const runtimeSupported = isRuntimeSupportedAdapter(adapter);
   const baseUrl = adapter === "openai-compatible"
     ? normalizeOpenAiCompatibleBaseUrl(source?.api)
-    : normalizeBaseUrl(source?.api);
+    : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : undefined));
   return {
     label: source?.name || id,
     provider: providerForAdapter(id, adapter),

@@ -1,0 +1,230 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+
+const root = path.resolve(import.meta.dirname, "..");
+
+function listen(server) {
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") reject(new Error("no port"));
+      else resolve(address.port);
+    });
+  });
+}
+
+function readJson(req) {
+  return new Promise((resolve, reject) => {
+    let raw = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => {
+      raw += chunk;
+    });
+    req.on("end", () => {
+      try {
+        resolve(raw ? JSON.parse(raw) : {});
+      } catch (err) {
+        reject(err);
+      }
+    });
+  });
+}
+
+async function waitForHealth(port) {
+  for (let i = 0; i < 80; i += 1) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/health`);
+      if (res.ok) return;
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`server on ${port} did not become healthy`);
+}
+
+async function withProxy(accounts, fn) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-proxy-"));
+  const portServer = http.createServer((_req, res) => {
+    res.writeHead(404).end();
+  });
+  const port = await listen(portServer);
+  await new Promise((resolve) => portServer.close(resolve));
+
+  const storePath = path.join(dir, "accounts.json");
+  fs.writeFileSync(
+    storePath,
+    JSON.stringify({ accounts, modelAliases: [], settings: {} }, null, 2),
+  );
+
+  const child = spawn(process.execPath, ["dist/server.js"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      STORE_PATH: storePath,
+      OAUTH_STATE_PATH: path.join(dir, "oauth.json"),
+      TRACE_FILE_PATH: path.join(dir, "trace.jsonl"),
+      TRACE_STATS_HISTORY_PATH: path.join(dir, "stats.jsonl"),
+      MODELS_CACHE_MS: "0",
+      MAX_UPSTREAM_RETRIES: "0",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  let stderr = "";
+  child.stderr.on("data", (chunk) => {
+    stderr += String(chunk);
+  });
+
+  try {
+    await waitForHealth(port);
+    await fn(`http://127.0.0.1:${port}`);
+  } finally {
+    child.kill("SIGTERM");
+    await new Promise((resolve) => child.once("exit", resolve));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  assert.equal(stderr.includes("EADDRINUSE"), false, stderr);
+}
+
+test("proxy routes Anthropic chat completions through native Messages API", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      assert.equal(req.headers["x-api-key"], "ant-smoke");
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "claude-smoke" }] }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/messages") {
+      capturedRequest = await readJson(req);
+      assert.equal(req.headers["x-api-key"], "ant-smoke");
+      assert.equal(req.headers["anthropic-version"], "2023-06-01");
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "msg_smoke",
+          model: "claude-smoke",
+          role: "assistant",
+          content: [{ type: "text", text: "Anthropic OK" }],
+          stop_reason: "end_turn",
+          usage: { input_tokens: 4, output_tokens: 2 },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "anthropic-smoke",
+          provider: "anthropic",
+          providerId: "anthropic",
+          providerAdapter: "anthropic",
+          accessToken: "ant-smoke",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "claude-smoke",
+            messages: [
+              { role: "system", content: "Be concise." },
+              { role: "user", content: "Hello" },
+            ],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.choices[0].message.content, "Anthropic OK");
+        assert.equal(capturedRequest.system, "Be concise.");
+        assert.equal(capturedRequest.messages[0].role, "user");
+      },
+    );
+  } finally {
+    await new Promise((resolve) => upstream.close(resolve));
+  }
+});
+
+test("proxy routes Google responses through native generateContent API", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1beta/models?key=gem-smoke") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ models: [{ name: "models/gemini-smoke" }] }));
+      return;
+    }
+    if (
+      req.method === "POST" &&
+      req.url === "/v1beta/models/gemini-smoke:generateContent?key=gem-smoke"
+    ) {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          candidates: [
+            {
+              content: { role: "model", parts: [{ text: "Gemini OK" }] },
+              finishReason: "STOP",
+            },
+          ],
+          usageMetadata: {
+            promptTokenCount: 5,
+            candidatesTokenCount: 2,
+            totalTokenCount: 7,
+          },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "google-smoke",
+          provider: "google",
+          providerId: "google",
+          providerAdapter: "google",
+          accessToken: "gem-smoke",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/responses`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "gemini-smoke",
+            input: "Hello",
+            stream: false,
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.output[0].content[0].text, "Gemini OK");
+        assert.equal(capturedRequest.contents[0].role, "user");
+      },
+    );
+  } finally {
+    await new Promise((resolve) => upstream.close(resolve));
+  }
+});

@@ -664,6 +664,46 @@ function stripJsonComments(source: string): string {
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
+function stripJsonTrailingCommas(source: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i];
+
+    if (inString) {
+      out += char;
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      out += char;
+      continue;
+    }
+
+    if (char === ",") {
+      let nextIndex = i + 1;
+      while (nextIndex < source.length && /\s/.test(source[nextIndex])) {
+        nextIndex += 1;
+      }
+      if (source[nextIndex] === "}" || source[nextIndex] === "]") continue;
+    }
+
+    out += char;
+  }
+
+  return out;
+}
+
 function substituteEnvVariables(source: string): string {
   return source.replace(/\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, name) =>
     JSON.stringify(process.env[String(name)] ?? "").slice(1, -1),
@@ -754,5 +794,7 @@ export function providerSecretsFromOpenCodeConfigPayload(
 }
 
 export function parseOpenCodeConfigPayload(source: string): unknown {
-  return JSON.parse(stripJsonComments(substituteEnvVariables(source)));
+  return JSON.parse(
+    stripJsonTrailingCommas(stripJsonComments(substituteEnvVariables(source))),
+  );
 }

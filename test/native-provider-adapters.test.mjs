@@ -824,6 +824,40 @@ test("OpenCode auth import enables native Anthropic, Google, Vertex, Vertex Anth
   );
 });
 
+test("OpenCode config parser accepts JSONC trailing commas without changing string values", () => {
+  const payload = parseOpenCodeConfigPayload(`{
+    "provider": {
+      "commagenie": {
+        "npm": "@ai-sdk/openai-compatible",
+        "options": {
+          "baseURL": "https://comma.example/v1",
+          "apiKey": "comma-secret",
+        },
+        "models": {
+          "comma-model": {
+            "name": "literal ,} stays",
+          },
+        },
+      },
+    },
+  }`);
+
+  const providerConfig = providerConfigFromOpenCodeConfigPayload(payload);
+  const providerSecrets = providerSecretsFromOpenCodeConfigPayload(payload);
+  const entry = providerConfig.get("commagenie");
+  const model = entry?.models?.["comma-model"];
+
+  assert.equal(entry?.providerAdapter, "openai-compatible");
+  assert.equal(entry?.baseUrl, "https://comma.example");
+  assert.equal(providerSecrets.get("commagenie"), "comma-secret");
+  assert.equal(
+    model && typeof model === "object" && !Array.isArray(model)
+      ? model.name
+      : undefined,
+    "literal ,} stays",
+  );
+});
+
 test("OpenCode auth import enables Amazon Bedrock through AWS credential-chain config", async () => {
   const previous = {
     AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,

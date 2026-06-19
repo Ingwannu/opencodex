@@ -587,6 +587,10 @@ const OPENAI_COMPATIBLE_SDK_PACKAGE_DEFAULTS: Record<
   "@ai-sdk/togetherai": { baseUrl: "https://api.together.xyz/v1" },
   "@ai-sdk/vercel": { baseUrl: "https://api.v0.dev/v1" },
   "@ai-sdk/xai": { baseUrl: "https://api.x.ai/v1" },
+  "@aihubmix/ai-sdk-provider": { baseUrl: "https://aihubmix.com/v1" },
+  "merge-gateway-ai-sdk-provider": {
+    baseUrl: "https://api-gateway.merge.dev/v1/openai",
+  },
   "@openrouter/ai-sdk-provider": { baseUrl: "https://openrouter.ai/api/v1" },
   "venice-ai-sdk-provider": { baseUrl: "https://api.venice.ai/api/v1" },
 };

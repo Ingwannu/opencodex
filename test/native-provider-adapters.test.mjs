@@ -2501,6 +2501,24 @@ test("OpenCode config imports ordinary bundled OpenAI-compatible SDK packages", 
           "v0-1.5-md": { "name": "v0 1.5 MD" }
         }
       },
+      "custom-aihubmix": {
+        "npm": "@aihubmix/ai-sdk-provider",
+        "options": {
+          "apiKey": "aihubmix-secret"
+        },
+        "models": {
+          "gpt-5": { "name": "GPT-5" }
+        }
+      },
+      "custom-merge-gateway": {
+        "npm": "merge-gateway-ai-sdk-provider",
+        "options": {
+          "apiKey": "merge-secret"
+        },
+        "models": {
+          "claude-sonnet-4-5": { "name": "Claude Sonnet 4.5" }
+        }
+      },
       "custom-responses": {
         "npm": "@ai-sdk/openai",
         "options": {
@@ -2575,6 +2593,23 @@ test("OpenCode config imports ordinary bundled OpenAI-compatible SDK packages", 
   assert.equal(byId.get("custom-vercel-v0")?.accessToken, "vercel-secret");
   assert.equal(byId.get("custom-vercel-v0")?.enabled, true);
   assert.ok(byId.get("custom-vercel-v0")?.providerModels?.["v0-1.5-md"]);
+
+  assert.equal(byId.get("custom-aihubmix")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("custom-aihubmix")?.baseUrl, "https://aihubmix.com");
+  assert.equal(byId.get("custom-aihubmix")?.accessToken, "aihubmix-secret");
+  assert.equal(byId.get("custom-aihubmix")?.enabled, true);
+  assert.ok(byId.get("custom-aihubmix")?.providerModels?.["gpt-5"]);
+
+  assert.equal(byId.get("custom-merge-gateway")?.providerAdapter, "openai-compatible");
+  assert.equal(
+    byId.get("custom-merge-gateway")?.baseUrl,
+    "https://api-gateway.merge.dev/v1/openai",
+  );
+  assert.equal(byId.get("custom-merge-gateway")?.accessToken, "merge-secret");
+  assert.equal(byId.get("custom-merge-gateway")?.enabled, true);
+  assert.ok(
+    byId.get("custom-merge-gateway")?.providerModels?.["claude-sonnet-4-5"],
+  );
 
   assert.equal(byId.get("custom-responses")?.providerAdapter, "openai-compatible");
   assert.equal(byId.get("custom-responses")?.baseUrl, "https://responses.example");

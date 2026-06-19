@@ -6,11 +6,11 @@ export type RouteProviderId =
   | "anthropic"
   | "google"
   | "cohere"
-  | "amazon-bedrock";
+  | "amazon-bedrock"
+  | "vertex";
 export type ProviderAdapter =
   | RouteProviderId
   | "azure"
-  | "vertex"
   | "unsupported";
 export type ProviderId = string;
 export type UpstreamMode = "responses" | "chat/completions";

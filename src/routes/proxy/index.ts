@@ -345,7 +345,8 @@ function accountBaseUrl(
     provider === "anthropic" ||
     provider === "google" ||
     provider === "cohere" ||
-    provider === "amazon-bedrock"
+    provider === "amazon-bedrock" ||
+    provider === "vertex"
   ) {
     return trimTrailingSlash(
       String(account.baseUrl ?? nativeProviderDefaultBaseUrl(provider)),
@@ -372,7 +373,8 @@ function resolveUpstreamMode(
     provider === "anthropic" ||
     provider === "google" ||
     provider === "cohere" ||
-    provider === "amazon-bedrock"
+    provider === "amazon-bedrock" ||
+    provider === "vertex"
   ) {
     return "chat/completions";
   }

@@ -50,7 +50,8 @@ export function isRuntimeRoutableProvider(
     provider === "anthropic" ||
     provider === "google" ||
     provider === "cohere" ||
-    provider === "amazon-bedrock"
+    provider === "amazon-bedrock" ||
+    provider === "vertex"
   );
 }
 

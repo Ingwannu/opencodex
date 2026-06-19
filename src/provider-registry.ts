@@ -349,6 +349,39 @@ export function amazonBedrockBaseUrlFromOptions(
   return `https://bedrock-runtime.${region.trim()}.amazonaws.com`;
 }
 
+export function vertexBaseUrlFromOptions(
+  options: Record<string, unknown> | undefined = {},
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const explicit = firstStringValue(options, [
+    "baseURL",
+    "baseUrl",
+    "base_url",
+    "url",
+    "endpoint",
+  ]);
+  if (explicit && /^https?:\/\//.test(explicit)) return explicit;
+
+  const project = firstStringValue(options, [
+    "project",
+    "projectId",
+    "projectID",
+    "googleVertexProject",
+  ]) ?? env.GOOGLE_VERTEX_PROJECT;
+  const location = firstStringValue(options, [
+    "location",
+    "region",
+    "googleVertexLocation",
+  ]) ?? env.GOOGLE_VERTEX_LOCATION;
+  if (!project?.trim() || !location?.trim()) return undefined;
+
+  const trimmedLocation = location.trim();
+  const endpoint = trimmedLocation === "global"
+    ? "https://aiplatform.googleapis.com"
+    : `https://${trimmedLocation}-aiplatform.googleapis.com`;
+  return `${endpoint}/v1/projects/${encodeURIComponent(project.trim())}/locations/${encodeURIComponent(trimmedLocation)}`;
+}
+
 let modelsDevCache:
   | { at: number; entries: Map<string, ProviderRegistryEntry> }
   | undefined;
@@ -401,7 +434,8 @@ export function providerAdapterFromNpm(
   if (npm === "@ai-sdk/vercel") return "openai-compatible";
   if (npm === "@ai-sdk/azure") return "azure";
   if (npm === "@ai-sdk/amazon-bedrock") return "amazon-bedrock";
-  if (npm.includes("google-vertex")) return "vertex";
+  if (npm === "@ai-sdk/google-vertex") return "vertex";
+  if (npm.includes("google-vertex")) return "unsupported";
   return "unsupported";
 }
 
@@ -414,7 +448,8 @@ export function isRuntimeSupportedProvider(adapter: ProviderAdapter): adapter is
     adapter === "anthropic" ||
     adapter === "google" ||
     adapter === "cohere" ||
-    adapter === "amazon-bedrock"
+    adapter === "amazon-bedrock" ||
+    adapter === "vertex"
   );
 }
 
@@ -425,6 +460,9 @@ function tokenEnvForProvider(
 ): string[] {
   if (providerId === "amazon-bedrock" || adapter === "amazon-bedrock") {
     return ["AWS_BEARER_TOKEN_BEDROCK"];
+  }
+  if (providerId === "google-vertex" || adapter === "vertex") {
+    return ["GOOGLE_VERTEX_ACCESS_TOKEN", "GOOGLE_ACCESS_TOKEN"];
   }
   return Array.isArray(env)
     ? env.filter((value): value is string => typeof value === "string")
@@ -454,6 +492,10 @@ export function providerRegistryEntryFromMetadata(
     id === "amazon-bedrock"
       ? amazonBedrockBaseUrlFromOptions(source.options)
       : undefined;
+  const vertexBaseUrl =
+    id === "google-vertex"
+      ? vertexBaseUrlFromOptions(source.options)
+      : undefined;
   const openAiCompatibleBaseUrl =
     source.api ??
     openAiCompatibleDefault?.baseUrl ??
@@ -464,7 +506,9 @@ export function providerRegistryEntryFromMetadata(
       openAiCompatibleBaseUrl)
       ? "openai-compatible"
       : providerAdapterFromNpm(id, source.npm);
-  const runtimeSupported = isRuntimeSupportedProvider(adapter);
+  const runtimeSupported =
+    isRuntimeSupportedProvider(adapter) &&
+    (adapter !== "vertex" || Boolean(vertexBaseUrl));
   const baseUrl =
     adapter === "openai-compatible"
       ? normalizeOpenAiCompatibleBaseUrl(openAiCompatibleBaseUrl)
@@ -478,6 +522,8 @@ export function providerRegistryEntryFromMetadata(
                   ? "https://api.cohere.com"
                   : adapter === "amazon-bedrock"
                     ? bedrockBaseUrl
+                    : adapter === "vertex"
+                      ? vertexBaseUrl
                     : undefined),
         );
 

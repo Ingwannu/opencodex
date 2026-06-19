@@ -291,6 +291,23 @@ function amazonBedrockBaseUrlFromOptions(options = {}, env = process.env) {
   return `https://bedrock-runtime.${region.trim()}.amazonaws.com`;
 }
 
+function vertexBaseUrlFromOptions(options = {}, env = process.env) {
+  const explicit = firstStringValue(options, ["baseURL", "baseUrl", "base_url", "url", "endpoint"]);
+  if (explicit && /^https?:\/\//.test(explicit)) return explicit;
+  const project =
+    firstStringValue(options, ["project", "projectId", "projectID", "googleVertexProject"]) ||
+    env.GOOGLE_VERTEX_PROJECT;
+  const location =
+    firstStringValue(options, ["location", "region", "googleVertexLocation"]) ||
+    env.GOOGLE_VERTEX_LOCATION;
+  if (!project?.trim() || !location?.trim()) return undefined;
+  const trimmedLocation = location.trim();
+  const endpoint = trimmedLocation === "global"
+    ? "https://aiplatform.googleapis.com"
+    : `https://${trimmedLocation}-aiplatform.googleapis.com`;
+  return `${endpoint}/v1/projects/${encodeURIComponent(project.trim())}/locations/${encodeURIComponent(trimmedLocation)}`;
+}
+
 function providerAdapterFromNpm(providerId, npmPackage) {
   const id = sanitizeProviderId(providerId);
   const npm = String(npmPackage || "").trim().toLowerCase();
@@ -307,12 +324,13 @@ function providerAdapterFromNpm(providerId, npmPackage) {
   if (npm === "@ai-sdk/vercel") return "openai-compatible";
   if (npm === "@ai-sdk/azure") return "azure";
   if (npm === "@ai-sdk/amazon-bedrock") return "amazon-bedrock";
-  if (npm.includes("google-vertex")) return "vertex";
+  if (npm === "@ai-sdk/google-vertex") return "vertex";
+  if (npm.includes("google-vertex")) return "unsupported";
   return "unsupported";
 }
 
 function isRuntimeSupportedAdapter(adapter) {
-  return adapter === "openai" || adapter === "openai-compatible" || adapter === "mistral" || adapter === "zai" || adapter === "anthropic" || adapter === "google" || adapter === "cohere" || adapter === "amazon-bedrock";
+  return adapter === "openai" || adapter === "openai-compatible" || adapter === "mistral" || adapter === "zai" || adapter === "anthropic" || adapter === "google" || adapter === "cohere" || adapter === "amazon-bedrock" || adapter === "vertex";
 }
 
 function providerForAdapter(providerId, adapter) {
@@ -322,6 +340,9 @@ function providerForAdapter(providerId, adapter) {
 function tokenEnvForProvider(providerId, adapter, env) {
   if (providerId === "amazon-bedrock" || adapter === "amazon-bedrock") {
     return ["AWS_BEARER_TOKEN_BEDROCK"];
+  }
+  if (providerId === "google-vertex" || adapter === "vertex") {
+    return ["GOOGLE_VERTEX_ACCESS_TOKEN", "GOOGLE_ACCESS_TOKEN"];
   }
   return Array.isArray(env) ? env.filter((value) => typeof value === "string") : [];
 }
@@ -338,6 +359,10 @@ function modelsDevProviderToPreset(providerId, source) {
     id === "amazon-bedrock"
       ? amazonBedrockBaseUrlFromOptions(source?.options)
       : undefined;
+  const vertexBaseUrl =
+    id === "google-vertex"
+      ? vertexBaseUrlFromOptions(source?.options)
+      : undefined;
   const openAiCompatibleBaseUrl =
     source?.api || openAiCompatibleDefault?.baseUrl || cloudflareAiGatewayBaseUrl || azureOpenAiBaseUrl;
   const adapter =
@@ -345,10 +370,12 @@ function modelsDevProviderToPreset(providerId, source) {
       openAiCompatibleBaseUrl)
       ? "openai-compatible"
       : providerAdapterFromNpm(id, source?.npm);
-  const runtimeSupported = isRuntimeSupportedAdapter(adapter);
+  const runtimeSupported =
+    isRuntimeSupportedAdapter(adapter) &&
+    (adapter !== "vertex" || Boolean(vertexBaseUrl));
   const baseUrl = adapter === "openai-compatible"
     ? normalizeOpenAiCompatibleBaseUrl(openAiCompatibleBaseUrl)
-    : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : adapter === "cohere" ? "https://api.cohere.com" : adapter === "amazon-bedrock" ? bedrockBaseUrl : undefined));
+    : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : adapter === "cohere" ? "https://api.cohere.com" : adapter === "amazon-bedrock" ? bedrockBaseUrl : adapter === "vertex" ? vertexBaseUrl : undefined));
   return {
     label: source?.name || id,
     provider: providerForAdapter(id, adapter),

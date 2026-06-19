@@ -872,3 +872,94 @@ test("proxy routes Amazon Bedrock chat completions through Converse API", async 
     await closeServer(upstream);
   }
 });
+
+test("proxy routes Vertex chat completions through generateContent API", async () => {
+  let capturedRequest;
+  let capturedAuthorization;
+  const upstream = http.createServer(async (req, res) => {
+    if (
+      req.method === "GET" &&
+      req.url === "/v1/projects/test-project/locations/us-central1/publishers/google/models"
+    ) {
+      capturedAuthorization = req.headers.authorization;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          publisherModels: [{ name: "publishers/google/models/gemini-vertex-smoke" }],
+        }),
+      );
+      return;
+    }
+    if (
+      req.method === "POST" &&
+      req.url === "/v1/projects/test-project/locations/us-central1/publishers/google/models/gemini-vertex-smoke:generateContent"
+    ) {
+      capturedRequest = await readJson(req);
+      capturedAuthorization = req.headers.authorization;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          candidates: [
+            {
+              content: { role: "model", parts: [{ text: "Vertex OK" }] },
+              finishReason: "STOP",
+            },
+          ],
+          usageMetadata: {
+            promptTokenCount: 5,
+            candidatesTokenCount: 2,
+            totalTokenCount: 7,
+          },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "vertex-smoke",
+          provider: "vertex",
+          providerId: "google-vertex",
+          providerAdapter: "vertex",
+          accessToken: "vertex-smoke-token",
+          baseUrl: `http://127.0.0.1:${upstreamPort}/v1/projects/test-project/locations/us-central1`,
+          providerModels: {
+            "gemini-vertex-smoke": {
+              id: "gemini-vertex-smoke",
+              name: "Gemini Vertex Smoke",
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "gemini-vertex-smoke",
+            messages: [
+              { role: "system", content: "Be concise." },
+              { role: "user", content: "Hello" },
+            ],
+            max_tokens: 64,
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.choices[0].message.content, "Vertex OK");
+        assert.equal(capturedAuthorization, "Bearer vertex-smoke-token");
+        assert.equal(capturedRequest.systemInstruction.parts[0].text, "Be concise.");
+        assert.equal(capturedRequest.contents[0].parts[0].text, "Hello");
+        assert.equal(capturedRequest.generationConfig.maxOutputTokens, 64);
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});

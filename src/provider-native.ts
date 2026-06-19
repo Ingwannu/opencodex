@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { Account } from "./types.js";
-import { amazonBedrockBaseUrlFromOptions } from "./provider-registry.js";
+import {
+  amazonBedrockBaseUrlFromOptions,
+  vertexBaseUrlFromOptions,
+} from "./provider-registry.js";
 
-export type NativeProviderId = "anthropic" | "google" | "cohere" | "amazon-bedrock";
+export type NativeProviderId = "anthropic" | "google" | "cohere" | "amazon-bedrock" | "vertex";
 export type NativeProviderResponseShape = "chat.completions" | "responses";
 
 type NativeProviderRequest = {
@@ -25,7 +28,8 @@ export function isNativeProvider(provider: string): provider is NativeProviderId
     provider === "anthropic" ||
     provider === "google" ||
     provider === "cohere" ||
-    provider === "amazon-bedrock"
+    provider === "amazon-bedrock" ||
+    provider === "vertex"
   );
 }
 
@@ -36,6 +40,9 @@ export function nativeProviderDefaultBaseUrl(
   if (provider === "cohere") return "https://api.cohere.com";
   if (provider === "amazon-bedrock") {
     return amazonBedrockBaseUrlFromOptions() ?? "https://bedrock-runtime.us-east-1.amazonaws.com";
+  }
+  if (provider === "vertex") {
+    return vertexBaseUrlFromOptions() ?? "https://aiplatform.googleapis.com";
   }
   return "https://generativelanguage.googleapis.com";
 }
@@ -297,6 +304,15 @@ function buildGooglePayload(payload: Record<string, unknown>) {
   return body;
 }
 
+function vertexModelPath(model: string): string {
+  const trimmed = model.trim();
+  if (!trimmed) return "/publishers/google/models/unknown:generateContent";
+  if (trimmed.startsWith("projects/") || trimmed.startsWith("publishers/")) {
+    return `/${trimmed}:generateContent`;
+  }
+  return `/publishers/google/models/${encodeURIComponent(trimmed)}:generateContent`;
+}
+
 function buildCoherePayload(payload: Record<string, unknown>) {
   const messages = Array.isArray(payload.messages)
     ? (payload.messages as Array<Record<string, unknown>>)
@@ -416,6 +432,18 @@ export function buildNativeProviderRequest(
     };
   }
 
+  if (provider === "vertex") {
+    return {
+      path: vertexModelPath(String(payload.model ?? "")),
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        authorization: `Bearer ${account.accessToken}`,
+      },
+      body: buildGooglePayload(payload),
+    };
+  }
+
   const model = encodeURIComponent(String(payload.model ?? ""));
   const key = encodeURIComponent(account.accessToken);
   return {
@@ -454,6 +482,15 @@ export function buildNativeProviderModelsRequest(
   if (provider === "amazon-bedrock") {
     return {
       path: "/foundation-models",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${account.accessToken}`,
+      },
+    };
+  }
+  if (provider === "vertex") {
+    return {
+      path: "/publishers/google/models",
       headers: {
         accept: "application/json",
         authorization: `Bearer ${account.accessToken}`,
@@ -650,6 +687,24 @@ export function nativeProviderModelsFromResponse(
     return models
       .map((entry) => ({
         id: String(entry.modelId ?? "").trim(),
+        context_window: null,
+        max_output_tokens: null,
+      }))
+      .filter((entry) => entry.id);
+  }
+
+  if (provider === "vertex") {
+    const models = Array.isArray(body.publisherModels)
+      ? body.publisherModels as Array<Record<string, unknown>>
+      : Array.isArray(body.models)
+        ? body.models as Array<Record<string, unknown>>
+        : [];
+    return models
+      .map((entry) => ({
+        id: String(entry.name ?? entry.id ?? "")
+          .replace(/^projects\/[^/]+\/locations\/[^/]+\/publishers\/[^/]+\/models\//, "")
+          .replace(/^publishers\/[^/]+\/models\//, "")
+          .trim(),
         context_window: null,
         max_output_tokens: null,
       }))

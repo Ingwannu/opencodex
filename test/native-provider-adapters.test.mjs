@@ -147,6 +147,59 @@ test("Google adapter converts chat payloads, responses, and model lists", () => 
   ]);
 });
 
+test("Vertex adapter converts chat payloads and responses", () => {
+  const request = buildNativeProviderRequest(
+    "vertex",
+    { accessToken: "vertex-token" },
+    {
+      model: "gemini-2.5-pro",
+      messages: [
+        { role: "system", content: "Be concise." },
+        { role: "user", content: "Hello" },
+      ],
+      max_tokens: 64,
+      temperature: 0.2,
+      stream: true,
+    },
+    false,
+  );
+
+  assert.equal(
+    request.path,
+    "/publishers/google/models/gemini-2.5-pro:generateContent",
+  );
+  assert.equal(request.headers.authorization, "Bearer vertex-token");
+  assert.equal(request.body.systemInstruction.parts[0].text, "Be concise.");
+  assert.deepEqual(request.body.contents, [
+    { role: "user", parts: [{ text: "Hello" }] },
+  ]);
+  assert.equal(request.body.generationConfig.maxOutputTokens, 64);
+  assert.equal(request.body.generationConfig.temperature, 0.2);
+
+  const converted = convertNativeProviderResponse(
+    "vertex",
+    {
+      candidates: [
+        {
+          content: { role: "model", parts: [{ text: "Hi Vertex" }] },
+          finishReason: "STOP",
+        },
+      ],
+      usageMetadata: {
+        promptTokenCount: 7,
+        candidatesTokenCount: 2,
+        totalTokenCount: 9,
+      },
+    },
+    "chat.completions",
+    "gemini-2.5-pro",
+  );
+
+  assert.equal(converted.object, "chat.completion");
+  assert.equal(converted.choices[0].message.content, "Hi Vertex");
+  assert.equal(converted.usage.total_tokens, 9);
+});
+
 test("Cohere adapter converts chat payloads, responses, and model lists", () => {
   const request = buildNativeProviderRequest(
     "cohere",
@@ -267,7 +320,7 @@ test("Amazon Bedrock adapter converts chat payloads and responses", () => {
   assert.equal(converted.usage.total_tokens, 7);
 });
 
-test("OpenCode auth import enables native Anthropic, Google, Cohere, and Bedrock adapters", async () => {
+test("OpenCode auth import enables native Anthropic, Google, Vertex, Cohere, and Bedrock adapters", async () => {
   const previousRegion = process.env.AWS_REGION;
   process.env.AWS_REGION = "us-east-1";
   const accounts = await accountsFromOpenCodeAuthPayload({
@@ -285,6 +338,44 @@ test("OpenCode auth import enables native Anthropic, Google, Cohere, and Bedrock
   assert.equal(byId.get("anthropic")?.enabled, true);
   assert.equal(byId.get("google")?.providerAdapter, "google");
   assert.equal(byId.get("google")?.enabled, true);
+
+  const vertexPayload = parseOpenCodeConfigPayload(`{
+    "provider": {
+      "google-vertex": {
+        "npm": "@ai-sdk/google-vertex",
+        "options": {
+          "project": "vertex-project",
+          "location": "us-central1",
+          "apiKey": "vertex-token"
+        },
+        "models": {
+          "gemini-2.5-pro": { "name": "Gemini 2.5 Pro" }
+        }
+      }
+    }
+  }`);
+  const vertexAccounts = await accountsFromOpenCodeAuthPayload(
+    { "google-vertex": {} },
+    {
+      providerConfig: providerConfigFromOpenCodeConfigPayload(vertexPayload),
+      providerConfigSecrets: providerSecretsFromOpenCodeConfigPayload(vertexPayload),
+    },
+  );
+  const vertex = vertexAccounts.find((account) => account.providerId === "google-vertex");
+  assert.equal(vertex?.provider, "vertex");
+  assert.equal(vertex?.providerAdapter, "vertex");
+  assert.equal(
+    vertex?.baseUrl,
+    "https://us-central1-aiplatform.googleapis.com/v1/projects/vertex-project/locations/us-central1",
+  );
+  assert.equal(vertex?.accessToken, "vertex-token");
+  assert.equal(vertex?.enabled, true);
+  assert.deepEqual(vertex?.providerAuthEnv, [
+    "GOOGLE_VERTEX_ACCESS_TOKEN",
+    "GOOGLE_ACCESS_TOKEN",
+  ]);
+  assert.ok(vertex?.providerModels?.["gemini-2.5-pro"]);
+
   assert.equal(byId.get("cohere")?.providerAdapter, "cohere");
   assert.equal(byId.get("cohere")?.baseUrl, "https://api.cohere.com");
   assert.equal(byId.get("cohere")?.enabled, true);

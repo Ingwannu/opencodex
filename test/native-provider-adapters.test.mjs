@@ -1325,6 +1325,8 @@ test("Vercel AI Gateway is runtime-routable through the Gateway adapter", async 
 test("OpenCode directory OpenAI-compatible providers have offline runtime defaults", () => {
   const expected = {
     "302ai": "https://api.302.ai",
+    abacus: "https://routellm.abacus.ai",
+    "abliteration-ai": "https://api.abliteration.ai",
     alibaba: "https://dashscope-intl.aliyuncs.com/compatible-mode",
     "alibaba-cn": "https://dashscope.aliyuncs.com/compatible-mode",
     "alibaba-coding-plan": "https://coding-intl.dashscope.aliyuncs.com",
@@ -1333,53 +1335,101 @@ test("OpenCode directory OpenAI-compatible providers have offline runtime defaul
       "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode",
     "alibaba-token-plan-cn":
       "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode",
+    ambient: "https://api.ambient.xyz",
+    anyapi: "https://api.anyapi.ai",
+    "atomic-chat": "http://127.0.0.1:1337",
+    auriko: "https://api.auriko.ai",
+    bailing: "https://api.tbox.cn/api/llm/v1/chat/completions",
     baseten: "https://inference.baseten.co",
+    berget: "https://api.berget.ai",
     chutes: "https://llm.chutes.ai",
+    claudinio: "https://api.claudin.io",
     clarifai: "https://api.clarifai.com/v2/ext/openai",
+    "cloudferro-sherlock": "https://api-sherlock.cloudferro.com/openai",
     cortecs: "https://api.cortecs.ai",
+    crof: "https://crof.ai",
     deepseek: "https://api.deepseek.com",
     digitalocean: "https://inference.do-ai.run",
+    dinference: "https://api.dinference.com",
+    drun: "https://chat.d.run",
+    evroc: "https://models.think.evroc.com",
+    fastrouter: "https://go.fastrouter.ai/api",
+    firepass: "https://api.fireworks.ai/inference",
     "fireworks-ai": "https://api.fireworks.ai/inference",
     friendli: "https://api.friendli.ai/serverless",
+    frogbot: "https://app.frogbot.ai/api",
     gmicloud: "https://api.gmi-serving.com",
     "github-copilot": "https://api.githubcopilot.com",
     "github-models": "https://models.github.ai/inference",
     huggingface: "https://router.huggingface.co",
     helicone: "https://ai-gateway.helicone.ai",
     "io-net": "https://api.intelligence.io.solutions/api",
+    "hpc-ai": "https://api.hpc-ai.com/inference",
+    iflowcn: "https://apis.iflow.cn",
     inception: "https://api.inceptionlabs.ai",
+    inceptron: "https://api.inceptron.io",
     inference: "https://inference.net",
+    jiekou: "https://api.jiekou.ai/openai",
+    kilo: "https://api.kilo.ai/api/gateway",
+    "kuae-cloud-coding-plan": "https://coding-plan-endpoint.kuaecloud.net",
     llama: "https://api.llama.com/compat",
+    lilac: "https://api.getlilac.com",
     llmgateway: "https://api.llmgateway.io",
+    llmtr: "https://llmtr.com",
+    lucidquery: "https://api.lucidquery.com",
+    meganova: "https://api.meganova.ai",
+    mixlayer: "https://models.mixlayer.ai",
+    moark: "https://moark.com",
     modelscope: "https://api-inference.modelscope.cn",
     moonshotai: "https://api.moonshot.ai",
     "moonshotai-cn": "https://api.moonshot.cn",
+    morph: "https://api.morphllm.com",
+    "nano-gpt": "https://nano-gpt.com/api",
+    nearai: "https://cloud-api.near.ai",
     neuralwatt: "https://api.neuralwatt.com",
     nvidia: "https://integrate.api.nvidia.com",
     nebius: "https://api.tokenfactory.nebius.com",
+    nova: "https://api.nova.amazon.com",
     "ollama-cloud": "https://ollama.com",
     opencode: "https://opencode.ai/zen",
     "opencode-go": "https://opencode.ai/zen/go",
     openrouter: "https://openrouter.ai/api",
     "novita-ai": "https://api.novita.ai/openai",
+    orcarouter: "https://api.orcarouter.ai",
     ovhcloud: "https://oai.endpoints.kepler.ai.cloud.ovh.net",
     poe: "https://api.poe.com",
     poolside: "https://inference.poolside.ai",
+    "privatemode-ai": "http://localhost:8080",
+    "qihang-ai": "https://api.qhaigc.net",
     "qiniu-ai": "https://api.qnaigc.com",
+    "regolo-ai": "https://api.regolo.ai",
     requesty: "https://router.requesty.ai",
+    "routing-run": "https://ai.routing.sh",
     sarvam: "https://api.sarvam.ai",
     scaleway: "https://api.scaleway.ai",
     siliconflow: "https://api.siliconflow.com",
     "siliconflow-cn": "https://api.siliconflow.cn",
     stackit: "https://api.openai-compat.model-serving.eu01.onstackit.cloud",
+    stepfun: "https://api.stepfun.com",
+    "stepfun-ai": "https://api.stepfun.ai/step_plan",
+    submodel: "https://llm.submodel.ai",
+    synthetic: "https://api.synthetic.new/openai",
+    "tencent-coding-plan": "https://api.lkeap.cloud.tencent.com/coding/v3",
     "tencent-tokenhub": "https://tokenhub.tencentmaas.com",
+    "the-grid-ai": "https://api.thegrid.ai",
+    "umans-ai": "https://api.code.umans.ai",
+    "umans-ai-coding-plan": "https://api.code.umans.ai",
     upstage: "https://api.upstage.ai/v1/solar",
+    vivgrid: "https://api.vivgrid.com",
     vultr: "https://api.vultrinference.com",
+    "wafer.ai": "https://pass.wafer.ai",
     wandb: "https://api.inference.wandb.ai",
     xiaomi: "https://api.xiaomimimo.com",
     "xiaomi-token-plan-ams": "https://token-plan-ams.xiaomimimo.com",
     "xiaomi-token-plan-cn": "https://token-plan-cn.xiaomimimo.com",
     "xiaomi-token-plan-sgp": "https://token-plan-sgp.xiaomimimo.com",
+    xpersona: "https://www.xpersona.co",
+    zeldoc: "https://api.zeldoc.ai",
     zhipuai: "https://open.bigmodel.cn/api/paas/v4",
     "zhipuai-coding-plan": "https://open.bigmodel.cn/api/coding/paas/v4",
     "zai-coding-plan": "https://api.z.ai/api/coding/paas/v4",
@@ -1424,6 +1474,98 @@ console.log(JSON.stringify(out));`,
       "chat-completions-bridge",
       providerId,
     );
+  }
+});
+
+test("OpenCode directory Anthropic-compatible providers have offline runtime defaults", () => {
+  const expected = {
+    freemodel: "https://cc.freemodel.dev",
+    "kimi-for-coding": "https://api.kimi.com/coding",
+    minimax: "https://api.minimax.io/anthropic",
+    "minimax-cn": "https://api.minimaxi.com/anthropic",
+    "minimax-cn-coding-plan": "https://api.minimaxi.com/anthropic",
+    "minimax-coding-plan": "https://api.minimax.io/anthropic",
+  };
+  const output = execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `const { resolveProviderRegistryEntry } = await import("./dist/provider-registry.js");
+const expected = ${JSON.stringify(expected)};
+const out = {};
+for (const providerId of Object.keys(expected)) {
+  const entry = await resolveProviderRegistryEntry(providerId);
+  out[providerId] = {
+    providerAdapter: entry.providerAdapter,
+    runtimeSupported: entry.runtimeSupported,
+    baseUrl: entry.baseUrl,
+  };
+}
+console.log(JSON.stringify(out));`,
+    ],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MODELS_DEV_API_URL: "data:application/json,{}",
+      },
+      encoding: "utf8",
+    },
+  );
+  const entries = JSON.parse(output);
+
+  for (const [providerId, baseUrl] of Object.entries(expected)) {
+    assert.equal(entries[providerId]?.providerAdapter, "anthropic", providerId);
+    assert.equal(entries[providerId]?.runtimeSupported, true, providerId);
+    assert.equal(entries[providerId]?.baseUrl, baseUrl, providerId);
+  }
+});
+
+test("OpenCode directory native providers have offline runtime defaults", () => {
+  const expected = {
+    gitlab: {
+      providerAdapter: "gitlab",
+      baseUrl: "https://gitlab.com",
+    },
+  };
+  const output = execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `const { resolveProviderRegistryEntry } = await import("./dist/provider-registry.js");
+const expected = ${JSON.stringify(expected)};
+const out = {};
+for (const providerId of Object.keys(expected)) {
+  const entry = await resolveProviderRegistryEntry(providerId);
+  out[providerId] = {
+    providerAdapter: entry.providerAdapter,
+    runtimeSupported: entry.runtimeSupported,
+    baseUrl: entry.baseUrl,
+  };
+}
+console.log(JSON.stringify(out));`,
+    ],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MODELS_DEV_API_URL: "data:application/json,{}",
+      },
+      encoding: "utf8",
+    },
+  );
+  const entries = JSON.parse(output);
+
+  for (const [providerId, expectedEntry] of Object.entries(expected)) {
+    assert.equal(
+      entries[providerId]?.providerAdapter,
+      expectedEntry.providerAdapter,
+      providerId,
+    );
+    assert.equal(entries[providerId]?.runtimeSupported, true, providerId);
+    assert.equal(entries[providerId]?.baseUrl, expectedEntry.baseUrl, providerId);
   }
 });
 

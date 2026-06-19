@@ -281,6 +281,20 @@ const BUILTIN_PROVIDERS: ProviderRegistryEntry[] = [
     runtimeSupported: true,
   },
   {
+    id: "gitlab",
+    providerId: "gitlab",
+    label: "GitLab Duo",
+    provider: "gitlab",
+    providerAdapter: "gitlab",
+    providerNpm: "gitlab-ai-provider",
+    providerSource: "builtin",
+    providerDoc: "https://docs.gitlab.com/user/gitlab_duo/",
+    baseUrl: "https://gitlab.com",
+    tokenEnv: ["GITLAB_TOKEN"],
+    authType: "api-key",
+    runtimeSupported: true,
+  },
+  {
     id: "amazon-bedrock",
     providerId: "amazon-bedrock",
     label: "Amazon Bedrock",
@@ -432,6 +446,16 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     baseUrl: "https://api.302.ai/v1",
     tokenEnv: ["302AI_API_KEY"],
   },
+  abacus: {
+    label: "Abacus",
+    baseUrl: "https://routellm.abacus.ai/v1",
+    tokenEnv: ["ABACUS_API_KEY"],
+  },
+  "abliteration-ai": {
+    label: "abliteration.ai",
+    baseUrl: "https://api.abliteration.ai/v1",
+    tokenEnv: ["ABLIT_KEY"],
+  },
   alibaba: {
     label: "Alibaba",
     baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
@@ -464,25 +488,70 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
       "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
     tokenEnv: ["ALIBABA_TOKEN_PLAN_API_KEY"],
   },
+  ambient: {
+    label: "Ambient",
+    baseUrl: "https://api.ambient.xyz/v1",
+    tokenEnv: ["AMBIENT_API_KEY"],
+  },
+  anyapi: {
+    label: "AnyAPI",
+    baseUrl: "https://api.anyapi.ai/v1",
+    tokenEnv: ["ANYAPI_API_KEY"],
+  },
+  "atomic-chat": {
+    label: "Atomic Chat",
+    baseUrl: "http://127.0.0.1:1337/v1",
+    tokenEnv: ["ATOMIC_CHAT_API_KEY"],
+  },
+  auriko: {
+    label: "Auriko",
+    baseUrl: "https://api.auriko.ai/v1",
+    tokenEnv: ["AURIKO_API_KEY"],
+  },
+  bailing: {
+    label: "Bailing",
+    baseUrl: "https://api.tbox.cn/api/llm/v1/chat/completions",
+    tokenEnv: ["BAILING_API_TOKEN"],
+  },
   baseten: {
     label: "Baseten",
     baseUrl: "https://inference.baseten.co/v1",
     tokenEnv: ["BASETEN_API_KEY"],
+  },
+  berget: {
+    label: "Berget.AI",
+    baseUrl: "https://api.berget.ai/v1",
+    tokenEnv: ["BERGET_API_KEY"],
   },
   chutes: {
     label: "Chutes",
     baseUrl: "https://llm.chutes.ai/v1",
     tokenEnv: ["CHUTES_API_KEY"],
   },
+  claudinio: {
+    label: "Claudinio",
+    baseUrl: "https://api.claudin.io/v1",
+    tokenEnv: ["CLAUDINIO_API_KEY"],
+  },
   clarifai: {
     label: "Clarifai",
     baseUrl: "https://api.clarifai.com/v2/ext/openai/v1",
     tokenEnv: ["CLARIFAI_PAT"],
   },
+  "cloudferro-sherlock": {
+    label: "CloudFerro Sherlock",
+    baseUrl: "https://api-sherlock.cloudferro.com/openai/v1/",
+    tokenEnv: ["CLOUDFERRO_SHERLOCK_API_KEY"],
+  },
   cortecs: {
     label: "Cortecs",
     baseUrl: "https://api.cortecs.ai/v1",
     tokenEnv: ["CORTECS_API_KEY"],
+  },
+  crof: {
+    label: "CrofAI",
+    baseUrl: "https://crof.ai/v1",
+    tokenEnv: ["CROF_API_KEY"],
   },
   deepseek: {
     label: "DeepSeek",
@@ -494,6 +563,31 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     baseUrl: "https://inference.do-ai.run/v1",
     tokenEnv: ["DIGITALOCEAN_ACCESS_TOKEN"],
   },
+  dinference: {
+    label: "DInference",
+    baseUrl: "https://api.dinference.com/v1",
+    tokenEnv: ["DINFERENCE_API_KEY"],
+  },
+  drun: {
+    label: "D.Run (China)",
+    baseUrl: "https://chat.d.run/v1",
+    tokenEnv: ["DRUN_API_KEY"],
+  },
+  evroc: {
+    label: "evroc",
+    baseUrl: "https://models.think.evroc.com/v1",
+    tokenEnv: ["EVROC_API_KEY"],
+  },
+  fastrouter: {
+    label: "FastRouter",
+    baseUrl: "https://go.fastrouter.ai/api/v1",
+    tokenEnv: ["FASTROUTER_API_KEY"],
+  },
+  firepass: {
+    label: "Fireworks (Firepass)",
+    baseUrl: "https://api.fireworks.ai/inference/v1/",
+    tokenEnv: ["FIREPASS_API_KEY"],
+  },
   "fireworks-ai": {
     label: "Fireworks AI",
     baseUrl: "https://api.fireworks.ai/inference/v1/",
@@ -503,6 +597,11 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     label: "Friendli",
     baseUrl: "https://api.friendli.ai/serverless/v1",
     tokenEnv: ["FRIENDLI_TOKEN"],
+  },
+  frogbot: {
+    label: "FrogBot",
+    baseUrl: "https://app.frogbot.ai/api/v1",
+    tokenEnv: ["FROGBOT_API_KEY"],
   },
   gmicloud: {
     label: "GMI Cloud",
@@ -534,15 +633,45 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     baseUrl: "https://api.intelligence.io.solutions/api/v1",
     tokenEnv: ["IOINTELLIGENCE_API_KEY"],
   },
+  "hpc-ai": {
+    label: "HPC-AI",
+    baseUrl: "https://api.hpc-ai.com/inference/v1",
+    tokenEnv: ["HPC_AI_API_KEY"],
+  },
+  iflowcn: {
+    label: "iFlow",
+    baseUrl: "https://apis.iflow.cn/v1",
+    tokenEnv: ["IFLOW_API_KEY"],
+  },
   inception: {
     label: "Inception",
     baseUrl: "https://api.inceptionlabs.ai/v1/",
     tokenEnv: ["INCEPTION_API_KEY"],
   },
+  inceptron: {
+    label: "Inceptron",
+    baseUrl: "https://api.inceptron.io/v1",
+    tokenEnv: ["INCEPTRON_API_KEY"],
+  },
   inference: {
     label: "Inference",
     baseUrl: "https://inference.net/v1",
     tokenEnv: ["INFERENCE_API_KEY"],
+  },
+  jiekou: {
+    label: "Jiekou.AI",
+    baseUrl: "https://api.jiekou.ai/openai",
+    tokenEnv: ["JIEKOU_API_KEY"],
+  },
+  kilo: {
+    label: "Kilo Gateway",
+    baseUrl: "https://api.kilo.ai/api/gateway",
+    tokenEnv: ["KILO_API_KEY"],
+  },
+  "kuae-cloud-coding-plan": {
+    label: "KUAE Cloud Coding Plan",
+    baseUrl: "https://coding-plan-endpoint.kuaecloud.net/v1",
+    tokenEnv: ["KUAE_API_KEY"],
   },
   llmgateway: {
     label: "LLM Gateway",
@@ -553,6 +682,36 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     label: "Llama",
     baseUrl: "https://api.llama.com/compat/v1/",
     tokenEnv: ["LLAMA_API_KEY"],
+  },
+  lilac: {
+    label: "Lilac",
+    baseUrl: "https://api.getlilac.com/v1",
+    tokenEnv: ["LILAC_API_KEY"],
+  },
+  llmtr: {
+    label: "LLMTR",
+    baseUrl: "https://llmtr.com/v1",
+    tokenEnv: ["LLMTR_API_KEY"],
+  },
+  lucidquery: {
+    label: "LucidQuery",
+    baseUrl: "https://api.lucidquery.com/v1",
+    tokenEnv: ["LUCIDQUERY_API_KEY"],
+  },
+  meganova: {
+    label: "Meganova",
+    baseUrl: "https://api.meganova.ai/v1",
+    tokenEnv: ["MEGANOVA_API_KEY"],
+  },
+  mixlayer: {
+    label: "Mixlayer",
+    baseUrl: "https://models.mixlayer.ai/v1",
+    tokenEnv: ["MIXLAYER_API_KEY"],
+  },
+  moark: {
+    label: "Moark",
+    baseUrl: "https://moark.com/v1",
+    tokenEnv: ["MOARK_API_KEY"],
   },
   modelscope: {
     label: "ModelScope",
@@ -569,6 +728,21 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     baseUrl: "https://api.moonshot.cn/v1",
     tokenEnv: ["MOONSHOT_API_KEY"],
   },
+  morph: {
+    label: "Morph",
+    baseUrl: "https://api.morphllm.com/v1",
+    tokenEnv: ["MORPH_API_KEY"],
+  },
+  "nano-gpt": {
+    label: "NanoGPT",
+    baseUrl: "https://nano-gpt.com/api/v1",
+    tokenEnv: ["NANO_GPT_API_KEY"],
+  },
+  nearai: {
+    label: "NEAR AI Cloud",
+    baseUrl: "https://cloud-api.near.ai/v1",
+    tokenEnv: ["NEARAI_API_KEY"],
+  },
   nvidia: {
     label: "NVIDIA",
     baseUrl: "https://integrate.api.nvidia.com/v1",
@@ -578,6 +752,11 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     label: "Nebius Token Factory",
     baseUrl: "https://api.tokenfactory.nebius.com/v1",
     tokenEnv: ["NEBIUS_API_KEY"],
+  },
+  nova: {
+    label: "Nova",
+    baseUrl: "https://api.nova.amazon.com/v1",
+    tokenEnv: ["NOVA_API_KEY"],
   },
   neuralwatt: {
     label: "Neuralwatt",
@@ -609,6 +788,11 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     baseUrl: "https://api.novita.ai/openai",
     tokenEnv: ["NOVITA_API_KEY"],
   },
+  orcarouter: {
+    label: "OrcaRouter",
+    baseUrl: "https://api.orcarouter.ai/v1",
+    tokenEnv: ["ORCAROUTER_API_KEY"],
+  },
   ovhcloud: {
     label: "OVHcloud AI Endpoints",
     baseUrl: "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
@@ -624,15 +808,35 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     baseUrl: "https://inference.poolside.ai/v1",
     tokenEnv: ["POOLSIDE_API_KEY"],
   },
+  "privatemode-ai": {
+    label: "Privatemode AI",
+    baseUrl: "http://localhost:8080/v1",
+    tokenEnv: ["PRIVATEMODE_API_KEY", "PRIVATEMODE_ENDPOINT"],
+  },
+  "qihang-ai": {
+    label: "QiHang",
+    baseUrl: "https://api.qhaigc.net/v1",
+    tokenEnv: ["QIHANG_API_KEY"],
+  },
   "qiniu-ai": {
     label: "Qiniu",
     baseUrl: "https://api.qnaigc.com/v1",
     tokenEnv: ["QINIU_API_KEY"],
   },
+  "regolo-ai": {
+    label: "Regolo AI",
+    baseUrl: "https://api.regolo.ai/v1",
+    tokenEnv: ["REGOLO_API_KEY"],
+  },
   requesty: {
     label: "Requesty",
     baseUrl: "https://router.requesty.ai/v1",
     tokenEnv: ["REQUESTY_API_KEY"],
+  },
+  "routing-run": {
+    label: "routing.run",
+    baseUrl: "https://ai.routing.sh/v1",
+    tokenEnv: ["ROUTING_RUN_API_KEY"],
   },
   sarvam: {
     label: "Sarvam AI",
@@ -659,20 +863,70 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     baseUrl: "https://api.openai-compat.model-serving.eu01.onstackit.cloud/v1",
     tokenEnv: ["STACKIT_API_KEY"],
   },
+  stepfun: {
+    label: "StepFun",
+    baseUrl: "https://api.stepfun.com/v1",
+    tokenEnv: ["STEPFUN_API_KEY"],
+  },
+  "stepfun-ai": {
+    label: "StepFun AI",
+    baseUrl: "https://api.stepfun.ai/step_plan/v1",
+    tokenEnv: ["STEPFUN_API_KEY"],
+  },
+  submodel: {
+    label: "submodel",
+    baseUrl: "https://llm.submodel.ai/v1",
+    tokenEnv: ["SUBMODEL_INSTAGEN_ACCESS_KEY"],
+  },
+  synthetic: {
+    label: "Synthetic",
+    baseUrl: "https://api.synthetic.new/openai/v1",
+    tokenEnv: ["SYNTHETIC_API_KEY"],
+  },
+  "tencent-coding-plan": {
+    label: "Tencent Coding Plan (China)",
+    baseUrl: "https://api.lkeap.cloud.tencent.com/coding/v3",
+    tokenEnv: ["TENCENT_CODING_PLAN_API_KEY"],
+  },
   "tencent-tokenhub": {
     label: "Tencent TokenHub",
     baseUrl: "https://tokenhub.tencentmaas.com/v1",
     tokenEnv: ["TENCENT_TOKENHUB_API_KEY"],
+  },
+  "the-grid-ai": {
+    label: "The Grid AI",
+    baseUrl: "https://api.thegrid.ai/v1",
+    tokenEnv: ["THEGRIDAI_API_KEY"],
+  },
+  "umans-ai": {
+    label: "Umans AI",
+    baseUrl: "https://api.code.umans.ai/v1",
+    tokenEnv: ["UMANS_AI_API_KEY"],
+  },
+  "umans-ai-coding-plan": {
+    label: "Umans AI Coding Plan",
+    baseUrl: "https://api.code.umans.ai/v1",
+    tokenEnv: ["UMANS_AI_CODING_PLAN_API_KEY"],
   },
   upstage: {
     label: "Upstage",
     baseUrl: "https://api.upstage.ai/v1/solar",
     tokenEnv: ["UPSTAGE_API_KEY"],
   },
+  vivgrid: {
+    label: "Vivgrid",
+    baseUrl: "https://api.vivgrid.com/v1",
+    tokenEnv: ["VIVGRID_API_KEY"],
+  },
   vultr: {
     label: "Vultr",
     baseUrl: "https://api.vultrinference.com/v1",
     tokenEnv: ["VULTR_API_KEY"],
+  },
+  "wafer.ai": {
+    label: "Wafer",
+    baseUrl: "https://pass.wafer.ai/v1",
+    tokenEnv: ["WAFER_API_KEY"],
   },
   wandb: {
     label: "Weights & Biases",
@@ -698,6 +952,16 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     label: "Xiaomi Token Plan (Singapore)",
     baseUrl: "https://token-plan-sgp.xiaomimimo.com/v1",
     tokenEnv: ["XIAOMI_API_KEY"],
+  },
+  xpersona: {
+    label: "Xpersona",
+    baseUrl: "https://www.xpersona.co/v1",
+    tokenEnv: ["XPERSONA_API_KEY"],
+  },
+  zeldoc: {
+    label: "Zeldoc",
+    baseUrl: "https://api.zeldoc.ai/v1",
+    tokenEnv: ["ZELDOC_API_KEY"],
   },
   zhipuai: {
     label: "Zhipu AI",
@@ -738,6 +1002,42 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     label: "ZenMux",
     baseUrl: "https://zenmux.ai/api/v1",
     tokenEnv: ["ZENMUX_API_KEY"],
+  },
+};
+
+const ANTHROPIC_SDK_PROVIDER_DEFAULTS: Record<
+  string,
+  OpenAiCompatibleProviderDefault
+> = {
+  freemodel: {
+    label: "FreeModel",
+    baseUrl: "https://cc.freemodel.dev/v1",
+    tokenEnv: ["FREEMODEL_API_KEY"],
+  },
+  "kimi-for-coding": {
+    label: "Kimi For Coding",
+    baseUrl: "https://api.kimi.com/coding/v1",
+    tokenEnv: ["KIMI_API_KEY"],
+  },
+  minimax: {
+    label: "MiniMax (minimax.io)",
+    baseUrl: "https://api.minimax.io/anthropic/v1",
+    tokenEnv: ["MINIMAX_API_KEY"],
+  },
+  "minimax-cn": {
+    label: "MiniMax (minimaxi.com)",
+    baseUrl: "https://api.minimaxi.com/anthropic/v1",
+    tokenEnv: ["MINIMAX_API_KEY"],
+  },
+  "minimax-cn-coding-plan": {
+    label: "MiniMax Token Plan (minimaxi.com)",
+    baseUrl: "https://api.minimaxi.com/anthropic/v1",
+    tokenEnv: ["MINIMAX_API_KEY"],
+  },
+  "minimax-coding-plan": {
+    label: "MiniMax Token Plan (minimax.io)",
+    baseUrl: "https://api.minimax.io/anthropic/v1",
+    tokenEnv: ["MINIMAX_API_KEY"],
   },
 };
 
@@ -1703,6 +2003,36 @@ function fallbackOpenAiCompatibleRegistryEntry(
   );
 }
 
+function fallbackAnthropicRegistryEntry(
+  providerId: string,
+): ProviderRegistryEntry | undefined {
+  const id = sanitizeProviderId(providerId);
+  const defaults = ANTHROPIC_SDK_PROVIDER_DEFAULTS[id];
+  if (!defaults) return undefined;
+
+  return providerRegistryEntryFromMetadata(
+    id,
+    {
+      id,
+      name: defaults.label ?? id,
+      npm: "@ai-sdk/anthropic",
+      api: defaults.baseUrl,
+      env: defaults.tokenEnv ?? [],
+      doc: defaults.providerDoc ?? "https://opencode.ai/docs/providers/",
+    },
+    "builtin",
+  );
+}
+
+function fallbackSdkRegistryEntry(
+  providerId: string,
+): ProviderRegistryEntry | undefined {
+  return (
+    fallbackOpenAiCompatibleRegistryEntry(providerId) ??
+    fallbackAnthropicRegistryEntry(providerId)
+  );
+}
+
 function builtinMap(): Map<string, ProviderRegistryEntry> {
   return new Map(BUILTIN_PROVIDERS.map((entry) => [entry.id, entry]));
 }
@@ -1774,7 +2104,12 @@ export async function listProviderRegistry(): Promise<ProviderRegistryEntry[]> {
   }
   for (const id of Object.keys(OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS)) {
     if (merged.has(id)) continue;
-    const fallback = fallbackOpenAiCompatibleRegistryEntry(id);
+    const fallback = fallbackSdkRegistryEntry(id);
+    if (fallback) merged.set(id, fallback);
+  }
+  for (const id of Object.keys(ANTHROPIC_SDK_PROVIDER_DEFAULTS)) {
+    if (merged.has(id)) continue;
+    const fallback = fallbackSdkRegistryEntry(id);
     if (fallback) merged.set(id, fallback);
   }
   return Array.from(merged.values()).sort((a, b) =>
@@ -1797,7 +2132,7 @@ export async function resolveProviderRegistryEntry(
   const found = builtin
     ? mergeBuiltinWithModelsDevEntry(builtin, modelsDev.get(canonicalId))
     : (modelsDev.get(canonicalId) ??
-      fallbackOpenAiCompatibleRegistryEntry(canonicalId));
+      fallbackSdkRegistryEntry(canonicalId));
 
   if (found) {
     return {

@@ -432,6 +432,16 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     baseUrl: "https://api.302.ai/v1",
     tokenEnv: ["302AI_API_KEY"],
   },
+  alibaba: {
+    label: "Alibaba",
+    baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    tokenEnv: ["DASHSCOPE_API_KEY"],
+  },
+  "alibaba-cn": {
+    label: "Alibaba (China)",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    tokenEnv: ["DASHSCOPE_API_KEY"],
+  },
   cortecs: {
     label: "Cortecs",
     baseUrl: "https://api.cortecs.ai/v1",
@@ -446,6 +456,16 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     label: "Fireworks AI",
     baseUrl: "https://api.fireworks.ai/inference/v1/",
     tokenEnv: ["FIREWORKS_API_KEY"],
+  },
+  "github-copilot": {
+    label: "GitHub Copilot",
+    baseUrl: "https://api.githubcopilot.com",
+    tokenEnv: ["GITHUB_TOKEN"],
+  },
+  "github-models": {
+    label: "GitHub Models",
+    baseUrl: "https://models.github.ai/inference",
+    tokenEnv: ["GITHUB_TOKEN"],
   },
   huggingface: {
     label: "Hugging Face",
@@ -467,6 +487,16 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     baseUrl: "https://api.llmgateway.io/v1",
     tokenEnv: ["LLMGATEWAY_API_KEY"],
   },
+  llama: {
+    label: "Llama",
+    baseUrl: "https://api.llama.com/compat/v1/",
+    tokenEnv: ["LLAMA_API_KEY"],
+  },
+  modelscope: {
+    label: "ModelScope",
+    baseUrl: "https://api-inference.modelscope.cn/v1",
+    tokenEnv: ["MODELSCOPE_API_KEY"],
+  },
   moonshotai: {
     label: "Moonshot AI",
     baseUrl: "https://api.moonshot.ai/v1",
@@ -487,6 +517,11 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     baseUrl: "https://api.tokenfactory.nebius.com/v1",
     tokenEnv: ["NEBIUS_API_KEY"],
   },
+  neuralwatt: {
+    label: "Neuralwatt",
+    baseUrl: "https://api.neuralwatt.com/v1",
+    tokenEnv: ["NEURALWATT_API_KEY"],
+  },
   "ollama-cloud": {
     label: "Ollama Cloud",
     baseUrl: "https://ollama.com/v1",
@@ -502,20 +537,45 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     baseUrl: "https://opencode.ai/zen/go/v1",
     tokenEnv: ["OPENCODE_API_KEY"],
   },
+  openrouter: {
+    label: "OpenRouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    tokenEnv: ["OPENROUTER_API_KEY"],
+  },
   ovhcloud: {
     label: "OVHcloud AI Endpoints",
     baseUrl: "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
     tokenEnv: ["OVHCLOUD_API_KEY"],
+  },
+  requesty: {
+    label: "Requesty",
+    baseUrl: "https://router.requesty.ai/v1",
+    tokenEnv: ["REQUESTY_API_KEY"],
   },
   scaleway: {
     label: "Scaleway",
     baseUrl: "https://api.scaleway.ai/v1",
     tokenEnv: ["SCALEWAY_API_KEY"],
   },
+  siliconflow: {
+    label: "SiliconFlow",
+    baseUrl: "https://api.siliconflow.com/v1",
+    tokenEnv: ["SILICONFLOW_API_KEY"],
+  },
+  "siliconflow-cn": {
+    label: "SiliconFlow (China)",
+    baseUrl: "https://api.siliconflow.cn/v1",
+    tokenEnv: ["SILICONFLOW_CN_API_KEY"],
+  },
   stackit: {
     label: "STACKIT",
     baseUrl: "https://api.openai-compat.model-serving.eu01.onstackit.cloud/v1",
     tokenEnv: ["STACKIT_API_KEY"],
+  },
+  upstage: {
+    label: "Upstage",
+    baseUrl: "https://api.upstage.ai/v1/solar",
+    tokenEnv: ["UPSTAGE_API_KEY"],
   },
   xiaomi: {
     label: "Xiaomi",
@@ -536,6 +596,16 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     label: "Xiaomi Token Plan (Singapore)",
     baseUrl: "https://token-plan-sgp.xiaomimimo.com/v1",
     tokenEnv: ["XIAOMI_API_KEY"],
+  },
+  zhipuai: {
+    label: "Zhipu AI",
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    tokenEnv: ["ZHIPU_API_KEY"],
+  },
+  "zhipuai-coding-plan": {
+    label: "Zhipu AI Coding Plan",
+    baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4",
+    tokenEnv: ["ZHIPU_API_KEY"],
   },
   xai: { baseUrl: "https://api.x.ai" },
   groq: { baseUrl: "https://api.groq.com/openai" },

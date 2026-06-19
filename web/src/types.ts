@@ -146,3 +146,8 @@ export type ModelAlias = {
 export type StoreSettings = {
   defaultPassthroughAccountId?: string;
 };
+
+export type OpenCodeImportOptions = {
+  path?: string;
+  configPath?: string;
+};

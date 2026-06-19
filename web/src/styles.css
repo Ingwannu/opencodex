@@ -493,6 +493,21 @@ button:disabled {
   font-size: 13px;
 }
 
+.opencode-import-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.opencode-import-bar .btn {
+  min-height: 46px;
+  white-space: nowrap;
+}
+
 .grid {
   display: grid;
   gap: 18px;
@@ -1016,6 +1031,7 @@ details summary {
   .cards5,
   .modal-grid,
   .alias-grid,
+  .opencode-import-bar,
   .provider-guidance-grid,
   .info-grid {
     grid-template-columns: 1fr;

@@ -1,5 +1,6 @@
 import type {
   Account,
+  OpenCodeImportOptions,
   ProviderRegistryEntry,
   StoreSettings,
   TraceStats,
@@ -9,6 +10,7 @@ import {
   describeProviderAuth,
   formatProviderOptions,
   isAuthOnlyAccount,
+  normalizeOpenCodeImportOptions,
   parseProviderOptionsInput,
 } from "../../lib/account-ui";
 import { fmt, maskEmail, maskId } from "../../lib/ui";
@@ -27,7 +29,7 @@ type Props = {
   unblock: (id: string) => Promise<void>;
   refreshUsage: (id: string) => Promise<void>;
   createAccount: (body: any) => Promise<void>;
-  importOpenCodeAuth: () => Promise<any>;
+  importOpenCodeAuth: (options?: OpenCodeImportOptions) => Promise<any>;
   patchSettings: (body: Partial<StoreSettings>) => Promise<void>;
   startOAuth: (email: string, accountId?: string) => Promise<any>;
   completeOAuth: (flowId: string, input: string) => Promise<any>;
@@ -162,6 +164,8 @@ export function AccountsTab(props: Props) {
   const [manualChatgptAccountId, setManualChatgptAccountId] = useState("");
   const [manualBaseUrl, setManualBaseUrl] = useState("");
   const [manualProviderOptionsJson, setManualProviderOptionsJson] = useState("");
+  const [openCodeAuthPath, setOpenCodeAuthPath] = useState("");
+  const [openCodeConfigPath, setOpenCodeConfigPath] = useState("");
   const [manualUpstreamMode, setManualUpstreamMode] = useState<
     "" | "responses" | "chat/completions"
   >("");
@@ -559,7 +563,9 @@ export function AccountsTab(props: Props) {
   const runOpenCodeImport = async () => {
     setIsImportingOpenCode(true);
     try {
-      await importOpenCodeAuth();
+      await importOpenCodeAuth(
+        normalizeOpenCodeImportOptions(openCodeAuthPath, openCodeConfigPath),
+      );
     } finally {
       setIsImportingOpenCode(false);
     }
@@ -704,17 +710,35 @@ export function AccountsTab(props: Props) {
             <span className="badge">{mistralCount} Mistral</span>
             <span className="badge">{zaiCount} z.ai</span>
             <span className="badge">{authOnlyCount} auth-only</span>
-            <button
-              className="btn secondary"
-              disabled={isImportingOpenCode}
-              onClick={() => void runOpenCodeImport()}
-            >
-              {isImportingOpenCode ? "Importing..." : "Import OpenCode auth"}
-            </button>
             <button className="btn" onClick={() => setShowAddAccount(true)}>
               Add account
             </button>
           </div>
+        </div>
+        <div className="opencode-import-bar">
+          <label className="compact-field">
+            OpenCode auth path
+            <input
+              value={openCodeAuthPath}
+              onChange={(e) => setOpenCodeAuthPath(e.target.value)}
+              placeholder="Default OpenCode auth.json"
+            />
+          </label>
+          <label className="compact-field">
+            OpenCode config path
+            <input
+              value={openCodeConfigPath}
+              onChange={(e) => setOpenCodeConfigPath(e.target.value)}
+              placeholder="Optional opencode.json or opencode.jsonc"
+            />
+          </label>
+          <button
+            className="btn secondary"
+            disabled={isImportingOpenCode}
+            onClick={() => void runOpenCodeImport()}
+          >
+            {isImportingOpenCode ? "Importing..." : "Import OpenCode auth"}
+          </button>
         </div>
         <div className="table-wrap">
           <table className="data-table">

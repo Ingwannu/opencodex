@@ -6,6 +6,7 @@ import {
   formatProviderOptions,
   formatProviderEndpoint,
   isAuthOnlyAccount,
+  normalizeOpenCodeImportOptions,
   parseProviderOptionsInput,
 } from "../web/src/lib/account-ui";
 import type { Account, ProviderRegistryEntry } from "../web/src/types";
@@ -141,5 +142,19 @@ test("provider option JSON helpers preserve editable provider-specific routing o
   assert.throws(
     () => parseProviderOptionsInput("{not json}"),
     /Provider options must be valid JSON/,
+  );
+});
+
+test("normalizeOpenCodeImportOptions trims optional auth and config paths", () => {
+  assert.deepEqual(normalizeOpenCodeImportOptions("", ""), {});
+  assert.deepEqual(
+    normalizeOpenCodeImportOptions(
+      " /tmp/opencode/auth.json ",
+      " /tmp/opencode/opencode.jsonc ",
+    ),
+    {
+      path: "/tmp/opencode/auth.json",
+      configPath: "/tmp/opencode/opencode.jsonc",
+    },
   );
 });

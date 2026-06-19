@@ -1,4 +1,8 @@
-import type { Account, ProviderRegistryEntry } from "../types";
+import type {
+  Account,
+  OpenCodeImportOptions,
+  ProviderRegistryEntry,
+} from "../types";
 
 const ROUTABLE_ADAPTERS = new Set([
   "openai",
@@ -91,6 +95,20 @@ export function parseProviderOptionsInput(
   }
 
   return parsed as Record<string, unknown>;
+}
+
+export function normalizeOpenCodeImportOptions(
+  authPath: string,
+  configPath: string,
+): OpenCodeImportOptions {
+  const options: OpenCodeImportOptions = {};
+  const trimmedAuthPath = authPath.trim();
+  const trimmedConfigPath = configPath.trim();
+
+  if (trimmedAuthPath) options.path = trimmedAuthPath;
+  if (trimmedConfigPath) options.configPath = trimmedConfigPath;
+
+  return options;
 }
 
 export function describeProviderAuth(

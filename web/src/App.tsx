@@ -11,6 +11,7 @@ import type {
   Account,
   ExposedModel,
   ModelAlias,
+  OpenCodeImportOptions,
   ProviderRegistryEntry,
   StoreSettings,
   Tab,
@@ -350,10 +351,10 @@ export default function App() {
     await loadBase();
   };
 
-  const importOpenCodeAuth = async () => {
+  const importOpenCodeAuth = async (options: OpenCodeImportOptions = {}) => {
     const result = await api("/admin/auth/import-opencode", {
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify(options),
     });
     await loadBase();
     return result;

@@ -225,6 +225,9 @@ const openAiCompatibleSdkProviderDefaults = {
     compatibilityMode: "responses",
   },
   vercel: { baseUrl: "https://ai-gateway.vercel.sh" },
+  venice: { baseUrl: "https://api.venice.ai/api/v1" },
+  aihubmix: { baseUrl: "https://aihubmix.com/v1" },
+  "merge-gateway": { baseUrl: "https://api-gateway.merge.dev/v1/openai" },
 };
 
 const MODELS_DEV_API_URL = process.env.MODELS_DEV_API_URL || "https://models.dev/api.json";

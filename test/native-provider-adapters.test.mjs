@@ -234,6 +234,9 @@ test("OpenAI-compatible SDK providers are runtime-routable through the bridge", 
     ["togetherai", "https://api.together.ai"],
     ["perplexity", "https://api.perplexity.ai"],
     ["vercel", "https://ai-gateway.vercel.sh"],
+    ["venice", "https://api.venice.ai/api"],
+    ["aihubmix", "https://aihubmix.com"],
+    ["merge-gateway", "https://api-gateway.merge.dev/v1/openai"],
   ]);
 
   for (const [providerId, baseUrl] of expected) {
@@ -289,6 +292,9 @@ test("OpenCode auth import enables OpenAI-compatible SDK providers", async () =>
     xai: { apiKey: "xai-key" },
     groq: { apiKey: "groq-key" },
     vercel: { apiKey: "vercel-key" },
+    venice: { apiKey: "venice-key" },
+    aihubmix: { apiKey: "aihubmix-key" },
+    "merge-gateway": { apiKey: "merge-key" },
   });
   const byId = new Map(accounts.map((account) => [account.providerId, account]));
 
@@ -297,4 +303,10 @@ test("OpenCode auth import enables OpenAI-compatible SDK providers", async () =>
   assert.equal(byId.get("xai")?.enabled, true);
   assert.equal(byId.get("groq")?.baseUrl, "https://api.groq.com/openai");
   assert.equal(byId.get("vercel")?.baseUrl, "https://ai-gateway.vercel.sh");
+  assert.equal(byId.get("venice")?.baseUrl, "https://api.venice.ai/api");
+  assert.equal(byId.get("aihubmix")?.baseUrl, "https://aihubmix.com");
+  assert.equal(
+    byId.get("merge-gateway")?.baseUrl,
+    "https://api-gateway.merge.dev/v1/openai",
+  );
 });

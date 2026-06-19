@@ -239,6 +239,9 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     compatibilityMode: "responses",
   },
   vercel: { baseUrl: "https://ai-gateway.vercel.sh" },
+  venice: { baseUrl: "https://api.venice.ai/api/v1" },
+  aihubmix: { baseUrl: "https://aihubmix.com/v1" },
+  "merge-gateway": { baseUrl: "https://api-gateway.merge.dev/v1/openai" },
 };
 
 let modelsDevCache:

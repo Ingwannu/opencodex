@@ -1068,6 +1068,81 @@ test("Cloudflare AI Gateway registry metadata stays OpenAI-compatible when endpo
   assert.ok(entry.models?.["openai/gpt-5.1"]);
 });
 
+test("OpenCode config imports Cloudflare Workers AI account and gateway options", async () => {
+  const previous = {
+    CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
+    CLOUDFLARE_GATEWAY_ID: process.env.CLOUDFLARE_GATEWAY_ID,
+  };
+  process.env.CLOUDFLARE_ACCOUNT_ID = "cf-account";
+  process.env.CLOUDFLARE_GATEWAY_ID = "env-gateway";
+  try {
+    const envEntry = providerRegistryEntryFromMetadata("cloudflare-workers-ai", {
+      id: "cloudflare-workers-ai",
+      name: "Cloudflare Workers AI",
+      npm: "@ai-sdk/openai-compatible",
+    });
+    assert.equal(
+      envEntry.baseUrl,
+      "https://api.cloudflare.com/client/v4/accounts/cf-account/ai",
+    );
+    assert.deepEqual(envEntry.providerOptions, { gatewayId: "env-gateway" });
+
+    const payload = parseOpenCodeConfigPayload(`{
+      "provider": {
+        "cloudflare-workers-ai": {
+          "npm": "@ai-sdk/openai-compatible",
+          "options": {
+            "accountId": "{env:CLOUDFLARE_ACCOUNT_ID}",
+            "gatewayId": "team-gateway",
+            "apiKey": "cf-workers-token"
+          },
+          "models": {
+            "@cf/moonshotai/kimi-k2.6": { "name": "Kimi K2.6" }
+          }
+        }
+      }
+    }`);
+    const providerConfig = providerConfigFromOpenCodeConfigPayload(payload);
+    const entry = providerConfig.get("cloudflare-workers-ai");
+
+    assert.equal(entry?.provider, "openai-compatible");
+    assert.equal(entry?.providerAdapter, "openai-compatible");
+    assert.equal(
+      entry?.baseUrl,
+      "https://api.cloudflare.com/client/v4/accounts/cf-account/ai",
+    );
+    assert.deepEqual(entry?.providerOptions, { gatewayId: "team-gateway" });
+    assert.equal(entry?.runtimeSupported, true);
+
+    const accounts = await accountsFromOpenCodeAuthPayload(
+      { "cloudflare-workers-ai": {} },
+      {
+        providerConfig,
+        providerConfigSecrets: providerSecretsFromOpenCodeConfigPayload(payload),
+      },
+    );
+    const workers = accounts.find(
+      (account) => account.providerId === "cloudflare-workers-ai",
+    );
+
+    assert.equal(workers?.provider, "openai-compatible");
+    assert.equal(workers?.providerAdapter, "openai-compatible");
+    assert.equal(
+      workers?.baseUrl,
+      "https://api.cloudflare.com/client/v4/accounts/cf-account/ai",
+    );
+    assert.deepEqual(workers?.providerOptions, { gatewayId: "team-gateway" });
+    assert.equal(workers?.accessToken, "cf-workers-token");
+    assert.equal(workers?.enabled, true);
+    assert.ok(workers?.providerModels?.["@cf/moonshotai/kimi-k2.6"]);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test("Azure registry metadata stays OpenAI-compatible when resource env is missing", () => {
   const entry = providerRegistryEntryFromMetadata("azure", {
     id: "azure",

@@ -279,6 +279,21 @@ function isCloudflareAiGatewayAccount(account: { providerId?: string }): boolean
   return String(account.providerId ?? "").toLowerCase() === "cloudflare-ai-gateway";
 }
 
+function isCloudflareWorkersAiAccount(account: { providerId?: string }): boolean {
+  return String(account.providerId ?? "").toLowerCase() === "cloudflare-workers-ai";
+}
+
+function cloudflareWorkersAiGatewayId(
+  account: Pick<Account, "providerOptions">,
+): string {
+  const options = account.providerOptions ?? {};
+  for (const key of ["gatewayId", "gatewayID", "gateway_id", "gateway"]) {
+    const value = options[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "default";
+}
+
 function isAzureOpenAiAccount(account: { providerId?: string }): boolean {
   const providerId = String(account.providerId ?? "").toLowerCase();
   return providerId === "azure" || providerId === "azure-cognitive-services";
@@ -299,7 +314,7 @@ function normalizeSnowflakeCortexChatPayload(payload: any): any {
 
 function applyOpenAiCompatibleAuthHeaders(
   headers: Record<string, string>,
-  account: Pick<Account, "accessToken" | "providerId" | "providerAuthType">,
+  account: Pick<Account, "accessToken" | "providerId" | "providerAuthType" | "providerOptions">,
 ): Record<string, string> {
   if (
     account.providerAuthType === "none" ||
@@ -309,6 +324,8 @@ function applyOpenAiCompatibleAuthHeaders(
   } else if (isCloudflareAiGatewayAccount(account)) {
     delete headers.authorization;
     headers["cf-aig-authorization"] = `Bearer ${account.accessToken}`;
+  } else if (isCloudflareWorkersAiAccount(account)) {
+    headers["cf-aig-gateway-id"] = cloudflareWorkersAiGatewayId(account);
   } else if (isAzureOpenAiAccount(account)) {
     delete headers.authorization;
     headers["api-key"] = account.accessToken;

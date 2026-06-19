@@ -3,6 +3,7 @@ import { NO_AUTH_ACCESS_TOKEN, type Account } from "./types.js";
 import {
   amazonBedrockBaseUrlFromOptions,
   cloudflareAiGatewayBaseUrlFromOptions,
+  cloudflareWorkersAiBaseUrlFromOptions,
   normalizeBaseUrl,
   normalizeOpenAiCompatibleBaseUrl,
   providerRegistryEntryFromMetadata,
@@ -470,6 +471,8 @@ export function providerConfigFromOpenCodeConfigPayload(
               ? options.base_url
               : sanitizeProviderId(providerId) === "cloudflare-ai-gateway"
                 ? cloudflareAiGatewayBaseUrlFromOptions(options)
+                : sanitizeProviderId(providerId) === "cloudflare-workers-ai"
+                  ? cloudflareWorkersAiBaseUrlFromOptions(options)
                 : undefined,
       env: Array.isArray(env)
         ? env.filter((value): value is string => typeof value === "string")

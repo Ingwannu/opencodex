@@ -512,6 +512,50 @@ export function cloudflareAiGatewayBaseUrlFromOptions(
   )}/${encodeURIComponent(gatewayId.trim())}/openai`;
 }
 
+export function cloudflareWorkersAiBaseUrlFromOptions(
+  options: Record<string, unknown> | undefined = {},
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const explicit = firstStringValue(options, [
+    "baseURL",
+    "baseUrl",
+    "base_url",
+    "url",
+    "endpoint",
+  ]);
+  if (explicit && /^https?:\/\//.test(explicit)) return explicit;
+
+  const accountId =
+    firstStringValue(options, [
+      "accountId",
+      "accountID",
+      "account_id",
+      "account",
+    ]) ?? env.CLOUDFLARE_ACCOUNT_ID;
+
+  if (!accountId?.trim()) return undefined;
+  return `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(
+    accountId.trim(),
+  )}/ai`;
+}
+
+function cloudflareWorkersAiProviderOptionsFromSource(
+  source: ModelsDevProvider,
+  env: Record<string, string | undefined> = process.env,
+): Record<string, unknown> | undefined {
+  const options = source.options ?? {};
+  for (const key of ["gatewayId", "gatewayID", "gateway_id", "gateway"]) {
+    const value = options[key];
+    if (typeof value === "string" && value.trim()) {
+      return { gatewayId: value.trim() };
+    }
+  }
+  if (env.CLOUDFLARE_GATEWAY_ID?.trim()) {
+    return { gatewayId: env.CLOUDFLARE_GATEWAY_ID.trim() };
+  }
+  return undefined;
+}
+
 const AZURE_OPENAI_PROVIDER_IDS = new Set(["azure", "azure-cognitive-services"]);
 
 export function azureOpenAiBaseUrlFromOptions(
@@ -924,6 +968,13 @@ function tokenEnvForProvider(
       "SNOWFLAKE_CORTEX_PAT",
     ];
   }
+  if (providerId === "cloudflare-workers-ai") {
+    return [
+      "CLOUDFLARE_ACCOUNT_ID",
+      "CLOUDFLARE_API_KEY",
+      "CLOUDFLARE_GATEWAY_ID",
+    ];
+  }
   if (providerId === "sap-ai-core" || adapter === "sap-ai-core") {
     return ["AICORE_SERVICE_KEY"];
   }
@@ -950,6 +1001,10 @@ export function providerRegistryEntryFromMetadata(
     id === "cloudflare-ai-gateway"
       ? cloudflareAiGatewayBaseUrlFromOptions(source.options)
       : undefined;
+  const cloudflareWorkersAiBaseUrl =
+    id === "cloudflare-workers-ai"
+      ? cloudflareWorkersAiBaseUrlFromOptions(source.options)
+      : undefined;
   const azureOpenAiBaseUrl = azureOpenAiBaseUrlFromOptions(id, source.options);
   const bedrockBaseUrl =
     id === "amazon-bedrock"
@@ -965,9 +1020,12 @@ export function providerRegistryEntryFromMetadata(
     source.api ??
     openAiCompatibleDefault?.baseUrl ??
     cloudflareAiGatewayBaseUrl ??
+    cloudflareWorkersAiBaseUrl ??
     azureOpenAiBaseUrl;
   const requiresOpenAiCompatibleEndpoint =
-    id === "cloudflare-ai-gateway" || AZURE_OPENAI_PROVIDER_IDS.has(id);
+    id === "cloudflare-ai-gateway" ||
+    id === "cloudflare-workers-ai" ||
+    AZURE_OPENAI_PROVIDER_IDS.has(id);
   const adapter =
     requiresOpenAiCompatibleEndpoint
       ? "openai-compatible"
@@ -1042,6 +1100,8 @@ export function providerRegistryEntryFromMetadata(
           ? googleVertexProviderOptionsFromSource(source)
         : adapter === "sap-ai-core"
           ? sapAiCoreProviderOptionsFromSource(source)
+        : id === "cloudflare-workers-ai"
+          ? cloudflareWorkersAiProviderOptionsFromSource(source)
           : undefined,
     tokenEnv,
     authType,

@@ -731,6 +731,95 @@ test("proxy routes Cloudflare AI Gateway with cf-aig authorization", async () =>
   }
 });
 
+test("proxy routes Cloudflare Workers AI through REST OpenAI-compatible endpoint", async () => {
+  let capturedRequest;
+  let capturedModelsAuthorization;
+  let capturedModelsGatewayId;
+  let capturedModelsCfAuth;
+  let capturedChatAuthorization;
+  let capturedChatGatewayId;
+  let capturedChatCfAuth;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/client/v4/accounts/cf-account/ai/v1/models") {
+      capturedModelsAuthorization = req.headers.authorization;
+      capturedModelsGatewayId = req.headers["cf-aig-gateway-id"];
+      capturedModelsCfAuth = req.headers["cf-aig-authorization"];
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "@cf/moonshotai/kimi-k2.6" }] }));
+      return;
+    }
+    if (
+      req.method === "POST" &&
+      req.url === "/client/v4/accounts/cf-account/ai/v1/chat/completions"
+    ) {
+      capturedRequest = await readJson(req);
+      capturedChatAuthorization = req.headers.authorization;
+      capturedChatGatewayId = req.headers["cf-aig-gateway-id"];
+      capturedChatCfAuth = req.headers["cf-aig-authorization"];
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl-workers-ai",
+          object: "chat.completion",
+          created: 1,
+          model: "@cf/moonshotai/kimi-k2.6",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Workers AI OK" },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "cloudflare-workers-ai-smoke",
+          provider: "openai-compatible",
+          providerId: "cloudflare-workers-ai",
+          providerAdapter: "openai-compatible",
+          accessToken: "cf-workers-token",
+          baseUrl: `http://127.0.0.1:${upstreamPort}/client/v4/accounts/cf-account/ai`,
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          providerOptions: { gatewayId: "team-gateway" },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "@cf/moonshotai/kimi-k2.6",
+            messages: [{ role: "user", content: "Hello" }],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.choices[0].message.content, "Workers AI OK");
+        assert.equal(capturedModelsAuthorization, "Bearer cf-workers-token");
+        assert.equal(capturedModelsGatewayId, "team-gateway");
+        assert.equal(capturedModelsCfAuth, undefined);
+        assert.equal(capturedChatAuthorization, "Bearer cf-workers-token");
+        assert.equal(capturedChatGatewayId, "team-gateway");
+        assert.equal(capturedChatCfAuth, undefined);
+        assert.equal(capturedRequest.model, "@cf/moonshotai/kimi-k2.6");
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy routes Azure OpenAI v1 endpoints with api-key authorization", async () => {
   let capturedRequest;
   let capturedModelsApiKey;

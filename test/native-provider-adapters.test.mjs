@@ -1239,6 +1239,27 @@ test("OpenAI-compatible SDK providers are runtime-routable through the bridge", 
   assert.ok(perplexity.models?.["sonar-pro"]);
 });
 
+test("OpenCode directory display names resolve to canonical provider ids", async () => {
+  const expected = new Map([
+    ["Deep Infra", "deepinfra"],
+    ["Google Vertex AI", "google-vertex"],
+    ["Hugging Face", "huggingface"],
+    ["LM Studio", "lmstudio"],
+    ["Moonshot AI", "moonshotai"],
+    ["Nebius Token Factory", "nebius"],
+    ["OVHcloud AI Endpoints", "ovhcloud"],
+    ["Together AI", "togetherai"],
+    ["Venice AI", "venice"],
+    ["Vercel AI Gateway", "vercel"],
+  ]);
+
+  for (const [providerName, canonicalId] of expected) {
+    const entry = await resolveProviderRegistryEntry(providerName);
+    assert.equal(entry.id, canonicalId, providerName);
+    assert.notEqual(entry.providerAdapter, "unsupported", providerName);
+  }
+});
+
 test("Vercel AI Gateway is runtime-routable through the Gateway adapter", async () => {
   const entry = await resolveProviderRegistryEntry("vercel");
   assert.equal(entry.providerAdapter, "gateway");

@@ -1,7 +1,7 @@
 # Publishing
 
-The package name is `opencodex`. The public npm name was unclaimed when this
-package metadata was prepared.
+The package name is `@ingwannu/opencodex`. The unscoped `opencodex` name was
+rejected by npm because it is too similar to an existing package.
 
 ## Local verification
 
@@ -22,6 +22,7 @@ Check the `npm pack --dry-run` output before publishing. The tarball should
 include only package metadata plus:
 
 - `bin/`
+- `docs/`
 - `dist/`
 - `web-dist/`
 - `README.md`
@@ -40,7 +41,7 @@ npm publish --access public
 ## User install
 
 ```bash
-npm install -g opencodex
+npm install -g @ingwannu/opencodex
 opencodex install
 opencodex doctor
 ```

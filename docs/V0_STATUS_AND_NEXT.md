@@ -3,7 +3,7 @@
 This document tracks the v0 release boundary separately from the larger goal of
 full OpenCode provider parity.
 
-## v0.2.0 shipped surface
+## v0.2.1 shipped surface
 
 - One Codex launcher/proxy surface for OpenAI, local, and OpenAI-compatible
   providers.
@@ -31,7 +31,7 @@ full OpenCode provider parity.
 - v0 major-provider coverage for DeepSeek, Xiaomi, Neuralwatt, Fireworks AI,
   OpenAI, Anthropic, Google, and xAI.
 
-## Verified for v0.2.0
+## Verified for v0.2.1
 
 - `npm test`
 - `npm run build`

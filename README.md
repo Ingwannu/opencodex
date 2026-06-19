@@ -12,7 +12,7 @@ remote providers, and local OSS/Ollama models without patching the Codex app
 itself.
 
 ```bash
-npm install -g opencodex
+npm install -g @ingwannu/opencodex
 opencodex install
 opencodex doctor
 ```

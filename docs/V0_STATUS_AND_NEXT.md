@@ -3,7 +3,7 @@
 This document tracks the v0 release boundary separately from the larger goal of
 full OpenCode provider parity.
 
-## v0.2.1 shipped surface
+## v0.2.2 shipped surface
 
 - One Codex launcher/proxy surface for OpenAI, local, and OpenAI-compatible
   providers.
@@ -31,7 +31,7 @@ full OpenCode provider parity.
 - v0 major-provider coverage for DeepSeek, Xiaomi, Neuralwatt, Fireworks AI,
   OpenAI, Anthropic, Google, and xAI.
 
-## Verified for v0.2.1
+## Verified for v0.2.2
 
 - `npm test`
 - `npm run build`
@@ -52,8 +52,8 @@ full OpenCode provider parity.
   Poe account.
 - Provider-specific edge transforms from OpenCode's `provider/transform.ts` are
   not exhaustively mirrored for every minor provider.
-- The npm package name was empty at release time, but actual publish requires an
-  authenticated npm token in the publishing shell.
+- The unscoped `opencodex` npm package name is blocked by npm's similarity
+  policy, so the npm package is published as `@ingwannu/opencodex`.
 
 ## Next update order
 

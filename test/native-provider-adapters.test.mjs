@@ -103,6 +103,78 @@ test("Anthropic adapter converts chat payloads and responses", () => {
   assert.equal(converted.usage.completion_tokens, 3);
 });
 
+test("Gateway adapter converts chat payloads, responses, and model metadata", () => {
+  const request = buildNativeProviderRequest(
+    "gateway",
+    { accessToken: "gateway-key" },
+    {
+      model: "openai/gpt-5",
+      messages: [
+        { role: "system", content: "Be terse." },
+        { role: "user", content: "Hello Gateway" },
+      ],
+      max_tokens: 128,
+      temperature: 0.2,
+      stop: ["END"],
+    },
+    false,
+  );
+
+  assert.equal(request.path, "/language-model");
+  assert.equal(request.headers.authorization, "Bearer gateway-key");
+  assert.equal(request.headers["ai-gateway-protocol-version"], "0.0.1");
+  assert.equal(request.headers["ai-gateway-auth-method"], "api-key");
+  assert.equal(request.headers["ai-language-model-specification-version"], "3");
+  assert.equal(request.headers["ai-language-model-id"], "openai/gpt-5");
+  assert.equal(request.headers["ai-language-model-streaming"], "false");
+  assert.deepEqual(request.body.prompt, [
+    { role: "system", content: [{ type: "text", text: "Be terse." }] },
+    { role: "user", content: [{ type: "text", text: "Hello Gateway" }] },
+  ]);
+  assert.equal(request.body.maxOutputTokens, 128);
+  assert.equal(request.body.temperature, 0.2);
+  assert.deepEqual(request.body.stopSequences, ["END"]);
+
+  const converted = convertNativeProviderResponse(
+    "gateway",
+    {
+      content: [{ type: "text", text: "Gateway OK" }],
+      finishReason: "stop",
+      usage: { inputTokens: 5, outputTokens: 2 },
+    },
+    "chat.completions",
+    "openai/gpt-5",
+  );
+  assert.equal(converted.model, "openai/gpt-5");
+  assert.equal(converted.choices[0].message.content, "Gateway OK");
+  assert.deepEqual(converted.usage, {
+    prompt_tokens: 5,
+    completion_tokens: 2,
+    total_tokens: 7,
+  });
+
+  const models = nativeProviderModelsFromResponse("gateway", {
+    models: [
+      {
+        id: "openai/gpt-5",
+        name: "GPT-5",
+        specification: {
+          specificationVersion: "v3",
+          provider: "openai",
+          modelId: "gpt-5",
+        },
+      },
+    ],
+  });
+  assert.deepEqual(models, [
+    {
+      id: "openai/gpt-5",
+      context_window: null,
+      max_output_tokens: null,
+    },
+  ]);
+});
+
 test("Google adapter converts chat payloads, responses, and model lists", () => {
   const request = buildNativeProviderRequest(
     "google",
@@ -1135,7 +1207,6 @@ test("OpenAI-compatible SDK providers are runtime-routable through the bridge", 
     ["cerebras", "https://api.cerebras.ai"],
     ["togetherai", "https://api.together.ai"],
     ["perplexity", "https://api.perplexity.ai"],
-    ["vercel", "https://ai-gateway.vercel.sh"],
     ["venice", "https://api.venice.ai/api"],
     ["aihubmix", "https://aihubmix.com"],
     ["merge-gateway", "https://api-gateway.merge.dev/v1/openai"],
@@ -1154,6 +1225,31 @@ test("OpenAI-compatible SDK providers are runtime-routable through the bridge", 
   const perplexity = await resolveProviderRegistryEntry("perplexity");
   assert.equal(perplexity.openAiPathPrefix, "none");
   assert.ok(perplexity.models?.["sonar-pro"]);
+});
+
+test("Vercel AI Gateway is runtime-routable through the Gateway adapter", async () => {
+  const entry = await resolveProviderRegistryEntry("vercel");
+  assert.equal(entry.providerAdapter, "gateway");
+  assert.equal(entry.provider, "gateway");
+  assert.equal(entry.runtimeSupported, true);
+  assert.equal(entry.baseUrl, "https://ai-gateway.vercel.sh/v3/ai");
+  assert.deepEqual(entry.tokenEnv, ["AI_GATEWAY_API_KEY"]);
+
+  const fromMetadata = providerRegistryEntryFromMetadata("vercel", {
+    id: "vercel",
+    name: "Vercel AI Gateway",
+    npm: "@ai-sdk/gateway",
+    api: "https://ai-gateway.vercel.sh/v3/ai",
+    env: ["AI_GATEWAY_API_KEY"],
+    models: {
+      "openai/gpt-5": { name: "GPT-5" },
+    },
+  });
+  assert.equal(fromMetadata.providerAdapter, "gateway");
+  assert.equal(fromMetadata.provider, "gateway");
+  assert.equal(fromMetadata.baseUrl, "https://ai-gateway.vercel.sh/v3/ai");
+  assert.equal(fromMetadata.runtimeSupported, true);
+  assert.ok(fromMetadata.models?.["openai/gpt-5"]);
 });
 
 test("OpenCode directory OpenAI-compatible providers have offline runtime defaults", () => {
@@ -2129,7 +2225,6 @@ test("OpenCode auth import enables OpenAI-compatible SDK providers", async () =>
   const accounts = await accountsFromOpenCodeAuthPayload({
     xai: { apiKey: "xai-key" },
     groq: { apiKey: "groq-key" },
-    vercel: { apiKey: "vercel-key" },
     venice: { apiKey: "venice-key" },
     aihubmix: { apiKey: "aihubmix-key" },
     "merge-gateway": { apiKey: "merge-key" },
@@ -2141,7 +2236,6 @@ test("OpenCode auth import enables OpenAI-compatible SDK providers", async () =>
   assert.equal(byId.get("xai")?.baseUrl, "https://api.x.ai");
   assert.equal(byId.get("xai")?.enabled, true);
   assert.equal(byId.get("groq")?.baseUrl, "https://api.groq.com/openai");
-  assert.equal(byId.get("vercel")?.baseUrl, "https://ai-gateway.vercel.sh");
   assert.equal(byId.get("venice")?.baseUrl, "https://api.venice.ai/api");
   assert.equal(byId.get("aihubmix")?.baseUrl, "https://aihubmix.com");
   assert.equal(
@@ -2151,4 +2245,30 @@ test("OpenCode auth import enables OpenAI-compatible SDK providers", async () =>
   assert.equal(byId.get("v0")?.providerAdapter, "openai-compatible");
   assert.equal(byId.get("v0")?.baseUrl, "https://api.v0.dev");
   assert.equal(byId.get("v0")?.enabled, true);
+});
+
+test("OpenCode auth import enables Vercel AI Gateway API keys", async () => {
+  const registry = providerRegistryEntryFromMetadata("vercel", {
+    id: "vercel",
+    name: "Vercel AI Gateway",
+    npm: "@ai-sdk/gateway",
+    api: "https://ai-gateway.vercel.sh/v3/ai",
+    env: ["AI_GATEWAY_API_KEY"],
+    models: {
+      "openai/gpt-5": { name: "GPT-5" },
+    },
+  });
+  const accounts = await accountsFromOpenCodeAuthPayload(
+    {
+      vercel: { apiKey: "gateway-key" },
+    },
+    { providerConfig: new Map([["vercel", registry]]) },
+  );
+  const gateway = accounts.find((account) => account.providerId === "vercel");
+  assert.equal(gateway?.provider, "gateway");
+  assert.equal(gateway?.providerAdapter, "gateway");
+  assert.equal(gateway?.baseUrl, "https://ai-gateway.vercel.sh/v3/ai");
+  assert.equal(gateway?.accessToken, "gateway-key");
+  assert.equal(gateway?.enabled, true);
+  assert.ok(gateway?.providerModels?.["openai/gpt-5"]);
 });

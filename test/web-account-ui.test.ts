@@ -48,6 +48,7 @@ test("isAuthOnlyAccount follows the backend native runtime adapter set", () => {
     "amazon-bedrock",
     "vertex",
     "vertex-anthropic",
+    "gateway",
     "gitlab",
     "sap-ai-core",
   ];

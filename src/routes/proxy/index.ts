@@ -420,6 +420,7 @@ function accountBaseUrl(
     provider === "anthropic" ||
     provider === "google" ||
     provider === "cohere" ||
+    provider === "gateway" ||
     provider === "amazon-bedrock" ||
     provider === "vertex" ||
     provider === "vertex-anthropic"
@@ -538,6 +539,7 @@ function resolveUpstreamMode(
     provider === "anthropic" ||
     provider === "google" ||
     provider === "cohere" ||
+    provider === "gateway" ||
     provider === "amazon-bedrock" ||
     provider === "vertex" ||
     provider === "vertex-anthropic" ||
@@ -1190,6 +1192,7 @@ function buildRoutingCandidates(
       "anthropic",
       "google",
       "cohere",
+      "gateway",
     ];
     for (const p of tryProviders) {
       if (!isModelExcludedFromProvider(requestModel, p)) {

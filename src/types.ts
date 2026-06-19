@@ -6,6 +6,7 @@ export type RouteProviderId =
   | "anthropic"
   | "google"
   | "cohere"
+  | "gateway"
   | "amazon-bedrock"
   | "vertex"
   | "vertex-anthropic"

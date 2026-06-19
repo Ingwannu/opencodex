@@ -32,6 +32,7 @@ export function normalizeProvider(
   if (provider === "anthropic") return "anthropic";
   if (provider === "google") return "google";
   if (provider === "cohere") return "cohere";
+  if (provider === "gateway") return "gateway";
   if (provider === "azure") return "azure";
   if (provider === "amazon-bedrock") return "amazon-bedrock";
   if (provider === "vertex") return "vertex";
@@ -53,6 +54,7 @@ export function isRuntimeRoutableProvider(
     provider === "anthropic" ||
     provider === "google" ||
     provider === "cohere" ||
+    provider === "gateway" ||
     provider === "amazon-bedrock" ||
     provider === "vertex" ||
     provider === "vertex-anthropic" ||

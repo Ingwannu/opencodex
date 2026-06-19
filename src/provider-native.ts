@@ -12,6 +12,7 @@ export type NativeProviderId =
   | "anthropic"
   | "google"
   | "cohere"
+  | "gateway"
   | "amazon-bedrock"
   | "vertex"
   | "vertex-anthropic";
@@ -101,6 +102,7 @@ type NativeModelMetadata = {
 const ANTHROPIC_VERSION =
   process.env.ANTHROPIC_VERSION ?? "2023-06-01";
 const DEFAULT_GITLAB_AI_GATEWAY_URL = "https://cloud.gitlab.com";
+const GATEWAY_PROTOCOL_VERSION = "0.0.1";
 
 const GITLAB_MODEL_MAPPINGS: Record<
   string,
@@ -170,6 +172,7 @@ export function isNativeProvider(provider: string): provider is NativeProviderId
     provider === "anthropic" ||
     provider === "google" ||
     provider === "cohere" ||
+    provider === "gateway" ||
     provider === "amazon-bedrock" ||
     provider === "vertex" ||
     provider === "vertex-anthropic"
@@ -181,6 +184,7 @@ export function nativeProviderDefaultBaseUrl(
 ): string {
   if (provider === "anthropic") return "https://api.anthropic.com";
   if (provider === "cohere") return "https://api.cohere.com";
+  if (provider === "gateway") return "https://ai-gateway.vercel.sh/v3/ai";
   if (provider === "amazon-bedrock") {
     return amazonBedrockBaseUrlFromOptions() ?? "https://bedrock-runtime.us-east-1.amazonaws.com";
   }
@@ -1401,6 +1405,111 @@ function buildBedrockPayload(payload: Record<string, unknown>) {
   return body;
 }
 
+function gatewayContentParts(content: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(content)) {
+    const parts = content
+      .map((part) => {
+        if (typeof part === "string") return { type: "text", text: part };
+        if (part && typeof part === "object") {
+          const p = part as Record<string, unknown>;
+          if (typeof p.text === "string") {
+            return { type: "text", text: p.text };
+          }
+          if (typeof p.content === "string") {
+            return { type: "text", text: p.content };
+          }
+        }
+        return undefined;
+      })
+      .filter((part): part is { type: string; text: string } => Boolean(part));
+    if (parts.length) return parts;
+  }
+  const text = textFromContent(content);
+  return [{ type: "text", text: text || " " }];
+}
+
+function gatewayPrompt(payload: Record<string, unknown>): Array<Record<string, unknown>> {
+  const messages = Array.isArray(payload.messages)
+    ? (payload.messages as Array<Record<string, unknown>>)
+    : [];
+  const prompt = messages
+    .map((message) => {
+      const role = String(message.role ?? "user");
+      const normalizedRole =
+        role === "system" ||
+        role === "assistant" ||
+        role === "tool"
+          ? role
+          : "user";
+      return {
+        role: normalizedRole,
+        content: gatewayContentParts(message.content),
+      };
+    })
+    .filter((message) => message.content.length > 0);
+  return prompt.length
+    ? prompt
+    : [{ role: "user", content: [{ type: "text", text: " " }] }];
+}
+
+function gatewayTools(payload: Record<string, unknown>): Array<Record<string, unknown>> | undefined {
+  const tools = Array.isArray(payload.tools)
+    ? (payload.tools as Array<Record<string, unknown>>)
+    : [];
+  const out = tools
+    .map((tool): Record<string, unknown> | undefined => {
+      if (tool.type !== "function") return undefined;
+      const fn = tool.function && typeof tool.function === "object"
+        ? (tool.function as Record<string, unknown>)
+        : {};
+      const name = typeof fn.name === "string" ? fn.name.trim() : "";
+      if (!name) return undefined;
+      const out: Record<string, unknown> = {
+        type: "function",
+        name,
+        inputSchema: fn.parameters ?? { type: "object" },
+      };
+      if (typeof fn.description === "string") out.description = fn.description;
+      return out;
+    })
+    .filter((tool): tool is Record<string, unknown> => Boolean(tool));
+  return out.length ? out : undefined;
+}
+
+function buildGatewayPayload(payload: Record<string, unknown>) {
+  const body: Record<string, unknown> = {
+    prompt: gatewayPrompt(payload),
+  };
+  const maxTokens = optionalOutputLimit(payload);
+  if (maxTokens !== undefined) body.maxOutputTokens = maxTokens;
+  if (typeof payload.temperature === "number") body.temperature = payload.temperature;
+  if (typeof payload.top_p === "number") body.topP = payload.top_p;
+  if (Array.isArray(payload.stop)) body.stopSequences = payload.stop;
+  if (typeof payload.stop === "string") body.stopSequences = [payload.stop];
+  const tools = gatewayTools(payload);
+  if (tools) body.tools = tools;
+  if (payload.tool_choice === "required") body.toolChoice = { type: "required" };
+  if (payload.tool_choice === "none") body.toolChoice = { type: "none" };
+  return body;
+}
+
+function gatewayHeaders(
+  accessToken: string,
+  model: string,
+  streaming: boolean,
+): Record<string, string> {
+  return {
+    "content-type": "application/json",
+    accept: "application/json",
+    authorization: `Bearer ${accessToken}`,
+    "ai-gateway-protocol-version": GATEWAY_PROTOCOL_VERSION,
+    "ai-gateway-auth-method": "api-key",
+    "ai-language-model-specification-version": "3",
+    "ai-language-model-id": model,
+    "ai-language-model-streaming": String(streaming),
+  };
+}
+
 export function buildNativeProviderRequest(
   provider: NativeProviderId,
   account: Pick<Account, "accessToken">,
@@ -1429,6 +1538,15 @@ export function buildNativeProviderRequest(
         authorization: `Bearer ${account.accessToken}`,
       },
       body: buildCoherePayload(payload),
+    };
+  }
+
+  if (provider === "gateway") {
+    const model = String(payload.model ?? "");
+    return {
+      path: "/language-model",
+      headers: gatewayHeaders(account.accessToken, model, false),
+      body: buildGatewayPayload(payload),
     };
   }
 
@@ -1501,6 +1619,17 @@ export function buildNativeProviderModelsRequest(
       headers: {
         accept: "application/json",
         authorization: `Bearer ${account.accessToken}`,
+      },
+    };
+  }
+  if (provider === "gateway") {
+    return {
+      path: "/config",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${account.accessToken}`,
+        "ai-gateway-protocol-version": GATEWAY_PROTOCOL_VERSION,
+        "ai-gateway-auth-method": "api-key",
       },
     };
   }
@@ -1589,6 +1718,10 @@ function bedrockText(response: Record<string, unknown>): string {
     .join("");
 }
 
+function gatewayText(response: Record<string, unknown>): string {
+  return textFromContent(response.content);
+}
+
 function chatCompletion(
   model: string,
   content: string,
@@ -1638,6 +1771,19 @@ function usageFromChatCompletion(usage: unknown) {
   const prompt = Number(u.prompt_tokens ?? u.input_tokens ?? 0) || 0;
   const completion = Number(u.completion_tokens ?? u.output_tokens ?? 0) || 0;
   const total = Number(u.total_tokens ?? prompt + completion) || prompt + completion;
+  return {
+    prompt_tokens: prompt,
+    completion_tokens: completion,
+    total_tokens: total,
+  };
+}
+
+function usageFromGateway(usage: unknown) {
+  const u = usage && typeof usage === "object" ? (usage as Record<string, unknown>) : {};
+  const prompt = Number(u.inputTokens ?? u.input_tokens ?? u.prompt_tokens ?? 0) || 0;
+  const completion =
+    Number(u.outputTokens ?? u.output_tokens ?? u.completion_tokens ?? 0) || 0;
+  const total = Number(u.totalTokens ?? u.total_tokens ?? prompt + completion) || prompt + completion;
   return {
     prompt_tokens: prompt,
     completion_tokens: completion,
@@ -1715,6 +1861,8 @@ export function convertNativeProviderResponse(
       ? anthropicText(body)
       : provider === "cohere"
         ? cohereText(body)
+        : provider === "gateway"
+          ? gatewayText(body)
         : provider === "amazon-bedrock"
           ? bedrockText(body)
         : googleText(body);
@@ -1723,6 +1871,8 @@ export function convertNativeProviderResponse(
       ? finishReasonFromAnthropic(body.stop_reason)
       : provider === "cohere"
         ? finishReasonFromCohere(body.finish_reason)
+        : provider === "gateway"
+          ? String(body.finishReason ?? body.finish_reason ?? "stop")
         : provider === "amazon-bedrock"
           ? finishReasonFromBedrock(body.stopReason)
       : finishReasonFromGoogle(
@@ -1735,6 +1885,8 @@ export function convertNativeProviderResponse(
       ? usageFromAnthropic(body.usage)
       : provider === "cohere"
         ? usageFromCohere(body.usage)
+        : provider === "gateway"
+          ? usageFromGateway(body.usage)
         : provider === "amazon-bedrock"
           ? usageFromBedrock(body.usage)
       : usageFromGoogle(body.usageMetadata);
@@ -1773,6 +1925,24 @@ export function nativeProviderModelsFromResponse(
         id: String(entry.name ?? entry.id ?? "").trim(),
         context_window: typeof entry.context_length === "number"
           ? entry.context_length
+          : null,
+        max_output_tokens: typeof entry.max_output_tokens === "number"
+          ? entry.max_output_tokens
+          : null,
+      }))
+      .filter((entry) => entry.id);
+  }
+
+  if (provider === "gateway") {
+    const models = Array.isArray(body.models)
+      ? body.models as Array<Record<string, unknown>>
+      : [];
+    return models
+      .map((entry) => ({
+        id: String(entry.id ?? "")
+          .trim(),
+        context_window: typeof entry.context_window === "number"
+          ? entry.context_window
           : null,
         max_output_tokens: typeof entry.max_output_tokens === "number"
           ? entry.max_output_tokens

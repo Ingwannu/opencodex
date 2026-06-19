@@ -12,6 +12,7 @@ const MODELS_DEV_API_URL =
 const MODELS_DEV_TIMEOUT_MS = Number(
   process.env.MODELS_DEV_TIMEOUT_MS ?? 2500,
 );
+const DEFAULT_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh/v3/ai";
 
 export type ProviderRegistryEntry = {
   id: string;
@@ -86,6 +87,20 @@ const BUILTIN_PROVIDERS: ProviderRegistryEntry[] = [
     upstreamMode: "chat/completions",
     compatibilityMode: "chat-completions-bridge",
     tokenEnv: ["OPENROUTER_API_KEY"],
+    authType: "api-key",
+    runtimeSupported: true,
+  },
+  {
+    id: "vercel",
+    providerId: "vercel",
+    label: "Vercel AI Gateway",
+    provider: "gateway",
+    providerAdapter: "gateway",
+    providerNpm: "@ai-sdk/gateway",
+    providerSource: "builtin",
+    providerDoc: "https://vercel.com/docs/ai-gateway",
+    baseUrl: DEFAULT_GATEWAY_BASE_URL,
+    tokenEnv: ["AI_GATEWAY_API_KEY"],
     authType: "api-key",
     runtimeSupported: true,
   },
@@ -490,7 +505,6 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     upstreamMode: "responses",
     compatibilityMode: "responses",
   },
-  vercel: { baseUrl: "https://ai-gateway.vercel.sh" },
   venice: { baseUrl: "https://api.venice.ai/api/v1" },
   aihubmix: { baseUrl: "https://aihubmix.com/v1" },
   "merge-gateway": { baseUrl: "https://api-gateway.merge.dev/v1/openai" },
@@ -1023,6 +1037,7 @@ export function providerAdapterFromNpm(
   if (id === "openai-chatgpt") return "openai";
   if (id === "mistral") return "mistral";
   if (id === "zai") return "zai";
+  if (id === "vercel" || npm === "@ai-sdk/gateway") return "gateway";
   if (OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS[id]) {
     return "openai-compatible";
   }
@@ -1067,6 +1082,7 @@ export function isRuntimeSupportedProvider(adapter: ProviderAdapter): adapter is
     adapter === "anthropic" ||
     adapter === "google" ||
     adapter === "cohere" ||
+    adapter === "gateway" ||
     adapter === "amazon-bedrock" ||
     adapter === "vertex" ||
     adapter === "vertex-anthropic" ||
@@ -1080,6 +1096,12 @@ function tokenEnvForProvider(
   adapter: ProviderAdapter,
   env: unknown,
 ): string[] {
+  const sourceEnv = Array.isArray(env)
+    ? env.filter((value): value is string => typeof value === "string")
+    : [];
+  if (providerId === "vercel" || adapter === "gateway") {
+    return sourceEnv.length ? sourceEnv : ["AI_GATEWAY_API_KEY"];
+  }
   if (providerId === "amazon-bedrock" || adapter === "amazon-bedrock") {
     return [
       "AWS_BEARER_TOKEN_BEDROCK",
@@ -1126,9 +1148,7 @@ function tokenEnvForProvider(
   if (providerId === "sap-ai-core" || adapter === "sap-ai-core") {
     return ["AICORE_SERVICE_KEY"];
   }
-  return Array.isArray(env)
-    ? env.filter((value): value is string => typeof value === "string")
-    : [];
+  return sourceEnv;
 }
 
 function providerForAdapter(
@@ -1166,6 +1186,11 @@ export function providerRegistryEntryFromMetadata(
       : undefined;
   const sapBaseUrl =
     id === "sap-ai-core" ? sapAiCoreBaseUrlFromOptions(source.options) : undefined;
+  const gatewayBaseUrl =
+    id === "vercel" ||
+    String(source.npm ?? "").trim().toLowerCase() === "@ai-sdk/gateway"
+      ? (source.api ?? DEFAULT_GATEWAY_BASE_URL)
+      : undefined;
   const openAiCompatibleBaseUrl =
     source.api ??
     openAiCompatibleDefault?.baseUrl ??
@@ -1192,6 +1217,8 @@ export function providerRegistryEntryFromMetadata(
                 ? "https://generativelanguage.googleapis.com"
                 : adapter === "cohere"
                   ? "https://api.cohere.com"
+                  : adapter === "gateway"
+                    ? gatewayBaseUrl
                   : adapter === "amazon-bedrock"
                     ? bedrockBaseUrl
                     : adapter === "vertex" || adapter === "vertex-anthropic"

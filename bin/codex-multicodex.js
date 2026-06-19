@@ -152,6 +152,18 @@ const authProviderPresets = {
     tokenEnv: ["REQUESTY_API_KEY"],
     runtimeSupported: true,
   },
+  vercel: {
+    label: "Vercel AI Gateway",
+    provider: "gateway",
+    providerId: "vercel",
+    providerAdapter: "gateway",
+    providerNpm: "@ai-sdk/gateway",
+    providerSource: "builtin",
+    providerDoc: "https://vercel.com/docs/ai-gateway",
+    baseUrl: "https://ai-gateway.vercel.sh/v3/ai",
+    tokenEnv: ["AI_GATEWAY_API_KEY"],
+    runtimeSupported: true,
+  },
   anthropic: {
     label: "Anthropic",
     provider: "anthropic",
@@ -365,7 +377,6 @@ const openAiCompatibleSdkProviderDefaults = {
     upstreamMode: "responses",
     compatibilityMode: "responses",
   },
-  vercel: { baseUrl: "https://ai-gateway.vercel.sh" },
   venice: { baseUrl: "https://api.venice.ai/api/v1" },
   aihubmix: { baseUrl: "https://aihubmix.com/v1" },
   "merge-gateway": { baseUrl: "https://api-gateway.merge.dev/v1/openai" },
@@ -822,6 +833,7 @@ function providerAdapterFromNpm(providerId, npmPackage) {
   if (id === "openai-chatgpt") return "openai";
   if (id === "mistral") return "mistral";
   if (id === "zai") return "zai";
+  if (id === "vercel" || npm === "@ai-sdk/gateway") return "gateway";
   if (openAiCompatibleSdkProviderDefaults[id]) return "openai-compatible";
   if (id === "cloudflare-ai-gateway" || npm.includes("ai-gateway-provider")) return "openai-compatible";
   if (openAiCompatibleDefaultFromNpm(npm)) return "openai-compatible";
@@ -844,7 +856,7 @@ function providerAdapterFromNpm(providerId, npmPackage) {
 }
 
 function isRuntimeSupportedAdapter(adapter) {
-  return adapter === "openai" || adapter === "openai-compatible" || adapter === "mistral" || adapter === "zai" || adapter === "anthropic" || adapter === "google" || adapter === "cohere" || adapter === "amazon-bedrock" || adapter === "vertex" || adapter === "vertex-anthropic" || adapter === "gitlab" || adapter === "sap-ai-core";
+  return adapter === "openai" || adapter === "openai-compatible" || adapter === "mistral" || adapter === "zai" || adapter === "anthropic" || adapter === "google" || adapter === "cohere" || adapter === "gateway" || adapter === "amazon-bedrock" || adapter === "vertex" || adapter === "vertex-anthropic" || adapter === "gitlab" || adapter === "sap-ai-core";
 }
 
 function providerForAdapter(providerId, adapter) {
@@ -852,6 +864,10 @@ function providerForAdapter(providerId, adapter) {
 }
 
 function tokenEnvForProvider(providerId, adapter, env) {
+  const sourceEnv = Array.isArray(env) ? env.filter((value) => typeof value === "string") : [];
+  if (providerId === "vercel" || adapter === "gateway") {
+    return sourceEnv.length ? sourceEnv : ["AI_GATEWAY_API_KEY"];
+  }
   if (providerId === "amazon-bedrock" || adapter === "amazon-bedrock") {
     return [
       "AWS_BEARER_TOKEN_BEDROCK",
@@ -891,7 +907,7 @@ function tokenEnvForProvider(providerId, adapter, env) {
   if (providerId === "sap-ai-core" || adapter === "sap-ai-core") {
     return ["AICORE_SERVICE_KEY"];
   }
-  return Array.isArray(env) ? env.filter((value) => typeof value === "string") : [];
+  return sourceEnv;
 }
 
 function modelsDevProviderToPreset(providerId, source) {
@@ -913,6 +929,10 @@ function modelsDevProviderToPreset(providerId, source) {
       ? vertexBaseUrlFromOptions(source?.options)
       : undefined;
   const sapBaseUrl = id === "sap-ai-core" ? sapAiCoreBaseUrlFromOptions(source?.options) : undefined;
+  const gatewayBaseUrl =
+    id === "vercel" || String(source?.npm || "").trim().toLowerCase() === "@ai-sdk/gateway"
+      ? (source?.api || "https://ai-gateway.vercel.sh/v3/ai")
+      : undefined;
   const openAiCompatibleBaseUrl =
     source?.api || openAiCompatibleDefault?.baseUrl || cloudflareAiGatewayBaseUrl || azureOpenAiBaseUrl;
   const requiresOpenAiCompatibleEndpoint =
@@ -923,7 +943,7 @@ function modelsDevProviderToPreset(providerId, source) {
       : providerAdapterFromNpm(id, source?.npm);
   const baseUrl = adapter === "openai-compatible"
     ? normalizeOpenAiCompatibleBaseUrl(openAiCompatibleBaseUrl)
-    : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : adapter === "cohere" ? "https://api.cohere.com" : adapter === "amazon-bedrock" ? bedrockBaseUrl : adapter === "vertex" || adapter === "vertex-anthropic" ? vertexBaseUrl : adapter === "gitlab" ? "https://gitlab.com" : adapter === "sap-ai-core" ? sapBaseUrl : undefined));
+    : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : adapter === "cohere" ? "https://api.cohere.com" : adapter === "gateway" ? gatewayBaseUrl : adapter === "amazon-bedrock" ? bedrockBaseUrl : adapter === "vertex" || adapter === "vertex-anthropic" ? vertexBaseUrl : adapter === "gitlab" ? "https://gitlab.com" : adapter === "sap-ai-core" ? sapBaseUrl : undefined));
   const runtimeSupported =
     isRuntimeSupportedAdapter(adapter) &&
     ((adapter !== "vertex" && adapter !== "vertex-anthropic") || Boolean(vertexBaseUrl)) &&

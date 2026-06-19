@@ -267,6 +267,97 @@ test("proxy routes Google responses through native generateContent API", async (
   }
 });
 
+test("proxy routes Vercel AI Gateway chat completions through native Gateway API", async () => {
+  let capturedRequest;
+  let sawModels = false;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v3/ai/config") {
+      sawModels = true;
+      assert.equal(req.headers.authorization, "Bearer gateway-smoke");
+      assert.equal(req.headers["ai-gateway-protocol-version"], "0.0.1");
+      assert.equal(req.headers["ai-gateway-auth-method"], "api-key");
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          models: [
+            {
+              id: "openai/gpt-5",
+              name: "GPT-5",
+              specification: {
+                specificationVersion: "v3",
+                provider: "openai",
+                modelId: "gpt-5",
+              },
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v3/ai/language-model") {
+      capturedRequest = await readJson(req);
+      assert.equal(req.headers.authorization, "Bearer gateway-smoke");
+      assert.equal(req.headers["ai-gateway-protocol-version"], "0.0.1");
+      assert.equal(req.headers["ai-gateway-auth-method"], "api-key");
+      assert.equal(req.headers["ai-language-model-specification-version"], "3");
+      assert.equal(req.headers["ai-language-model-id"], "openai/gpt-5");
+      assert.equal(req.headers["ai-language-model-streaming"], "false");
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          content: [{ type: "text", text: "Gateway OK" }],
+          finishReason: "stop",
+          usage: { inputTokens: 4, outputTokens: 2 },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "gateway-smoke",
+          provider: "gateway",
+          providerId: "vercel",
+          providerAdapter: "gateway",
+          accessToken: "gateway-smoke",
+          baseUrl: `http://127.0.0.1:${upstreamPort}/v3/ai`,
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const models = await fetch(`${baseUrl}/v1/models`);
+        const modelsJson = await models.json();
+        assert.equal(models.status, 200);
+        assert.ok(modelsJson.data.some((model) => model.id === "openai/gpt-5"));
+
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "openai/gpt-5",
+            messages: [{ role: "user", content: "Hello" }],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.choices[0].message.content, "Gateway OK");
+        assert.deepEqual(capturedRequest.prompt, [
+          { role: "user", content: [{ type: "text", text: "Hello" }] },
+        ]);
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+
+  assert.equal(sawModels, true);
+});
+
 test("proxy routes Cohere chat completions through native v2 chat API", async () => {
   let capturedRequest;
   let capturedModelsAuth;

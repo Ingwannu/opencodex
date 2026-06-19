@@ -463,6 +463,59 @@ test("imports ordinary bundled OpenAI-compatible SDK packages through the CLI", 
   assert.ok(byId.get("custom-vercel-v0")?.providerModels?.["v0-1.5-md"]);
 });
 
+test("imports Vercel AI Gateway through the CLI", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-gateway-auth-"));
+  const storePath = path.join(dir, "accounts.json");
+  const authPath = path.join(dir, "auth.json");
+  const configPath = path.join(dir, "opencode.jsonc");
+
+  fs.writeFileSync(authPath, JSON.stringify({}, null, 2));
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify(
+      {
+        provider: {
+          vercel: {
+            npm: "@ai-sdk/gateway",
+            options: {
+              baseURL: "https://ai-gateway.vercel.sh/v3/ai",
+              apiKey: "gateway-secret",
+            },
+            models: {
+              "openai/gpt-5": { name: "GPT-5" },
+            },
+          },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  execFileSync(
+    process.execPath,
+    [cli, "auth", "import-opencode", authPath, "--config", configPath],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        MULTICODEX_STORE_PATH: storePath,
+        MULTICODEX_DATA_DIR: dir,
+      },
+      encoding: "utf8",
+    },
+  );
+
+  const store = readStore(storePath);
+  const gateway = store.accounts.find((account) => account.providerId === "vercel");
+  assert.equal(gateway?.provider, "gateway");
+  assert.equal(gateway?.providerAdapter, "gateway");
+  assert.equal(gateway?.baseUrl, "https://ai-gateway.vercel.sh/v3/ai");
+  assert.equal(gateway?.accessToken, "gateway-secret");
+  assert.equal(gateway?.enabled, true);
+  assert.ok(gateway?.providerModels?.["openai/gpt-5"]);
+});
+
 test("imports OpenCode model-level provider overrides through the CLI", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-model-override-auth-"));
   const storePath = path.join(dir, "accounts.json");

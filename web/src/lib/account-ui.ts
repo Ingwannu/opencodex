@@ -12,6 +12,7 @@ const ROUTABLE_ADAPTERS = new Set([
   "anthropic",
   "google",
   "cohere",
+  "gateway",
   "amazon-bedrock",
   "vertex",
   "vertex-anthropic",

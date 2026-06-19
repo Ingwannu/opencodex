@@ -89,6 +89,7 @@ function normalizeProviderAdapter(value: unknown): ProviderAdapter | undefined {
   if (value === "anthropic") return "anthropic";
   if (value === "google") return "google";
   if (value === "cohere") return "cohere";
+  if (value === "gateway") return "gateway";
   if (value === "amazon-bedrock") return "amazon-bedrock";
   if (value === "azure") return "azure";
   if (value === "vertex") return "vertex";

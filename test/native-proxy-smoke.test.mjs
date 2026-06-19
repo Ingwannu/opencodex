@@ -924,6 +924,189 @@ test("proxy applies configured OpenCode model options as request defaults", asyn
   }
 });
 
+test("proxy applies configured OpenCode model variants from request effort", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "no model listing" }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/responses") {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "resp_model_variant",
+          object: "response",
+          created_at: 1,
+          model: "variant-model",
+          output: [
+            {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "output_text", text: "Variant OK" }],
+            },
+          ],
+          usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "model-variant-smoke",
+          provider: "openai-compatible",
+          providerId: "model-variant",
+          providerAdapter: "openai-compatible",
+          accessToken: "configured-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          upstreamMode: "responses",
+          compatibilityMode: "responses",
+          providerModels: {
+            "variant-model": {
+              name: "Variant Model",
+              options: {
+                reasoningEffort: "low",
+                reasoningSummary: "auto",
+                textVerbosity: "low",
+                temperature: 0.1,
+              },
+              variants: {
+                high: {
+                  reasoningEffort: "high",
+                  textVerbosity: "high",
+                  temperature: 0.4,
+                },
+              },
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/responses`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "variant-model",
+            input: "Hello",
+            reasoning_effort: "high",
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+        assert.equal(json.output[0].content[0].text, "Variant OK");
+        assert.deepEqual(capturedRequest.reasoning, {
+          effort: "high",
+          summary: "auto",
+        });
+        assert.deepEqual(capturedRequest.text, { verbosity: "high" });
+        assert.equal(capturedRequest.temperature, 0.4);
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
+test("proxy applies configured OpenCode model variants from request variant", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "no model listing" }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/responses") {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "resp_model_variant_explicit",
+          object: "response",
+          created_at: 1,
+          model: "variant-model",
+          output: [
+            {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "output_text", text: "Variant OK" }],
+            },
+          ],
+          usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "model-variant-explicit-smoke",
+          provider: "openai-compatible",
+          providerId: "model-variant-explicit",
+          providerAdapter: "openai-compatible",
+          accessToken: "configured-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          upstreamMode: "responses",
+          compatibilityMode: "responses",
+          providerModels: {
+            "variant-model": {
+              name: "Variant Model",
+              options: {
+                reasoningEffort: "low",
+                textVerbosity: "low",
+                temperature: 0.1,
+              },
+              variants: {
+                high: {
+                  options: {
+                    reasoningEffort: "high",
+                    textVerbosity: "high",
+                    temperature: 0.4,
+                  },
+                },
+              },
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/responses`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "variant-model",
+            input: "Hello",
+            variant: "high",
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+        assert.equal(json.output[0].content[0].text, "Variant OK");
+        assert.deepEqual(capturedRequest.reasoning, { effort: "high" });
+        assert.deepEqual(capturedRequest.text, { verbosity: "high" });
+        assert.equal(capturedRequest.temperature, 0.4);
+        assert.equal(capturedRequest.variant, undefined);
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy routes Perplexity Sonar compatibility without a /v1 prefix", async () => {
   let capturedRequest;
   const upstream = http.createServer(async (req, res) => {

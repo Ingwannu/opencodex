@@ -474,12 +474,53 @@ function configuredModelMetadataForAccount(
 function configuredModelOptionsForAccount(
   account: Account,
   model: string | undefined,
+  variant: string | undefined,
 ): Record<string, unknown> | undefined {
   const metadata = configuredModelMetadataForAccount(account, model);
   const options = metadata?.options;
-  return options && typeof options === "object" && !Array.isArray(options)
-    ? (options as Record<string, unknown>)
-    : undefined;
+  const baseOptions =
+    options && typeof options === "object" && !Array.isArray(options)
+      ? (options as Record<string, unknown>)
+      : undefined;
+  const variantKey = (variant ?? "").trim().toLowerCase();
+  const variants = metadata?.variants;
+  if (!variantKey || !variants || typeof variants !== "object" || Array.isArray(variants)) {
+    return baseOptions;
+  }
+
+  for (const [key, rawVariant] of Object.entries(variants as Record<string, unknown>)) {
+    if (key.trim().toLowerCase() !== variantKey) continue;
+    if (!rawVariant || typeof rawVariant !== "object" || Array.isArray(rawVariant)) {
+      return baseOptions;
+    }
+    const variantConfig = rawVariant as Record<string, unknown>;
+    if (variantConfig.disabled === true) return baseOptions;
+    const nestedOptions = variantConfig.options;
+    const variantOptions =
+      nestedOptions && typeof nestedOptions === "object" && !Array.isArray(nestedOptions)
+        ? (nestedOptions as Record<string, unknown>)
+        : variantConfig;
+    return {
+      ...(baseOptions ?? {}),
+      ...variantOptions,
+    };
+  }
+
+  return baseOptions;
+}
+
+function requestVariantKey(
+  requestBody: any,
+  requestEffort: EffortTier | undefined,
+): string | undefined {
+  return typeof requestBody?.variant === "string" && requestBody.variant.trim()
+    ? requestBody.variant.trim()
+    : requestEffort;
+}
+
+function stripProxyOnlyRequestFields(payload: any): void {
+  if (!payload || typeof payload !== "object") return;
+  delete payload.variant;
 }
 
 function hasOwn(source: unknown, key: string): boolean {
@@ -1939,6 +1980,7 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
           : isChatCompletions
             ? chatCompletionsToResponsesPayload(req.body, sessionId)
             : normalizeResponsesPayload(req.body, sessionId);
+        stripProxyOnlyRequestFields(payloadToUpstream);
         if (
           shouldSendChatCompletions &&
           (candidate.provider === "openai-compatible" ||
@@ -1980,6 +2022,7 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
         const configuredModelOptions = configuredModelOptionsForAccount(
           selected,
           candidate.resolvedModel ?? requestModel,
+          requestVariantKey(req.body, requestEffort),
         );
         applyConfiguredModelOptions(
           payloadToUpstream,

@@ -967,6 +967,11 @@ details summary {
   font-size: 13px;
 }
 
+.form-error {
+  color: #b42318;
+  font-weight: 700;
+}
+
 @media (max-width: 1240px) {
   .app-shell {
     grid-template-columns: 1fr;

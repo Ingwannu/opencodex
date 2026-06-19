@@ -9,6 +9,7 @@ export type Account = {
   providerDoc?: string;
   providerAuthEnv?: string[];
   providerAuthType?: "oauth" | "api-key" | "none";
+  providerOptions?: Record<string, unknown>;
   upstreamMode?: "responses" | "chat/completions";
   compatibilityMode?: "auto" | "responses" | "chat-completions-bridge";
   email?: string;
@@ -126,6 +127,7 @@ export type ProviderRegistryEntry = {
   providerSource: "builtin" | "models.dev" | "manual";
   providerDoc?: string;
   baseUrl?: string;
+  providerOptions?: Record<string, unknown>;
   upstreamMode?: "responses" | "chat/completions";
   compatibilityMode?: "auto" | "responses" | "chat-completions-bridge";
   tokenEnv: string[];

@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 
 import {
   describeProviderAuth,
+  formatProviderOptions,
   formatProviderEndpoint,
   isAuthOnlyAccount,
+  parseProviderOptionsInput,
 } from "../web/src/lib/account-ui";
 import type { Account, ProviderRegistryEntry } from "../web/src/types";
 
@@ -117,5 +119,27 @@ test("formatProviderEndpoint distinguishes missing and configured endpoints", ()
   assert.equal(
     formatProviderEndpoint("https://api.example.test/v1/"),
     "https://api.example.test/v1/",
+  );
+});
+
+test("provider option JSON helpers preserve editable provider-specific routing options", () => {
+  const options = {
+    gatewayId: "team-gateway",
+    project: "vertex-project",
+  };
+
+  assert.equal(
+    formatProviderOptions(options),
+    '{\n  "gatewayId": "team-gateway",\n  "project": "vertex-project"\n}',
+  );
+  assert.deepEqual(parseProviderOptionsInput(""), undefined);
+  assert.deepEqual(parseProviderOptionsInput(formatProviderOptions(options)), options);
+  assert.throws(
+    () => parseProviderOptionsInput("[\"gatewayId\"]"),
+    /Provider options must be a JSON object/,
+  );
+  assert.throws(
+    () => parseProviderOptionsInput("{not json}"),
+    /Provider options must be valid JSON/,
   );
 });

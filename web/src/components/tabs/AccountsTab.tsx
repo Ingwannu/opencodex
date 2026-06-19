@@ -7,7 +7,9 @@ import type {
 import React, { useEffect, useState } from "react";
 import {
   describeProviderAuth,
+  formatProviderOptions,
   isAuthOnlyAccount,
+  parseProviderOptionsInput,
 } from "../../lib/account-ui";
 import { fmt, maskEmail, maskId } from "../../lib/ui";
 
@@ -45,6 +47,7 @@ type EditAccountState = {
   refreshToken: string;
   chatgptAccountId: string;
   baseUrl: string;
+  providerOptionsJson: string;
   priority: string;
   enabled: boolean;
 };
@@ -87,6 +90,22 @@ function isEditOAuthProvider(account: EditAccountState) {
 
 function isEditAuthlessProvider(account: EditAccountState) {
   return account.providerAuthType === "none";
+}
+
+function providerOptionsError(input: string) {
+  try {
+    parseProviderOptionsInput(input);
+    return "";
+  } catch (error) {
+    return error instanceof Error
+      ? error.message
+      : "Provider options must be valid JSON";
+  }
+}
+
+function providerOptionsSummary(options?: Record<string, unknown>) {
+  if (!options || !Object.keys(options).length) return "";
+  return Object.keys(options).join(", ");
 }
 
 function accountProviderId(account: Account) {
@@ -142,6 +161,7 @@ export function AccountsTab(props: Props) {
   const [manualRefreshToken, setManualRefreshToken] = useState("");
   const [manualChatgptAccountId, setManualChatgptAccountId] = useState("");
   const [manualBaseUrl, setManualBaseUrl] = useState("");
+  const [manualProviderOptionsJson, setManualProviderOptionsJson] = useState("");
   const [manualUpstreamMode, setManualUpstreamMode] = useState<
     "" | "responses" | "chat/completions"
   >("");
@@ -184,6 +204,12 @@ export function AccountsTab(props: Props) {
 
   const selectedProvider = providerOptions.find((entry) => entry.id === provider);
   const selectedProviderAuth = describeProviderAuth(selectedProvider);
+  const manualProviderOptionsError = providerOptionsError(
+    manualProviderOptionsJson,
+  );
+  const editingProviderOptionsError = editingAccount
+    ? providerOptionsError(editingAccount.providerOptionsJson)
+    : "";
 
   useEffect(() => {
     const closeMenu = () => setOpenMenu(null);
@@ -251,6 +277,7 @@ export function AccountsTab(props: Props) {
     setManualRefreshToken("");
     setManualChatgptAccountId("");
     setManualBaseUrl("");
+    setManualProviderOptionsJson("");
     setManualUpstreamMode("");
     setManualPriority("0");
     setManualEnabled(true);
@@ -261,6 +288,7 @@ export function AccountsTab(props: Props) {
   useEffect(() => {
     if (!selectedProvider) return;
     setManualBaseUrl(selectedProvider.baseUrl ?? "");
+    setManualProviderOptionsJson(formatProviderOptions(selectedProvider.providerOptions));
     setManualUpstreamMode(selectedProvider.upstreamMode ?? "");
     if (!selectedProvider.runtimeSupported) setManualEnabled(false);
   }, [selectedProvider?.id]);
@@ -320,6 +348,7 @@ export function AccountsTab(props: Props) {
     const authless = isAuthlessProvider(selectedProvider);
     if (!authless && !manualAccessToken.trim()) return;
     if (isOpenAiCompatibleProvider(provider, selectedProvider) && !manualBaseUrl.trim()) return;
+    const providerOptions = parseProviderOptionsInput(manualProviderOptionsJson);
     setIsSubmitting(true);
     try {
       await createAccount({
@@ -334,6 +363,7 @@ export function AccountsTab(props: Props) {
         providerDoc: selectedProvider?.providerDoc,
         providerAuthEnv: selectedProvider?.tokenEnv,
         providerAuthType: selectedProvider?.authType,
+        providerOptions,
         email: manualEmail.trim() || undefined,
         accessToken: authless ? undefined : manualAccessToken.trim(),
         refreshToken: manualRefreshToken.trim() || undefined,
@@ -367,6 +397,7 @@ export function AccountsTab(props: Props) {
       refreshToken: account.refreshToken ?? "",
       chatgptAccountId: account.chatgptAccountId ?? "",
       baseUrl: account.baseUrl ?? "",
+      providerOptionsJson: formatProviderOptions(account.providerOptions),
       priority: String(account.priority ?? 0),
       enabled: account.enabled,
     });
@@ -424,6 +455,9 @@ export function AccountsTab(props: Props) {
       !editingAccount.baseUrl.trim()
     )
       return;
+    const providerOptions = parseProviderOptionsInput(
+      editingAccount.providerOptionsJson,
+    );
     setIsSavingEdit(true);
     try {
       await patch(editingAccount.id, {
@@ -434,6 +468,7 @@ export function AccountsTab(props: Props) {
           editingAccount.providerAdapter === "openai-compatible"
             ? editingAccount.baseUrl.trim()
             : undefined,
+        providerOptions: providerOptions ?? {},
         upstreamMode: editingAccount.upstreamMode || undefined,
         priority: Number(editingAccount.priority) || 0,
         enabled: editingAccount.enabled,
@@ -735,6 +770,11 @@ export function AccountsTab(props: Props) {
                           env: {a.providerAuthEnv.join(", ")}
                         </span>
                       ) : null}
+                      {providerOptionsSummary(a.providerOptions) ? (
+                        <span className="mono muted">
+                          options: {providerOptionsSummary(a.providerOptions)}
+                        </span>
+                      ) : null}
                     </div>
                   </td>
                   <td>
@@ -1006,6 +1046,20 @@ export function AccountsTab(props: Props) {
                 </label>
               )}
               <label>
+                Provider options (JSON)
+                <textarea
+                  rows={5}
+                  value={manualProviderOptionsJson}
+                  onChange={(e) => setManualProviderOptionsJson(e.target.value)}
+                  placeholder='{"gatewayId":"team-gateway"}'
+                />
+                {manualProviderOptionsError && (
+                  <small className="form-error">
+                    {manualProviderOptionsError}
+                  </small>
+                )}
+              </label>
+              <label>
                 Upstream mode (optional)
                 <select
                   value={manualUpstreamMode}
@@ -1079,6 +1133,7 @@ export function AccountsTab(props: Props) {
                     ? !manualEmail.trim()
                     : (!isAuthlessProvider(selectedProvider) &&
                         !manualAccessToken.trim()) ||
+                      Boolean(manualProviderOptionsError) ||
                       (isOpenAiCompatibleProvider(provider, selectedProvider) &&
                         !manualBaseUrl.trim()))
                 }
@@ -1138,6 +1193,29 @@ export function AccountsTab(props: Props) {
                   />
                 </label>
               )}
+              <label>
+                Provider options (JSON)
+                <textarea
+                  rows={5}
+                  value={editingAccount.providerOptionsJson}
+                  onChange={(e) =>
+                    setEditingAccount((current) =>
+                      current
+                        ? {
+                            ...current,
+                            providerOptionsJson: e.target.value,
+                          }
+                        : current,
+                    )
+                  }
+                  placeholder='{"gatewayId":"team-gateway"}'
+                />
+                {editingProviderOptionsError && (
+                  <small className="form-error">
+                    {editingProviderOptionsError}
+                  </small>
+                )}
+              </label>
               <label>
                 Upstream mode (optional)
                 <select
@@ -1244,6 +1322,7 @@ export function AccountsTab(props: Props) {
                     ? !editingAccount.email.trim()
                     : (!isEditAuthlessProvider(editingAccount) &&
                         !editingAccount.accessToken.trim()) ||
+                      Boolean(editingProviderOptionsError) ||
                       (editingAccount.providerAdapter === "openai-compatible" &&
                         !editingAccount.baseUrl.trim()))
                 }

@@ -1975,6 +1975,111 @@ test("OpenCode config secrets create accounts without auth.json entries", async 
   assert.ok(byId.get("headergenie")?.providerModels?.["glm-5.2"]);
 });
 
+test("OpenCode config imports ordinary bundled OpenAI-compatible SDK packages", async () => {
+  const payload = parseOpenCodeConfigPayload(`{
+    "provider": {
+      "custom-groq": {
+        "npm": "@ai-sdk/groq",
+        "options": {
+          "baseURL": "https://api.groq.com/openai/v1",
+          "apiKey": "groq-secret"
+        },
+        "models": {
+          "llama-3.3-70b-versatile": { "name": "Llama 3.3 70B" }
+        }
+      },
+      "custom-deepinfra": {
+        "npm": "@ai-sdk/deepinfra",
+        "options": {
+          "baseURL": "https://api.deepinfra.com/v1/openai",
+          "apiKey": "deepinfra-secret"
+        },
+        "models": {
+          "meta-llama/Meta-Llama-3.1-70B-Instruct": { "name": "Llama 3.1 70B" }
+        }
+      },
+      "custom-cerebras": {
+        "npm": "@ai-sdk/cerebras",
+        "options": {
+          "baseURL": "https://api.cerebras.ai/v1",
+          "apiKey": "cerebras-secret"
+        },
+        "models": {
+          "llama3.1-8b": { "name": "Llama 3.1 8B" }
+        }
+      },
+      "custom-together": {
+        "npm": "@ai-sdk/togetherai",
+        "options": {
+          "baseURL": "https://api.together.xyz/v1",
+          "apiKey": "together-secret"
+        },
+        "models": {
+          "meta-llama/Llama-3.3-70B-Instruct-Turbo": { "name": "Llama 3.3 70B Turbo" }
+        }
+      },
+      "custom-perplexity": {
+        "npm": "@ai-sdk/perplexity",
+        "options": {
+          "baseURL": "https://api.perplexity.ai",
+          "apiKey": "perplexity-secret"
+        },
+        "models": {
+          "sonar-pro": { "name": "Sonar Pro" }
+        }
+      },
+      "custom-alibaba": {
+        "npm": "@ai-sdk/alibaba",
+        "options": {
+          "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+          "apiKey": "alibaba-secret"
+        },
+        "models": {
+          "qwen-plus": { "name": "Qwen Plus" }
+        }
+      }
+    }
+  }`);
+  const providerConfig = providerConfigFromOpenCodeConfigPayload(payload);
+  const providerConfigSecrets = providerSecretsFromOpenCodeConfigPayload(payload);
+
+  const accounts = await accountsFromOpenCodeAuthPayload({}, {
+    providerConfig,
+    providerConfigSecrets,
+  });
+  const byId = new Map(accounts.map((account) => [account.providerId, account]));
+
+  assert.equal(byId.get("custom-groq")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("custom-groq")?.baseUrl, "https://api.groq.com/openai");
+  assert.equal(byId.get("custom-groq")?.accessToken, "groq-secret");
+  assert.equal(byId.get("custom-groq")?.enabled, true);
+  assert.ok(byId.get("custom-groq")?.providerModels?.["llama-3.3-70b-versatile"]);
+
+  assert.equal(byId.get("custom-deepinfra")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("custom-deepinfra")?.baseUrl, "https://api.deepinfra.com/v1/openai");
+  assert.equal(byId.get("custom-deepinfra")?.enabled, true);
+
+  assert.equal(byId.get("custom-cerebras")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("custom-cerebras")?.baseUrl, "https://api.cerebras.ai");
+  assert.equal(byId.get("custom-cerebras")?.enabled, true);
+
+  assert.equal(byId.get("custom-together")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("custom-together")?.baseUrl, "https://api.together.xyz");
+  assert.equal(byId.get("custom-together")?.enabled, true);
+
+  assert.equal(byId.get("custom-perplexity")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("custom-perplexity")?.baseUrl, "https://api.perplexity.ai");
+  assert.equal(byId.get("custom-perplexity")?.openAiPathPrefix, "none");
+  assert.equal(byId.get("custom-perplexity")?.enabled, true);
+
+  assert.equal(byId.get("custom-alibaba")?.providerAdapter, "openai-compatible");
+  assert.equal(
+    byId.get("custom-alibaba")?.baseUrl,
+    "https://dashscope.aliyuncs.com/compatible-mode",
+  );
+  assert.equal(byId.get("custom-alibaba")?.enabled, true);
+});
+
 test("OpenCode auth import enables OpenAI-compatible SDK providers", async () => {
   const accounts = await accountsFromOpenCodeAuthPayload({
     xai: { apiKey: "xai-key" },

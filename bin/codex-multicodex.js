@@ -372,6 +372,27 @@ const openAiCompatibleSdkProviderDefaults = {
   v0: { baseUrl: "https://api.v0.dev/v1" },
 };
 
+const openAiCompatibleSdkPackageDefaults = {
+  "@ai-sdk/alibaba": {
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  },
+  "@ai-sdk/cerebras": { baseUrl: "https://api.cerebras.ai/v1" },
+  "@ai-sdk/deepinfra": { baseUrl: "https://api.deepinfra.com/v1/openai" },
+  "@ai-sdk/groq": { baseUrl: "https://api.groq.com/openai/v1" },
+  "@ai-sdk/perplexity": {
+    baseUrl: "https://api.perplexity.ai",
+    openAiPathPrefix: "none",
+    upstreamMode: "chat/completions",
+    compatibilityMode: "chat-completions-bridge",
+  },
+  "@ai-sdk/togetherai": { baseUrl: "https://api.together.xyz/v1" },
+};
+
+function openAiCompatibleDefaultFromNpm(npmPackage) {
+  const npm = String(npmPackage || "").trim().toLowerCase();
+  return openAiCompatibleSdkPackageDefaults[npm];
+}
+
 const MODELS_DEV_API_URL = process.env.MODELS_DEV_API_URL || "https://models.dev/api.json";
 let modelsDevAuthProviderCache = null;
 
@@ -800,6 +821,7 @@ function providerAdapterFromNpm(providerId, npmPackage) {
   if (id === "zai") return "zai";
   if (openAiCompatibleSdkProviderDefaults[id]) return "openai-compatible";
   if (id === "cloudflare-ai-gateway" || npm.includes("ai-gateway-provider")) return "openai-compatible";
+  if (openAiCompatibleDefaultFromNpm(npm)) return "openai-compatible";
   if (npm === "@ai-sdk/openai" || npm.includes("openai-compatible")) return "openai-compatible";
   if (npm === "@openrouter/ai-sdk-provider") return "openai-compatible";
   if (npm === "@ai-sdk/mistral") return "mistral";
@@ -870,7 +892,9 @@ function tokenEnvForProvider(providerId, adapter, env) {
 
 function modelsDevProviderToPreset(providerId, source) {
   const id = sanitizeProviderId(source?.id || providerId);
-  const openAiCompatibleDefault = openAiCompatibleSdkProviderDefaults[id];
+  const openAiCompatibleDefault =
+    openAiCompatibleSdkProviderDefaults[id] ||
+    openAiCompatibleDefaultFromNpm(source?.npm);
   const cloudflareAiGatewayBaseUrl =
     id === "cloudflare-ai-gateway"
       ? cloudflareAiGatewayBaseUrlFromOptions(source?.options)

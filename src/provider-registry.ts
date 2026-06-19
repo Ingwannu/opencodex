@@ -502,6 +502,32 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
   },
 };
 
+const OPENAI_COMPATIBLE_SDK_PACKAGE_DEFAULTS: Record<
+  string,
+  OpenAiCompatibleProviderDefault
+> = {
+  "@ai-sdk/alibaba": {
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  },
+  "@ai-sdk/cerebras": { baseUrl: "https://api.cerebras.ai/v1" },
+  "@ai-sdk/deepinfra": { baseUrl: "https://api.deepinfra.com/v1/openai" },
+  "@ai-sdk/groq": { baseUrl: "https://api.groq.com/openai/v1" },
+  "@ai-sdk/perplexity": {
+    baseUrl: "https://api.perplexity.ai",
+    openAiPathPrefix: "none",
+    upstreamMode: "chat/completions",
+    compatibilityMode: "chat-completions-bridge",
+  },
+  "@ai-sdk/togetherai": { baseUrl: "https://api.together.xyz/v1" },
+};
+
+function openAiCompatibleDefaultFromNpm(
+  npmPackage: string | undefined,
+): OpenAiCompatibleProviderDefault | undefined {
+  const npm = String(npmPackage ?? "").trim().toLowerCase();
+  return OPENAI_COMPATIBLE_SDK_PACKAGE_DEFAULTS[npm];
+}
+
 function firstStringValue(
   source: Record<string, unknown> | undefined,
   keys: string[],
@@ -1000,6 +1026,7 @@ export function providerAdapterFromNpm(
   if (id === "cloudflare-ai-gateway" || npm.includes("ai-gateway-provider")) {
     return "openai-compatible";
   }
+  if (openAiCompatibleDefaultFromNpm(npm)) return "openai-compatible";
   if (npm === "@ai-sdk/openai" || npm.includes("openai-compatible")) {
     return "openai-compatible";
   }
@@ -1114,7 +1141,9 @@ export function providerRegistryEntryFromMetadata(
   providerSource: "builtin" | "models.dev" | "manual" = "models.dev",
 ): ProviderRegistryEntry {
   const id = sanitizeProviderId(source.id || providerId);
-  const openAiCompatibleDefault = OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS[id];
+  const openAiCompatibleDefault =
+    OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS[id] ??
+    openAiCompatibleDefaultFromNpm(source.npm);
   const cloudflareAiGatewayBaseUrl =
     id === "cloudflare-ai-gateway"
       ? cloudflareAiGatewayBaseUrlFromOptions(source.options)

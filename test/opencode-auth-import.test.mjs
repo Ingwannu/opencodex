@@ -350,6 +350,74 @@ test("imports OpenCode opencode.db credentials through the CLI", async (t) => {
   assert.ok(gitlab?.providerModels?.["duo-chat-sonnet-4-5"]);
 });
 
+test("imports ordinary bundled OpenAI-compatible SDK packages through the CLI", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-sdk-package-auth-"));
+  const storePath = path.join(dir, "accounts.json");
+  const authPath = path.join(dir, "auth.json");
+  const configPath = path.join(dir, "opencode.jsonc");
+
+  fs.writeFileSync(authPath, JSON.stringify({}, null, 2));
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify(
+      {
+        provider: {
+          "custom-groq": {
+            npm: "@ai-sdk/groq",
+            options: {
+              baseURL: "https://api.groq.com/openai/v1",
+              apiKey: "groq-secret",
+            },
+            models: {
+              "llama-3.3-70b-versatile": { name: "Llama 3.3 70B" },
+            },
+          },
+          "custom-perplexity": {
+            npm: "@ai-sdk/perplexity",
+            options: {
+              baseURL: "https://api.perplexity.ai",
+              apiKey: "perplexity-secret",
+            },
+            models: {
+              "sonar-pro": { name: "Sonar Pro" },
+            },
+          },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  execFileSync(
+    process.execPath,
+    [cli, "auth", "import-opencode", authPath, "--config", configPath],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        MULTICODEX_STORE_PATH: storePath,
+        MULTICODEX_DATA_DIR: dir,
+      },
+      encoding: "utf8",
+    },
+  );
+
+  const store = readStore(storePath);
+  const byId = new Map(store.accounts.map((account) => [account.providerId, account]));
+
+  assert.equal(byId.get("custom-groq")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("custom-groq")?.baseUrl, "https://api.groq.com/openai");
+  assert.equal(byId.get("custom-groq")?.accessToken, "groq-secret");
+  assert.equal(byId.get("custom-groq")?.enabled, true);
+  assert.ok(byId.get("custom-groq")?.providerModels?.["llama-3.3-70b-versatile"]);
+
+  assert.equal(byId.get("custom-perplexity")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("custom-perplexity")?.baseUrl, "https://api.perplexity.ai");
+  assert.equal(byId.get("custom-perplexity")?.openAiPathPrefix, "none");
+  assert.equal(byId.get("custom-perplexity")?.enabled, true);
+});
+
 test("imports OpenCode config provider secrets without auth.json entries", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-config-secret-"));
   const storePath = path.join(dir, "accounts.json");

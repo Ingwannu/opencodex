@@ -1183,6 +1183,55 @@ test("OpenCode auth import enables Snowflake Cortex through env PAT/JWT token", 
   }
 });
 
+test("OpenCode auth import handles Databricks host env values that include a URL scheme", async () => {
+  const previous = {
+    DATABRICKS_HOST: process.env.DATABRICKS_HOST,
+    DATABRICKS_TOKEN: process.env.DATABRICKS_TOKEN,
+  };
+  process.env.DATABRICKS_HOST = "https://dbc.example.com";
+  process.env.DATABRICKS_TOKEN = "db-token";
+  try {
+    const registry = providerRegistryEntryFromMetadata("databricks", {
+      id: "databricks",
+      name: "Databricks",
+      npm: "@ai-sdk/openai-compatible",
+      api: "https://${DATABRICKS_HOST}/ai-gateway/mlflow/v1",
+      env: ["DATABRICKS_HOST", "DATABRICKS_TOKEN"],
+      models: {
+        "databricks-gpt-5": { name: "GPT-5" },
+      },
+    });
+    assert.equal(
+      registry.baseUrl,
+      "https://dbc.example.com/ai-gateway/mlflow",
+    );
+    assert.equal(registry.runtimeSupported, true);
+
+    const accounts = await accountsFromOpenCodeAuthPayload(
+      { databricks: {} },
+      { providerConfig: new Map([["databricks", registry]]) },
+    );
+    const databricks = accounts.find(
+      (account) => account.providerId === "databricks",
+    );
+
+    assert.equal(databricks?.provider, "openai-compatible");
+    assert.equal(databricks?.providerAdapter, "openai-compatible");
+    assert.equal(
+      databricks?.baseUrl,
+      "https://dbc.example.com/ai-gateway/mlflow",
+    );
+    assert.equal(databricks?.accessToken, "db-token");
+    assert.equal(databricks?.enabled, true);
+    assert.ok(databricks?.providerModels?.["databricks-gpt-5"]);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test("OpenCode auth import preserves configured model metadata", async () => {
   const config = new Map([
     [

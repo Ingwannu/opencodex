@@ -474,6 +474,10 @@ function expandEnvTemplates(
   return missing ? undefined : expanded;
 }
 
+function collapseDuplicateLeadingScheme(value: string): string {
+  return value.replace(/^(https?:\/\/)(https?:\/\/)/i, "$2");
+}
+
 export function cloudflareAiGatewayBaseUrlFromOptions(
   options: Record<string, unknown> | undefined = {},
   env: Record<string, string | undefined> = process.env,
@@ -805,11 +809,12 @@ export function normalizeBaseUrl(value: unknown): string | undefined {
   if (!raw) return undefined;
   const expanded = expandEnvTemplates(raw);
   if (!expanded?.trim()) return undefined;
-  const parsed = new URL(expanded);
+  const normalized = collapseDuplicateLeadingScheme(expanded);
+  const parsed = new URL(normalized);
   if (!["http:", "https:"].includes(parsed.protocol)) {
     throw new Error("base URL must use http or https");
   }
-  return expanded.replace(/\/+$/, "");
+  return normalized.replace(/\/+$/, "");
 }
 
 export function normalizeOpenAiCompatibleBaseUrl(value: unknown): string | undefined {

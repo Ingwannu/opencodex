@@ -488,6 +488,10 @@ function sourceOptionsCarrySecret(options) {
   );
 }
 
+function tokenEnvHasSecret(tokenEnv, env = process.env) {
+  return tokenEnv.some((name) => Boolean(env[name]?.trim()));
+}
+
 function cloudflareAiGatewayBaseUrlFromOptions(options = {}, env = process.env) {
   const explicit = firstStringValue(options, ["baseURL", "baseUrl", "base_url", "url", "endpoint"]);
   if (explicit && /^https?:\/\//.test(explicit)) return explicit;
@@ -998,7 +1002,7 @@ function modelsDevProviderToPreset(providerId, source) {
     adapter === "openai-compatible" &&
     isLocalHttpBaseUrl(baseUrl) &&
     !sourceOptionsCarrySecret(source?.options) &&
-    tokenEnv.length === 0
+    !tokenEnvHasSecret(tokenEnv)
       ? "none"
       : "api-key";
   return {

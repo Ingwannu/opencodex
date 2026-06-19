@@ -598,6 +598,13 @@ function sourceOptionsCarrySecret(options: Record<string, unknown> | undefined):
   );
 }
 
+function tokenEnvHasSecret(
+  tokenEnv: string[],
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return tokenEnv.some((name) => Boolean(env[name]?.trim()));
+}
+
 function expandEnvTemplates(
   value: string,
   env: Record<string, string | undefined> = process.env,
@@ -1258,7 +1265,7 @@ export function providerRegistryEntryFromMetadata(
     adapter === "openai-compatible" &&
     isLocalHttpBaseUrl(baseUrl) &&
     !sourceOptionsCarrySecret(source.options) &&
-    tokenEnv.length === 0
+    !tokenEnvHasSecret(tokenEnv)
       ? "none"
       : "api-key";
 

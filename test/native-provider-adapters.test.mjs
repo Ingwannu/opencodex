@@ -1410,6 +1410,75 @@ test("OpenCode local provider config imports without auth.json credentials", asy
   assert.ok(ollama?.providerModels?.["gpt-oss:20b"]);
 });
 
+test("OpenCode local Models.dev providers import without optional token env credentials", async () => {
+  const previousToken = process.env.ATOMIC_CHAT_API_KEY;
+  delete process.env.ATOMIC_CHAT_API_KEY;
+  try {
+    const registry = providerRegistryEntryFromMetadata("atomic-chat", {
+      id: "atomic-chat",
+      name: "Atomic Chat",
+      npm: "@ai-sdk/openai-compatible",
+      api: "http://127.0.0.1:1337/v1",
+      env: ["ATOMIC_CHAT_API_KEY"],
+      models: {
+        "gemma-local": { name: "Gemma Local" },
+      },
+    });
+
+    assert.equal(registry.authType, "none");
+    assert.equal(registry.runtimeSupported, true);
+
+    const accounts = await accountsFromOpenCodeAuthPayload(
+      {},
+      { providerConfig: new Map([["atomic-chat", registry]]) },
+    );
+    const atomic = accounts.find((account) => account.providerId === "atomic-chat");
+
+    assert.equal(atomic?.provider, "openai-compatible");
+    assert.equal(atomic?.providerAdapter, "openai-compatible");
+    assert.equal(atomic?.baseUrl, "http://127.0.0.1:1337");
+    assert.equal(atomic?.accessToken, NO_AUTH_ACCESS_TOKEN);
+    assert.equal(atomic?.providerAuthType, "none");
+    assert.equal(atomic?.enabled, true);
+    assert.ok(atomic?.providerModels?.["gemma-local"]);
+  } finally {
+    if (previousToken === undefined) delete process.env.ATOMIC_CHAT_API_KEY;
+    else process.env.ATOMIC_CHAT_API_KEY = previousToken;
+  }
+});
+
+test("OpenCode local Models.dev providers still honor configured token env secrets", async () => {
+  const previousToken = process.env.ATOMIC_CHAT_API_KEY;
+  process.env.ATOMIC_CHAT_API_KEY = "atomic-local-token";
+  try {
+    const registry = providerRegistryEntryFromMetadata("atomic-chat", {
+      id: "atomic-chat",
+      name: "Atomic Chat",
+      npm: "@ai-sdk/openai-compatible",
+      api: "http://127.0.0.1:1337/v1",
+      env: ["ATOMIC_CHAT_API_KEY"],
+      models: {
+        "gemma-local": { name: "Gemma Local" },
+      },
+    });
+
+    assert.equal(registry.authType, "api-key");
+
+    const accounts = await accountsFromOpenCodeAuthPayload(
+      {},
+      { providerConfig: new Map([["atomic-chat", registry]]) },
+    );
+    const atomic = accounts.find((account) => account.providerId === "atomic-chat");
+
+    assert.equal(atomic?.accessToken, "atomic-local-token");
+    assert.equal(atomic?.providerAuthType, "api-key");
+    assert.equal(atomic?.enabled, true);
+  } finally {
+    if (previousToken === undefined) delete process.env.ATOMIC_CHAT_API_KEY;
+    else process.env.ATOMIC_CHAT_API_KEY = previousToken;
+  }
+});
+
 test("Cloudflare AI Gateway registry metadata stays OpenAI-compatible when endpoint env is missing", () => {
   const entry = providerRegistryEntryFromMetadata("cloudflare-ai-gateway", {
     id: "cloudflare-ai-gateway",

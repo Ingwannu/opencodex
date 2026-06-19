@@ -101,13 +101,19 @@ export function parseProviderOptionsInput(
 export function normalizeOpenCodeImportOptions(
   authPath: string,
   configPath: string,
+  authContent = "",
+  configContent = "",
 ): OpenCodeImportOptions {
   const options: OpenCodeImportOptions = {};
   const trimmedAuthPath = authPath.trim();
   const trimmedConfigPath = configPath.trim();
+  const trimmedAuthContent = authContent.trim();
+  const trimmedConfigContent = configContent.trim();
 
   if (trimmedAuthPath) options.path = trimmedAuthPath;
   if (trimmedConfigPath) options.configPath = trimmedConfigPath;
+  if (trimmedAuthContent) options.authContent = trimmedAuthContent;
+  if (trimmedConfigContent) options.configContent = trimmedConfigContent;
 
   return options;
 }

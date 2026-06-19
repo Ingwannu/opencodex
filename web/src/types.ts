@@ -150,4 +150,6 @@ export type StoreSettings = {
 export type OpenCodeImportOptions = {
   path?: string;
   configPath?: string;
+  authContent?: string;
+  configContent?: string;
 };

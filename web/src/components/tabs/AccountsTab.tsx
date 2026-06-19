@@ -166,6 +166,8 @@ export function AccountsTab(props: Props) {
   const [manualProviderOptionsJson, setManualProviderOptionsJson] = useState("");
   const [openCodeAuthPath, setOpenCodeAuthPath] = useState("");
   const [openCodeConfigPath, setOpenCodeConfigPath] = useState("");
+  const [openCodeAuthContent, setOpenCodeAuthContent] = useState("");
+  const [openCodeConfigContent, setOpenCodeConfigContent] = useState("");
   const [manualUpstreamMode, setManualUpstreamMode] = useState<
     "" | "responses" | "chat/completions"
   >("");
@@ -564,7 +566,12 @@ export function AccountsTab(props: Props) {
     setIsImportingOpenCode(true);
     try {
       await importOpenCodeAuth(
-        normalizeOpenCodeImportOptions(openCodeAuthPath, openCodeConfigPath),
+        normalizeOpenCodeImportOptions(
+          openCodeAuthPath,
+          openCodeConfigPath,
+          openCodeAuthContent,
+          openCodeConfigContent,
+        ),
       );
     } finally {
       setIsImportingOpenCode(false);
@@ -723,6 +730,12 @@ export function AccountsTab(props: Props) {
               onChange={(e) => setOpenCodeAuthPath(e.target.value)}
               placeholder="Default OpenCode auth.json"
             />
+            <textarea
+              rows={3}
+              value={openCodeAuthContent}
+              onChange={(e) => setOpenCodeAuthContent(e.target.value)}
+              placeholder="Or paste auth.json content"
+            />
           </label>
           <label className="compact-field">
             OpenCode config path
@@ -730,6 +743,12 @@ export function AccountsTab(props: Props) {
               value={openCodeConfigPath}
               onChange={(e) => setOpenCodeConfigPath(e.target.value)}
               placeholder="Optional opencode.json or opencode.jsonc"
+            />
+            <textarea
+              rows={3}
+              value={openCodeConfigContent}
+              onChange={(e) => setOpenCodeConfigContent(e.target.value)}
+              placeholder="Or paste opencode.jsonc content"
             />
           </label>
           <button

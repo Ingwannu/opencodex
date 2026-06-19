@@ -159,3 +159,19 @@ test("normalizeOpenCodeImportOptions trims optional auth and config paths", () =
     },
   );
 });
+
+test("normalizeOpenCodeImportOptions includes pasted OpenCode auth and config content", () => {
+  assert.deepEqual(
+    normalizeOpenCodeImportOptions(
+      "",
+      "",
+      ' { "anthropic": { "type": "api", "key": "ant" } } ',
+      ' { "provider": { "anthropic": { "npm": "@ai-sdk/anthropic" } } } ',
+    ),
+    {
+      authContent: '{ "anthropic": { "type": "api", "key": "ant" } }',
+      configContent:
+        '{ "provider": { "anthropic": { "npm": "@ai-sdk/anthropic" } } }',
+    },
+  );
+});

@@ -245,6 +245,12 @@ async function readFirstExistingText(paths: string[]): Promise<{ path: string; r
   return undefined;
 }
 
+function optionalBodyText(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 function isOpenAiEnabledAccount(account: Account | undefined): account is Account {
   return Boolean(account && normalizeProvider(account) === "openai" && account.enabled);
 }
@@ -402,16 +408,14 @@ export function createAdminRouter(options: AdminRoutesOptions) {
   });
 
   router.post("/auth/import-opencode", async (req, res) => {
+    const authContent = optionalBodyText(req.body?.authContent);
+    const configContent = optionalBodyText(req.body?.configContent);
     const filePath =
-      typeof req.body?.path === "string" && req.body.path.trim()
-        ? req.body.path.trim()
-        : process.env.OPENCODE_AUTH_PATH ||
-          path.join(os.homedir(), ".local", "share", "opencode", "auth.json");
-    const configPath =
-      typeof req.body?.configPath === "string" && req.body.configPath.trim()
-        ? req.body.configPath.trim()
-        : undefined;
-    const configCandidates = configPath
+      optionalBodyText(req.body?.path) ??
+      process.env.OPENCODE_AUTH_PATH ??
+      path.join(os.homedir(), ".local", "share", "opencode", "auth.json");
+    const configPath = optionalBodyText(req.body?.configPath);
+    const configCandidates = configPath && !configContent
       ? [configPath]
       : [
           path.join(process.cwd(), "opencode.jsonc"),
@@ -419,7 +423,9 @@ export function createAdminRouter(options: AdminRoutesOptions) {
           path.join(os.homedir(), ".config", "opencode", "opencode.jsonc"),
           path.join(os.homedir(), ".config", "opencode", "opencode.json"),
         ];
-    const config = await readFirstExistingText(configCandidates);
+    const config = configContent
+      ? { path: "<inline>", raw: configContent }
+      : await readFirstExistingText(configCandidates);
     const configPayload = config
       ? parseOpenCodeConfigPayload(config.raw)
       : undefined;
@@ -429,7 +435,9 @@ export function createAdminRouter(options: AdminRoutesOptions) {
     const providerConfigSecrets = configPayload
       ? providerSecretsFromOpenCodeConfigPayload(configPayload)
       : undefined;
-    const payload = await readOpenCodeAuthPayloadFromPath(filePath);
+    const payload = authContent
+      ? JSON.parse(authContent)
+      : await readOpenCodeAuthPayloadFromPath(filePath);
     const accounts = await accountsFromOpenCodeAuthPayload(payload, {
       providerConfig,
       providerConfigSecrets,
@@ -438,7 +446,7 @@ export function createAdminRouter(options: AdminRoutesOptions) {
     await store.flushIfDirty();
     res.json({
       ok: true,
-      path: filePath,
+      path: authContent ? "<inline>" : filePath,
       configPath: config?.path,
       imported: accounts.length,
       accounts: accounts.map(redact),

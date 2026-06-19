@@ -259,3 +259,55 @@ test("admin OpenCode import reads current opencode.db credential records", async
     await closeServer(server);
   }
 });
+
+test("admin OpenCode import accepts pasted auth and config content", async () => {
+  const { store, server, baseUrl } = await createAdminFixture();
+  try {
+    const res = await fetch(`${baseUrl}/auth/import-opencode`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        authContent: JSON.stringify({
+          "inline-router": {
+            type: "api",
+            key: "inline-secret-token",
+          },
+        }),
+        configContent: `{
+          // OpenCode JSONC comments should be accepted from the dashboard.
+          "provider": {
+            "inline-router": {
+              "name": "Inline Router",
+              "npm": "@ai-sdk/openai-compatible",
+              "options": {
+                "baseURL": "https://inline.example/v1"
+              },
+              "models": {
+                "inline-model": { "name": "Inline Model" }
+              }
+            }
+          }
+        }`,
+      }),
+    });
+    const payload = await res.json();
+
+    assert.equal(res.status, 200, JSON.stringify(payload));
+    assert.equal(payload.ok, true);
+    assert.equal(payload.path, "<inline>");
+    assert.equal(payload.configPath, "<inline>");
+    assert.equal(payload.imported, 1);
+    assert.equal(payload.accounts[0]?.id, "inline-router-inline-router");
+
+    const account = (await store.listAccounts()).find(
+      (item) => item.providerId === "inline-router",
+    );
+    assert.equal(account?.providerAdapter, "openai-compatible");
+    assert.equal(account?.accessToken, "inline-secret-token");
+    assert.equal(account?.baseUrl, "https://inline.example");
+    assert.equal(account?.enabled, true);
+    assert.ok(account?.providerModels?.["inline-model"]);
+  } finally {
+    await closeServer(server);
+  }
+});

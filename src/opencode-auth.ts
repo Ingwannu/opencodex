@@ -3,6 +3,7 @@ import {
   NO_AUTH_ACCESS_TOKEN,
   type Account,
   type OpenAiPathPrefix,
+  type ProviderAuthType,
   type ProviderAdapter,
   type RouteProviderId,
   type UpstreamMode,
@@ -31,6 +32,13 @@ import {
 type OpenCodeAuthImportOptions = {
   providerConfig?: Map<string, ProviderRegistryEntry>;
   providerConfigSecrets?: Map<string, string>;
+};
+
+type OpenCodeCredentialFields = {
+  accessToken?: string;
+  refreshToken?: string;
+  expiresAt?: number;
+  providerAuthType?: ProviderAuthType;
 };
 
 function normalizeSecret(value: string): string {
@@ -102,6 +110,7 @@ function findSecretInObject(value: unknown, seen = new Set<object>()): string | 
     "aicore_service_key",
     "key",
     "token",
+    "access",
     "accessToken",
     "access_token",
     "bearer",
@@ -119,6 +128,42 @@ function findSecretInObject(value: unknown, seen = new Set<object>()): string | 
   }
 
   return undefined;
+}
+
+function nonNegativeNumber(value: unknown): number | undefined {
+  const number =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number(value.trim())
+        : NaN;
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+function openCodeCredentialFields(value: unknown): OpenCodeCredentialFields {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const source = value as Record<string, unknown>;
+  if (source.type === "oauth") {
+    const accessToken = secretStringFromValue(source.access);
+    return {
+      ...(accessToken ? { accessToken } : {}),
+      ...(typeof source.refresh === "string" && source.refresh.trim()
+        ? { refreshToken: source.refresh.trim() }
+        : {}),
+      ...(nonNegativeNumber(source.expires) !== undefined
+        ? { expiresAt: nonNegativeNumber(source.expires) }
+        : {}),
+      providerAuthType: "oauth",
+    };
+  }
+  if (source.type === "key") {
+    const accessToken = secretStringFromValue(source.key);
+    return {
+      ...(accessToken ? { accessToken } : {}),
+      providerAuthType: "api-key",
+    };
+  }
+  return {};
 }
 
 function findSecretInHeaders(value: unknown): string | undefined {
@@ -523,7 +568,9 @@ export async function accountsFromOpenCodeAuthPayload(
       (await resolveProviderRegistryEntry(name, {
         baseUrl: detectedBaseUrl,
       }));
+    const credential = openCodeCredentialFields(body);
     const token =
+      credential.accessToken ??
       findSecretInObject(body) ??
       options.providerConfigSecrets?.get(providerKey) ??
       envSecretForProvider(providerKey, registry) ??
@@ -545,7 +592,7 @@ export async function accountsFromOpenCodeAuthPayload(
       providerSource: "opencode",
       providerDoc: registry.providerDoc,
       providerAuthEnv: registry.tokenEnv,
-      providerAuthType: registry.authType,
+      providerAuthType: credential.providerAuthType ?? registry.authType,
       providerOptions: registry.providerOptions,
       providerModels: baseProviderModelsForRegistry(registry),
       upstreamMode: registry.upstreamMode,
@@ -553,6 +600,8 @@ export async function accountsFromOpenCodeAuthPayload(
       openAiPathPrefix: registry.openAiPathPrefix,
       email: id,
       accessToken: token,
+      refreshToken: credential.refreshToken,
+      expiresAt: credential.expiresAt,
       baseUrl,
       enabled: runtimeSupported,
       priority: 0,

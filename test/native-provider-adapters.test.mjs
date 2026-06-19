@@ -890,6 +890,52 @@ test("OpenCode config strips native provider version suffixes from baseURL", asy
   assert.ok(anthropic?.providerModels?.["claude-sonnet-4-5"]);
 });
 
+test("OpenCode auth import preserves OAuth access refresh and expiry fields", async () => {
+  const providerConfig = new Map([
+    [
+      "gitlab",
+      {
+        id: "gitlab",
+        providerId: "gitlab",
+        label: "GitLab",
+        provider: "gitlab",
+        providerAdapter: "gitlab",
+        providerNpm: "gitlab-ai-provider",
+        providerSource: "manual",
+        providerDoc: "https://opencode.ai/docs/providers/",
+        baseUrl: "https://gitlab.com",
+        tokenEnv: ["GITLAB_TOKEN"],
+        authType: "api-key",
+        runtimeSupported: true,
+        models: {
+          "duo-chat-sonnet-4-5": { name: "Duo Chat Sonnet 4.5" },
+        },
+      },
+    ],
+  ]);
+
+  const accounts = await accountsFromOpenCodeAuthPayload(
+    {
+      gitlab: {
+        type: "oauth",
+        methodID: "oauth",
+        access: "gitlab-oauth-access",
+        refresh: "gitlab-oauth-refresh",
+        expires: 9999999999999,
+      },
+    },
+    { providerConfig },
+  );
+  const gitlab = accounts.find((account) => account.providerId === "gitlab");
+
+  assert.equal(gitlab?.providerAdapter, "gitlab");
+  assert.equal(gitlab?.accessToken, "gitlab-oauth-access");
+  assert.equal(gitlab?.refreshToken, "gitlab-oauth-refresh");
+  assert.equal(gitlab?.expiresAt, 9999999999999);
+  assert.equal(gitlab?.providerAuthType, "oauth");
+  assert.ok(gitlab?.providerModels?.["duo-chat-sonnet-4-5"]);
+});
+
 test("OpenCode auth import enables Amazon Bedrock through AWS credential-chain config", async () => {
   const previous = {
     AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,

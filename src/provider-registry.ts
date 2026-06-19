@@ -878,6 +878,33 @@ export function amazonBedrockBaseUrlFromOptions(
   return `https://bedrock-runtime.${region.trim()}.amazonaws.com`;
 }
 
+export function neonBaseUrlFromOptions(
+  options: Record<string, unknown> | undefined = {},
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const explicit = firstStringValue(options, [
+    "baseURL",
+    "baseUrl",
+    "base_url",
+    "url",
+    "endpoint",
+  ]);
+  if (explicit && /^https?:\/\//.test(explicit)) return explicit;
+
+  const gatewayBase =
+    firstStringValue(options, [
+      "NEON_AI_GATEWAY_BASE_URL",
+      "neonAiGatewayBaseUrl",
+      "neon_ai_gateway_base_url",
+      "gatewayBaseUrl",
+      "gateway_base_url",
+    ]) ?? env.NEON_AI_GATEWAY_BASE_URL;
+  if (!gatewayBase?.trim() || !/^https?:\/\//.test(gatewayBase.trim())) {
+    return undefined;
+  }
+  return `${gatewayBase.trim().replace(/\/+$/, "")}/ai-gateway/mlflow/v1`;
+}
+
 export function vertexBaseUrlFromOptions(
   options: Record<string, unknown> | undefined = {},
   env: Record<string, string | undefined> = process.env,

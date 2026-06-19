@@ -174,6 +174,14 @@ test("provider option endpoint helper recognizes OpenCode-style endpoint options
   );
   assert.equal(
     providerOptionsCanDeriveEndpoint(
+      "neon",
+      "openai-compatible",
+      '{ "NEON_AI_GATEWAY_BASE_URL": "https://neon.example" }',
+    ),
+    true,
+  );
+  assert.equal(
+    providerOptionsCanDeriveEndpoint(
       "custom-router",
       "openai-compatible",
       '{ "headers": { "x-api-key": "secret" } }',

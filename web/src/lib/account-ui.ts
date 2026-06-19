@@ -187,6 +187,17 @@ export function providerOptionsCanDeriveEndpoint(
         optionString(options, ["accountId", "accountID", "account_id", "account"]),
       );
     }
+    if (id === "neon") {
+      return Boolean(
+        optionString(options, [
+          "NEON_AI_GATEWAY_BASE_URL",
+          "neonAiGatewayBaseUrl",
+          "neon_ai_gateway_base_url",
+          "gatewayBaseUrl",
+          "gateway_base_url",
+        ]),
+      );
+    }
   }
   return false;
 }

@@ -236,6 +236,45 @@ test("admin account creation derives native provider endpoints from provider opt
   }
 });
 
+test("admin account creation derives Neon gateway endpoint from provider options", async () => {
+  const { store, server, baseUrl } = await createAdminFixture();
+  try {
+    const res = await fetch(`${baseUrl}/accounts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "neon-from-ui",
+        provider: "openai-compatible",
+        providerId: "neon",
+        providerAdapter: "openai-compatible",
+        providerAuthType: "api-key",
+        providerOptions: {
+          NEON_AI_GATEWAY_BASE_URL: "https://neon.example",
+        },
+        accessToken: "neon-token",
+        enabled: true,
+      }),
+    });
+    const payload = await res.json();
+
+    assert.equal(res.status, 200, JSON.stringify(payload));
+    assert.equal(payload.ok, true);
+    assert.equal(payload.account.baseUrl, "https://neon.example/ai-gateway/mlflow");
+    assert.deepEqual(payload.account.providerOptions, {
+      NEON_AI_GATEWAY_BASE_URL: "https://neon.example",
+    });
+
+    const stored = (await store.listAccounts()).find(
+      (account) => account.id === "neon-from-ui",
+    );
+    assert.equal(stored?.baseUrl, "https://neon.example/ai-gateway/mlflow");
+    assert.equal(stored?.accessToken, "neon-token");
+    assert.equal(stored?.enabled, true);
+  } finally {
+    await closeServer(server);
+  }
+});
+
 test("admin OpenCode import reads current opencode.db credential records", async (t) => {
   const { store, server, baseUrl } = await createAdminFixture();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-admin-db-"));

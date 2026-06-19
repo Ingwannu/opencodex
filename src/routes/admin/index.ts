@@ -24,6 +24,7 @@ import {
   cloudflareAiGatewayBaseUrlFromOptions,
   cloudflareWorkersAiBaseUrlFromOptions,
   listProviderRegistry,
+  neonBaseUrlFromOptions,
   normalizeOpenAiCompatibleBaseUrl,
   sapAiCoreBaseUrlFromOptions,
   vertexBaseUrlFromOptions,
@@ -168,6 +169,9 @@ function providerOptionsBaseUrl(
     }
     if (id === "cloudflare-workers-ai") {
       return cloudflareWorkersAiBaseUrlFromOptions(providerOptions);
+    }
+    if (id === "neon") {
+      return neonBaseUrlFromOptions(providerOptions);
     }
   }
   return genericBaseUrlFromProviderOptions(providerOptions);

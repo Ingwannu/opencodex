@@ -2167,6 +2167,15 @@ test("OpenCode config imports ordinary bundled OpenAI-compatible SDK packages", 
           "sonar-pro": { "name": "Sonar Pro" }
         }
       },
+      "custom-venice": {
+        "npm": "venice-ai-sdk-provider",
+        "options": {
+          "apiKey": "venice-secret"
+        },
+        "models": {
+          "llama-3.3-70b": { "name": "Llama 3.3 70B" }
+        }
+      },
       "custom-alibaba": {
         "npm": "@ai-sdk/alibaba",
         "options": {
@@ -2231,6 +2240,12 @@ test("OpenCode config imports ordinary bundled OpenAI-compatible SDK packages", 
   assert.equal(byId.get("custom-perplexity")?.baseUrl, "https://api.perplexity.ai");
   assert.equal(byId.get("custom-perplexity")?.openAiPathPrefix, "none");
   assert.equal(byId.get("custom-perplexity")?.enabled, true);
+
+  assert.equal(byId.get("custom-venice")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("custom-venice")?.baseUrl, "https://api.venice.ai/api");
+  assert.equal(byId.get("custom-venice")?.accessToken, "venice-secret");
+  assert.equal(byId.get("custom-venice")?.enabled, true);
+  assert.ok(byId.get("custom-venice")?.providerModels?.["llama-3.3-70b"]);
 
   assert.equal(byId.get("custom-alibaba")?.providerAdapter, "openai-compatible");
   assert.equal(

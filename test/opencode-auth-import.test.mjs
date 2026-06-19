@@ -400,6 +400,15 @@ test("imports ordinary bundled OpenAI-compatible SDK packages through the CLI", 
               "sonar-pro": { name: "Sonar Pro" },
             },
           },
+          "custom-venice": {
+            npm: "venice-ai-sdk-provider",
+            options: {
+              apiKey: "venice-secret",
+            },
+            models: {
+              "llama-3.3-70b": { name: "Llama 3.3 70B" },
+            },
+          },
           "custom-vercel-v0": {
             npm: "@ai-sdk/vercel",
             options: {
@@ -455,6 +464,12 @@ test("imports ordinary bundled OpenAI-compatible SDK packages through the CLI", 
   assert.equal(byId.get("custom-perplexity")?.baseUrl, "https://api.perplexity.ai");
   assert.equal(byId.get("custom-perplexity")?.openAiPathPrefix, "none");
   assert.equal(byId.get("custom-perplexity")?.enabled, true);
+
+  assert.equal(byId.get("custom-venice")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("custom-venice")?.baseUrl, "https://api.venice.ai/api");
+  assert.equal(byId.get("custom-venice")?.accessToken, "venice-secret");
+  assert.equal(byId.get("custom-venice")?.enabled, true);
+  assert.ok(byId.get("custom-venice")?.providerModels?.["llama-3.3-70b"]);
 
   assert.equal(byId.get("custom-vercel-v0")?.providerAdapter, "openai-compatible");
   assert.equal(byId.get("custom-vercel-v0")?.baseUrl, "https://api.v0.dev");

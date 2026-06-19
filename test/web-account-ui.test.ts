@@ -40,6 +40,28 @@ test("isAuthOnlyAccount does not count a user-disabled routable account", () => 
   assert.equal(isAuthOnlyAccount(account), false);
 });
 
+test("isAuthOnlyAccount follows the backend native runtime adapter set", () => {
+  const adapters = [
+    "amazon-bedrock",
+    "vertex",
+    "vertex-anthropic",
+    "gitlab",
+    "sap-ai-core",
+  ];
+
+  for (const adapter of adapters) {
+    const account: Account = {
+      id: adapter,
+      provider: adapter,
+      providerAdapter: adapter,
+      enabled: true,
+      accessToken: "token",
+    };
+
+    assert.equal(isAuthOnlyAccount(account), false, adapter);
+  }
+});
+
 test("describeProviderAuth exposes OpenCode metadata needed for the add-account UI", () => {
   const provider: ProviderRegistryEntry = {
     id: "databricks",

@@ -7,6 +7,12 @@ const ROUTABLE_ADAPTERS = new Set([
   "zai",
   "anthropic",
   "google",
+  "cohere",
+  "amazon-bedrock",
+  "vertex",
+  "vertex-anthropic",
+  "gitlab",
+  "sap-ai-core",
 ]);
 
 const AUTH_ONLY_ERROR_PATTERNS = [

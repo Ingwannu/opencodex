@@ -23,10 +23,12 @@ import {
   azureOpenAiBaseUrlFromOptions,
   cloudflareAiGatewayBaseUrlFromOptions,
   cloudflareWorkersAiBaseUrlFromOptions,
+  databricksBaseUrlFromOptions,
   listProviderRegistry,
   neonBaseUrlFromOptions,
   normalizeOpenAiCompatibleBaseUrl,
   sapAiCoreBaseUrlFromOptions,
+  snowflakeCortexBaseUrlFromOptions,
   vertexBaseUrlFromOptions,
 } from "../../provider-registry.js";
 import {
@@ -172,6 +174,12 @@ function providerOptionsBaseUrl(
     }
     if (id === "neon") {
       return neonBaseUrlFromOptions(providerOptions);
+    }
+    if (id === "databricks") {
+      return databricksBaseUrlFromOptions(providerOptions);
+    }
+    if (id === "snowflake-cortex") {
+      return snowflakeCortexBaseUrlFromOptions(providerOptions);
     }
   }
   return genericBaseUrlFromProviderOptions(providerOptions);

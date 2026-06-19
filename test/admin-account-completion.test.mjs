@@ -275,6 +275,85 @@ test("admin account creation derives Neon gateway endpoint from provider options
   }
 });
 
+test("admin account creation derives Databricks endpoint from provider options", async () => {
+  const { store, server, baseUrl } = await createAdminFixture();
+  try {
+    const res = await fetch(`${baseUrl}/accounts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "databricks-from-ui",
+        provider: "openai-compatible",
+        providerId: "databricks",
+        providerAdapter: "openai-compatible",
+        providerAuthType: "api-key",
+        providerOptions: {
+          DATABRICKS_HOST: "https://dbc.example.com",
+        },
+        accessToken: "db-token",
+        enabled: true,
+      }),
+    });
+    const payload = await res.json();
+
+    assert.equal(res.status, 200, JSON.stringify(payload));
+    assert.equal(payload.ok, true);
+    assert.equal(
+      payload.account.baseUrl,
+      "https://dbc.example.com/ai-gateway/mlflow",
+    );
+
+    const stored = (await store.listAccounts()).find(
+      (account) => account.id === "databricks-from-ui",
+    );
+    assert.equal(stored?.baseUrl, "https://dbc.example.com/ai-gateway/mlflow");
+    assert.equal(stored?.enabled, true);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("admin account creation derives Snowflake Cortex endpoint from provider options", async () => {
+  const { store, server, baseUrl } = await createAdminFixture();
+  try {
+    const res = await fetch(`${baseUrl}/accounts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "snowflake-from-ui",
+        provider: "openai-compatible",
+        providerId: "snowflake-cortex",
+        providerAdapter: "openai-compatible",
+        providerAuthType: "api-key",
+        providerOptions: {
+          SNOWFLAKE_ACCOUNT: "acme-test",
+        },
+        accessToken: "snowflake-token",
+        enabled: true,
+      }),
+    });
+    const payload = await res.json();
+
+    assert.equal(res.status, 200, JSON.stringify(payload));
+    assert.equal(payload.ok, true);
+    assert.equal(
+      payload.account.baseUrl,
+      "https://acme-test.snowflakecomputing.com/api/v2/cortex",
+    );
+
+    const stored = (await store.listAccounts()).find(
+      (account) => account.id === "snowflake-from-ui",
+    );
+    assert.equal(
+      stored?.baseUrl,
+      "https://acme-test.snowflakecomputing.com/api/v2/cortex",
+    );
+    assert.equal(stored?.enabled, true);
+  } finally {
+    await closeServer(server);
+  }
+});
+
 test("admin OpenCode import reads current opencode.db credential records", async (t) => {
   const { store, server, baseUrl } = await createAdminFixture();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-admin-db-"));

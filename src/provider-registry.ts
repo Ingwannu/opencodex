@@ -905,6 +905,56 @@ export function neonBaseUrlFromOptions(
   return `${gatewayBase.trim().replace(/\/+$/, "")}/ai-gateway/mlflow/v1`;
 }
 
+export function databricksBaseUrlFromOptions(
+  options: Record<string, unknown> | undefined = {},
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const explicit = firstStringValue(options, [
+    "baseURL",
+    "baseUrl",
+    "base_url",
+    "url",
+    "endpoint",
+  ]);
+  if (explicit && /^https?:\/\//.test(explicit)) return explicit;
+
+  const host =
+    firstStringValue(options, [
+      "DATABRICKS_HOST",
+      "databricksHost",
+      "databricks_host",
+      "host",
+    ]) ?? env.DATABRICKS_HOST;
+  if (!host?.trim()) return undefined;
+  const trimmed = host.trim();
+  const withScheme = /^https?:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
+  return `${withScheme.replace(/\/+$/, "")}/ai-gateway/mlflow/v1`;
+}
+
+export function snowflakeCortexBaseUrlFromOptions(
+  options: Record<string, unknown> | undefined = {},
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const explicit = firstStringValue(options, [
+    "baseURL",
+    "baseUrl",
+    "base_url",
+    "url",
+    "endpoint",
+  ]);
+  if (explicit && /^https?:\/\//.test(explicit)) return explicit;
+
+  const account =
+    firstStringValue(options, [
+      "SNOWFLAKE_ACCOUNT",
+      "snowflakeAccount",
+      "snowflake_account",
+      "account",
+    ]) ?? env.SNOWFLAKE_ACCOUNT;
+  if (!account?.trim()) return undefined;
+  return `https://${account.trim()}.snowflakecomputing.com/api/v2/cortex/v1`;
+}
+
 export function vertexBaseUrlFromOptions(
   options: Record<string, unknown> | undefined = {},
   env: Record<string, string | undefined> = process.env,

@@ -182,6 +182,22 @@ test("provider option endpoint helper recognizes OpenCode-style endpoint options
   );
   assert.equal(
     providerOptionsCanDeriveEndpoint(
+      "databricks",
+      "openai-compatible",
+      '{ "DATABRICKS_HOST": "https://dbc.example.com" }',
+    ),
+    true,
+  );
+  assert.equal(
+    providerOptionsCanDeriveEndpoint(
+      "snowflake-cortex",
+      "openai-compatible",
+      '{ "SNOWFLAKE_ACCOUNT": "acme-test" }',
+    ),
+    true,
+  );
+  assert.equal(
+    providerOptionsCanDeriveEndpoint(
       "custom-router",
       "openai-compatible",
       '{ "headers": { "x-api-key": "secret" } }',

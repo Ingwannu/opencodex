@@ -198,6 +198,26 @@ export function providerOptionsCanDeriveEndpoint(
         ]),
       );
     }
+    if (id === "databricks") {
+      return Boolean(
+        optionString(options, [
+          "DATABRICKS_HOST",
+          "databricksHost",
+          "databricks_host",
+          "host",
+        ]),
+      );
+    }
+    if (id === "snowflake-cortex") {
+      return Boolean(
+        optionString(options, [
+          "SNOWFLAKE_ACCOUNT",
+          "snowflakeAccount",
+          "snowflake_account",
+          "account",
+        ]),
+      );
+    }
   }
   return false;
 }

@@ -833,6 +833,7 @@ function providerAdapterFromNpm(providerId, npmPackage) {
   if (npm === "@ai-sdk/cohere") return "cohere";
   if (npm === "@ai-sdk/vercel") return "openai-compatible";
   if (npm === "@ai-sdk/azure") return "azure";
+  if (npm === "@ai-sdk/amazon-bedrock/mantle") return "openai-compatible";
   if (npm === "@ai-sdk/amazon-bedrock") return "amazon-bedrock";
   if (npm === "@ai-sdk/google-vertex/anthropic") return "vertex-anthropic";
   if (npm === "@ai-sdk/google-vertex") return "vertex";
@@ -2035,6 +2036,154 @@ function baseUrlForPreset(preset, detectedBaseUrl) {
   return normalizeBaseUrl(detectedBaseUrl || preset.baseUrl);
 }
 
+function providerOverrideObject(metadata) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return undefined;
+  }
+  const provider = metadata.provider;
+  if (!provider || typeof provider !== "object" || Array.isArray(provider)) {
+    return undefined;
+  }
+  return provider;
+}
+
+function firstProviderOverrideString(source, keys) {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function canSharePresetBaseForModelOverride(preset, adapter) {
+  const presetAdapter = preset.providerAdapter || preset.provider;
+  return presetAdapter === "vertex" && adapter === "vertex-anthropic";
+}
+
+function modelOverrideBaseUrlForPreset(adapter, api, preset) {
+  if (adapter === "openai-compatible") {
+    return normalizeOpenAiCompatibleBaseUrl(api || preset.baseUrl);
+  }
+  return normalizeBaseUrl(api || preset.baseUrl);
+}
+
+function modelProviderOverrideForPreset(preset, modelId, metadata) {
+  const provider = providerOverrideObject(metadata);
+  if (!provider) return undefined;
+
+  const npm = firstProviderOverrideString(provider, ["npm", "package"]);
+  const adapter = providerAdapterFromNpm(modelId, npm);
+  if (!isRuntimeSupportedAdapter(adapter)) return undefined;
+
+  const api = firstProviderOverrideString(provider, [
+    "api",
+    "baseURL",
+    "baseUrl",
+    "base_url",
+    "url",
+    "endpoint",
+  ]);
+  if (!api && !canSharePresetBaseForModelOverride(preset, adapter)) {
+    return undefined;
+  }
+  const baseUrl = modelOverrideBaseUrlForPreset(adapter, api, preset);
+  if (adapter === "openai-compatible" && !baseUrl) return undefined;
+  const shape = firstProviderOverrideString(provider, ["shape"]);
+  const upstreamMode =
+    adapter === "openai-compatible" && shape === "responses"
+      ? "responses"
+      : adapter === "openai-compatible"
+        ? "chat/completions"
+        : undefined;
+  const compatibilityMode =
+    upstreamMode === "responses"
+      ? "responses"
+      : upstreamMode === "chat/completions"
+        ? "chat-completions-bridge"
+        : undefined;
+
+  return {
+    adapter,
+    providerNpm: npm,
+    baseUrl,
+    upstreamMode,
+    compatibilityMode,
+    models: { [modelId]: metadata },
+  };
+}
+
+function baseProviderModelsForPreset(preset) {
+  if (!preset.models || typeof preset.models !== "object") return undefined;
+  const out = {};
+  for (const [modelId, metadata] of Object.entries(preset.models)) {
+    if (modelProviderOverrideForPreset(preset, modelId, metadata)) continue;
+    out[modelId] = metadata;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function modelProviderOverrideAccountsForPreset(baseAccount, preset, token) {
+  if (!preset.models || typeof preset.models !== "object") return [];
+
+  const groups = new Map();
+  for (const [modelId, metadata] of Object.entries(preset.models)) {
+    const override = modelProviderOverrideForPreset(preset, modelId, metadata);
+    if (!override) continue;
+    const key = JSON.stringify({
+      adapter: override.adapter,
+      providerNpm: override.providerNpm,
+      baseUrl: override.baseUrl,
+      upstreamMode: override.upstreamMode,
+      compatibilityMode: override.compatibilityMode,
+      openAiPathPrefix: override.openAiPathPrefix,
+    });
+    const existing = groups.get(key);
+    if (existing) {
+      existing.models[modelId] = metadata;
+    } else {
+      groups.set(key, override);
+    }
+  }
+
+  return Array.from(groups.values()).map((override) => {
+    const suffix =
+      sanitizeProviderId(`${override.adapter}-${override.baseUrl || "default"}`) ||
+      override.adapter;
+    const enabled =
+      isRuntimeSupportedAdapter(override.adapter) &&
+      (override.adapter !== "openai-compatible" || Boolean(override.baseUrl));
+    return {
+      ...baseAccount,
+      id: `${baseAccount.id}-${suffix}`,
+      provider: override.adapter,
+      providerAdapter: override.adapter,
+      providerLabel: `${baseAccount.providerLabel || preset.label} (${override.adapter})`,
+      providerNpm: override.providerNpm || baseAccount.providerNpm,
+      providerModels: override.models,
+      upstreamMode: override.upstreamMode,
+      compatibilityMode: override.compatibilityMode,
+      openAiPathPrefix: override.openAiPathPrefix,
+      email: `${baseAccount.email || baseAccount.id}-${suffix}`,
+      accessToken: token,
+      baseUrl: override.baseUrl,
+      enabled,
+      state: enabled ? undefined : { lastError: `${override.adapter} adapter not implemented yet` },
+    };
+  });
+}
+
+function upsertOpenCodeAccountWithModelOverrides(account, preset, token) {
+  const accounts = [
+    ...modelProviderOverrideAccountsForPreset(account, preset, token),
+    account,
+  ];
+  for (const next of accounts) {
+    upsertAccount(next, false);
+    console.log(`imported: ${next.id}${next.enabled ? "" : " (auth-only)"}`);
+  }
+  return accounts.length;
+}
+
 function findBaseUrlInObject(value, seen = new Set()) {
   if (!value || typeof value !== "object") return undefined;
   if (seen.has(value)) return undefined;
@@ -2202,7 +2351,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
     const runtimeSupported = preset.runtimeSupported !== false && isRuntimeSupportedAdapter(providerAdapter);
     const accountSuffix = sanitizeProviderId(entry.label || entry.credentialId || name) || randomUUID().slice(0, 8);
     const id = `${sanitizeProviderId(providerId)}-${accountSuffix}`;
-    upsertAccount(
+    imported += upsertOpenCodeAccountWithModelOverrides(
       {
         id,
         provider: preset.provider,
@@ -2215,7 +2364,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         providerAuthEnv: preset.tokenEnv,
         providerAuthType: credential.providerAuthType || preset.authType,
         providerOptions: preset.providerOptions,
-        providerModels: preset.models,
+        providerModels: baseProviderModelsForPreset(preset),
         upstreamMode: preset.upstreamMode,
         compatibilityMode: preset.compatibilityMode,
         openAiPathPrefix: preset.openAiPathPrefix,
@@ -2228,10 +2377,9 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         priority: 0,
         state: runtimeSupported ? undefined : { lastError: `${providerAdapter} adapter not implemented yet` },
       },
-      false,
+      preset,
+      token,
     );
-    imported += 1;
-    console.log(`imported: ${id}${runtimeSupported ? "" : " (auth-only)"}`);
   }
 
   for (const [providerKey, token] of providerConfig.secrets) {
@@ -2244,7 +2392,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
     const providerId = preset.providerId || providerKey;
     const runtimeSupported = preset.runtimeSupported !== false && isRuntimeSupportedAdapter(providerAdapter);
     const id = `${sanitizeProviderId(providerId)}-${providerKey || randomUUID().slice(0, 8)}`;
-    upsertAccount(
+    imported += upsertOpenCodeAccountWithModelOverrides(
       {
         id,
         provider: preset.provider,
@@ -2257,7 +2405,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         providerAuthEnv: preset.tokenEnv,
         providerAuthType: preset.authType,
         providerOptions: preset.providerOptions,
-        providerModels: preset.models,
+        providerModels: baseProviderModelsForPreset(preset),
         upstreamMode: preset.upstreamMode,
         compatibilityMode: preset.compatibilityMode,
         openAiPathPrefix: preset.openAiPathPrefix,
@@ -2268,10 +2416,9 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         priority: 0,
         state: runtimeSupported ? undefined : { lastError: `${providerAdapter} adapter not implemented yet` },
       },
-      false,
+      preset,
+      token,
     );
-    imported += 1;
-    console.log(`imported: ${id}${runtimeSupported ? "" : " (auth-only)"}`);
   }
 
   for (const [providerKey, preset] of providerConfig.providers) {
@@ -2288,7 +2435,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
     const baseUrl = baseUrlForPreset(preset);
     const runtimeSupported = preset.runtimeSupported !== false && isRuntimeSupportedAdapter(providerAdapter);
     const id = `${sanitizeProviderId(providerId)}-${providerKey || randomUUID().slice(0, 8)}`;
-    upsertAccount(
+    imported += upsertOpenCodeAccountWithModelOverrides(
       {
         id,
         provider: preset.provider,
@@ -2301,7 +2448,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         providerAuthEnv: preset.tokenEnv,
         providerAuthType: preset.authType,
         providerOptions: preset.providerOptions,
-        providerModels: preset.models,
+        providerModels: baseProviderModelsForPreset(preset),
         upstreamMode: preset.upstreamMode,
         compatibilityMode: preset.compatibilityMode,
         openAiPathPrefix: preset.openAiPathPrefix,
@@ -2312,10 +2459,9 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         priority: 0,
         state: runtimeSupported ? undefined : { lastError: `${providerAdapter} adapter not implemented yet` },
       },
-      false,
+      preset,
+      token,
     );
-    imported += 1;
-    console.log(`imported: ${id}${runtimeSupported ? "" : " (auth-only)"}`);
   }
 
   if (!imported) {

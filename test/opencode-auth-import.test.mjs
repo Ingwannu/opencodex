@@ -463,6 +463,87 @@ test("imports ordinary bundled OpenAI-compatible SDK packages through the CLI", 
   assert.ok(byId.get("custom-vercel-v0")?.providerModels?.["v0-1.5-md"]);
 });
 
+test("imports OpenCode model-level provider overrides through the CLI", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-model-override-auth-"));
+  const storePath = path.join(dir, "accounts.json");
+  const authPath = path.join(dir, "auth.json");
+  const configPath = path.join(dir, "opencode.jsonc");
+
+  fs.writeFileSync(authPath, JSON.stringify({ "amazon-bedrock": {} }, null, 2));
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify(
+      {
+        provider: {
+          "amazon-bedrock": {
+            npm: "@ai-sdk/amazon-bedrock",
+            env: ["AWS_BEARER_TOKEN_BEDROCK", "AWS_REGION"],
+            options: {
+              region: "us-east-1",
+            },
+            models: {
+              "anthropic.claude-3-5-sonnet-20241022-v2:0": {
+                id: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+                name: "Claude 3.5 Sonnet",
+              },
+              "openai.gpt-oss-120b": {
+                id: "openai.gpt-oss-120b",
+                name: "GPT OSS 120B",
+                provider: {
+                  npm: "@ai-sdk/amazon-bedrock/mantle",
+                  api: "https://bedrock-mantle.${AWS_REGION}.api.aws/v1",
+                  shape: "responses",
+                },
+              },
+            },
+          },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  execFileSync(
+    process.execPath,
+    [cli, "auth", "import-opencode", authPath, "--config", configPath],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        AWS_REGION: "us-east-1",
+        AWS_BEARER_TOKEN_BEDROCK: "bedrock-api-key",
+        MULTICODEX_STORE_PATH: storePath,
+        MULTICODEX_DATA_DIR: dir,
+      },
+      encoding: "utf8",
+    },
+  );
+
+  const store = readStore(storePath);
+  const parent = store.accounts.find(
+    (account) =>
+      account.providerId === "amazon-bedrock" &&
+      account.providerAdapter === "amazon-bedrock",
+  );
+  const mantle = store.accounts.find(
+    (account) =>
+      account.providerId === "amazon-bedrock" &&
+      account.providerAdapter === "openai-compatible",
+  );
+
+  assert.ok(parent?.providerModels?.["anthropic.claude-3-5-sonnet-20241022-v2:0"]);
+  assert.equal(parent?.providerModels?.["openai.gpt-oss-120b"], undefined);
+
+  assert.equal(mantle?.provider, "openai-compatible");
+  assert.equal(mantle?.baseUrl, "https://bedrock-mantle.us-east-1.api.aws");
+  assert.equal(mantle?.upstreamMode, "responses");
+  assert.equal(mantle?.compatibilityMode, "responses");
+  assert.equal(mantle?.accessToken, "bedrock-api-key");
+  assert.equal(mantle?.enabled, true);
+  assert.ok(mantle?.providerModels?.["openai.gpt-oss-120b"]);
+});
+
 test("imports OpenCode config provider secrets without auth.json entries", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-config-secret-"));
   const storePath = path.join(dir, "accounts.json");

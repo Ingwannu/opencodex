@@ -40,6 +40,7 @@ type ModelsDevProvider = {
   env?: string[];
   doc?: string;
   models?: Record<string, unknown>;
+  options?: Record<string, unknown>;
 };
 
 const BUILTIN_PROVIDERS: ProviderRegistryEntry[] = [
@@ -244,6 +245,52 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
   "merge-gateway": { baseUrl: "https://api-gateway.merge.dev/v1/openai" },
 };
 
+function firstStringValue(
+  source: Record<string, unknown> | undefined,
+  keys: string[],
+): string | undefined {
+  if (!source) return undefined;
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+export function cloudflareAiGatewayBaseUrlFromOptions(
+  options: Record<string, unknown> | undefined = {},
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const explicit = firstStringValue(options, [
+    "baseURL",
+    "baseUrl",
+    "base_url",
+    "url",
+    "endpoint",
+  ]);
+  if (explicit && /^https?:\/\//.test(explicit)) return explicit;
+
+  const accountId =
+    firstStringValue(options, [
+      "accountId",
+      "accountID",
+      "account_id",
+      "account",
+    ]) ?? env.CLOUDFLARE_ACCOUNT_ID;
+  const gatewayId =
+    firstStringValue(options, [
+      "gatewayId",
+      "gatewayID",
+      "gateway_id",
+      "gateway",
+    ]) ?? env.CLOUDFLARE_GATEWAY_ID;
+
+  if (!accountId?.trim() || !gatewayId?.trim()) return undefined;
+  return `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(
+    accountId.trim(),
+  )}/${encodeURIComponent(gatewayId.trim())}/openai`;
+}
+
 let modelsDevCache:
   | { at: number; entries: Map<string, ProviderRegistryEntry> }
   | undefined;
@@ -324,12 +371,21 @@ export function providerRegistryEntryFromMetadata(
   providerSource: "models.dev" | "manual" = "models.dev",
 ): ProviderRegistryEntry {
   const id = sanitizeProviderId(source.id || providerId);
-  const adapter = providerAdapterFromNpm(id, source.npm);
-  const runtimeSupported = isRuntimeSupportedProvider(adapter);
   const openAiCompatibleDefault = OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS[id];
+  const cloudflareAiGatewayBaseUrl =
+    id === "cloudflare-ai-gateway"
+      ? cloudflareAiGatewayBaseUrlFromOptions(source.options)
+      : undefined;
+  const openAiCompatibleBaseUrl =
+    source.api ?? openAiCompatibleDefault?.baseUrl ?? cloudflareAiGatewayBaseUrl;
+  const adapter =
+    id === "cloudflare-ai-gateway" && openAiCompatibleBaseUrl
+      ? "openai-compatible"
+      : providerAdapterFromNpm(id, source.npm);
+  const runtimeSupported = isRuntimeSupportedProvider(adapter);
   const baseUrl =
     adapter === "openai-compatible"
-      ? normalizeOpenAiCompatibleBaseUrl(source.api ?? openAiCompatibleDefault?.baseUrl)
+      ? normalizeOpenAiCompatibleBaseUrl(openAiCompatibleBaseUrl)
       : normalizeBaseUrl(
           source.api ??
             (adapter === "anthropic"

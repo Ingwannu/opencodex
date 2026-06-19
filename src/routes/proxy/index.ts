@@ -258,6 +258,21 @@ function appendOpenAiCompatiblePath(
   return `${base}${apiPath}`;
 }
 
+function isCloudflareAiGatewayAccount(account: { providerId?: string }): boolean {
+  return String(account.providerId ?? "").toLowerCase() === "cloudflare-ai-gateway";
+}
+
+function applyOpenAiCompatibleAuthHeaders(
+  headers: Record<string, string>,
+  account: Pick<Account, "accessToken" | "providerId">,
+): Record<string, string> {
+  if (isCloudflareAiGatewayAccount(account)) {
+    delete headers.authorization;
+    headers["cf-aig-authorization"] = `Bearer ${account.accessToken}`;
+  }
+  return headers;
+}
+
 function configuredModelsForAccount(
   account: Account,
 ): Array<{ id: string; metadata: Record<string, unknown> }> {
@@ -631,6 +646,7 @@ async function discoverModels(
             "/v1/models",
             account.openAiPathPrefix,
           );
+          applyOpenAiCompatibleAuthHeaders(headers, account);
         }
 
         const r = await fetch(url, { headers });
@@ -1629,6 +1645,10 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
             upstreamPath = shouldSendChatCompletions
               ? "/v1/chat/completions"
               : "/v1/responses";
+            upstreamHeaders = applyOpenAiCompatibleAuthHeaders(
+              { ...headers },
+              selected,
+            );
           } else if (candidate.provider === "zai") {
             upstreamBaseUrl = zaiBaseUrl;
             upstreamPath = isResponsesCompactPath

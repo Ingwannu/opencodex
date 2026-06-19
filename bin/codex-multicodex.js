@@ -241,6 +241,28 @@ function sanitizeProviderId(value) {
     .replace(/^-+|-+$/g, "");
 }
 
+function firstStringValue(source, keys) {
+  if (!source) return undefined;
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function cloudflareAiGatewayBaseUrlFromOptions(options = {}, env = process.env) {
+  const explicit = firstStringValue(options, ["baseURL", "baseUrl", "base_url", "url", "endpoint"]);
+  if (explicit && /^https?:\/\//.test(explicit)) return explicit;
+  const accountId =
+    firstStringValue(options, ["accountId", "accountID", "account_id", "account"]) ||
+    env.CLOUDFLARE_ACCOUNT_ID;
+  const gatewayId =
+    firstStringValue(options, ["gatewayId", "gatewayID", "gateway_id", "gateway"]) ||
+    env.CLOUDFLARE_GATEWAY_ID;
+  if (!accountId?.trim() || !gatewayId?.trim()) return undefined;
+  return `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(accountId.trim())}/${encodeURIComponent(gatewayId.trim())}/openai`;
+}
+
 function providerAdapterFromNpm(providerId, npmPackage) {
   const id = sanitizeProviderId(providerId);
   const npm = String(npmPackage || "").trim().toLowerCase();
@@ -270,11 +292,20 @@ function providerForAdapter(providerId, adapter) {
 
 function modelsDevProviderToPreset(providerId, source) {
   const id = sanitizeProviderId(source?.id || providerId);
-  const adapter = providerAdapterFromNpm(id, source?.npm);
-  const runtimeSupported = isRuntimeSupportedAdapter(adapter);
   const openAiCompatibleDefault = openAiCompatibleSdkProviderDefaults[id];
+  const cloudflareAiGatewayBaseUrl =
+    id === "cloudflare-ai-gateway"
+      ? cloudflareAiGatewayBaseUrlFromOptions(source?.options)
+      : undefined;
+  const openAiCompatibleBaseUrl =
+    source?.api || openAiCompatibleDefault?.baseUrl || cloudflareAiGatewayBaseUrl;
+  const adapter =
+    id === "cloudflare-ai-gateway" && openAiCompatibleBaseUrl
+      ? "openai-compatible"
+      : providerAdapterFromNpm(id, source?.npm);
+  const runtimeSupported = isRuntimeSupportedAdapter(adapter);
   const baseUrl = adapter === "openai-compatible"
-    ? normalizeOpenAiCompatibleBaseUrl(source?.api || openAiCompatibleDefault?.baseUrl)
+    ? normalizeOpenAiCompatibleBaseUrl(openAiCompatibleBaseUrl)
     : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : adapter === "cohere" ? "https://api.cohere.com" : undefined));
   return {
     label: source?.name || id,
@@ -1132,6 +1163,12 @@ function stripJsonComments(source) {
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
+function substituteEnvVariables(source) {
+  return source.replace(/\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, name) =>
+    JSON.stringify(process.env[String(name)] || "").slice(1, -1),
+  );
+}
+
 function providerConfigFromOpenCodeConfigPayload(payload) {
   const providers = payload?.provider;
   const out = new Map();
@@ -1153,13 +1190,16 @@ function providerConfigFromOpenCodeConfigPayload(payload) {
             ? options.baseUrl
             : typeof options.base_url === "string"
               ? options.base_url
-              : undefined,
+              : sanitizeProviderId(providerId) === "cloudflare-ai-gateway"
+                ? cloudflareAiGatewayBaseUrlFromOptions(options)
+                : undefined,
       env: Array.isArray(raw.env)
         ? raw.env.filter((value) => typeof value === "string")
         : typeof raw.env === "string"
           ? [raw.env]
           : [],
       doc: typeof raw.doc === "string" ? raw.doc : undefined,
+      options,
       models: raw.models && typeof raw.models === "object" ? raw.models : undefined,
     };
     out.set(sanitizeProviderId(providerId), {
@@ -1184,7 +1224,7 @@ function readOpenCodeProviderConfig(opts = {}) {
   for (const candidate of candidates) {
     if (!fs.existsSync(candidate)) continue;
     try {
-      const payload = JSON.parse(stripJsonComments(fs.readFileSync(candidate, "utf8")));
+      const payload = JSON.parse(stripJsonComments(substituteEnvVariables(fs.readFileSync(candidate, "utf8"))));
       return {
         path: candidate,
         providers: providerConfigFromOpenCodeConfigPayload(payload),

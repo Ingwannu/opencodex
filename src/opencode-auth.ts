@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Account } from "./types.js";
 import {
+  cloudflareAiGatewayBaseUrlFromOptions,
   normalizeBaseUrl,
   normalizeOpenAiCompatibleBaseUrl,
   providerRegistryEntryFromMetadata,
@@ -133,6 +134,12 @@ function stripJsonComments(source: string): string {
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
+function substituteEnvVariables(source: string): string {
+  return source.replace(/\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, name) =>
+    JSON.stringify(process.env[String(name)] ?? "").slice(1, -1),
+  );
+}
+
 function objectFromPath(source: unknown, path: string[]): unknown {
   let current = source;
   for (const segment of path) {
@@ -171,13 +178,16 @@ export function providerConfigFromOpenCodeConfigPayload(
             ? options.baseUrl
             : typeof options.base_url === "string"
               ? options.base_url
-              : undefined,
+              : sanitizeProviderId(providerId) === "cloudflare-ai-gateway"
+                ? cloudflareAiGatewayBaseUrlFromOptions(options)
+                : undefined,
       env: Array.isArray(env)
         ? env.filter((value): value is string => typeof value === "string")
         : typeof env === "string"
           ? [env]
           : [],
       doc: typeof source.doc === "string" ? source.doc : undefined,
+      options,
       models:
         source.models && typeof source.models === "object"
           ? (source.models as Record<string, unknown>)
@@ -193,5 +203,5 @@ export function providerConfigFromOpenCodeConfigPayload(
 }
 
 export function parseOpenCodeConfigPayload(source: string): unknown {
-  return JSON.parse(stripJsonComments(source));
+  return JSON.parse(stripJsonComments(substituteEnvVariables(source)));
 }

@@ -154,3 +154,72 @@ test("imports custom OpenCode provider metadata from opencode config", () => {
   assert.equal(haimaker?.enabled, true);
   assert.ok(haimaker?.providerModels?.["z-ai/glm-4.6"]);
 });
+
+test("imports Cloudflare AI Gateway from OpenCode config and env variables", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-cloudflare-auth-"));
+  const storePath = path.join(dir, "accounts.json");
+  const authPath = path.join(dir, "auth.json");
+  const configPath = path.join(dir, "opencode.jsonc");
+
+  fs.writeFileSync(
+    authPath,
+    JSON.stringify(
+      {
+        "cloudflare-ai-gateway": {
+          apiKey: "cf-test-token",
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  fs.writeFileSync(
+    configPath,
+    `{
+      "provider": {
+        "cloudflare-ai-gateway": {
+          "options": {
+            "accountId": "{env:CLOUDFLARE_ACCOUNT_ID}",
+            "gatewayId": "{env:CLOUDFLARE_GATEWAY_ID}"
+          },
+          "models": {
+            "openai/gpt-5.1": { "name": "GPT 5.1 through Cloudflare" }
+          }
+        }
+      }
+    }`,
+  );
+
+  execFileSync(
+    process.execPath,
+    [cli, "auth", "import-opencode", authPath, "--config", configPath],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        CLOUDFLARE_ACCOUNT_ID: "cf-account",
+        CLOUDFLARE_GATEWAY_ID: "cf-gateway",
+        MULTICODEX_STORE_PATH: storePath,
+        MULTICODEX_DATA_DIR: dir,
+      },
+      encoding: "utf8",
+    },
+  );
+
+  const store = readStore(storePath);
+  const cloudflare = store.accounts.find(
+    (account) => account.providerId === "cloudflare-ai-gateway",
+  );
+  assert.equal(cloudflare?.provider, "openai-compatible");
+  assert.equal(cloudflare?.providerAdapter, "openai-compatible");
+  assert.equal(cloudflare?.providerLabel, "cloudflare-ai-gateway");
+  assert.equal(
+    cloudflare?.baseUrl,
+    "https://gateway.ai.cloudflare.com/v1/cf-account/cf-gateway/openai",
+  );
+  assert.equal(cloudflare?.upstreamMode, "chat/completions");
+  assert.equal(cloudflare?.compatibilityMode, "chat-completions-bridge");
+  assert.equal(cloudflare?.accessToken, "cf-test-token");
+  assert.equal(cloudflare?.enabled, true);
+  assert.ok(cloudflare?.providerModels?.["openai/gpt-5.1"]);
+});

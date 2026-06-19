@@ -177,16 +177,19 @@ OpenCodex can route providers that map to the current runtime adapters:
   local OpenAI-compatible servers, custom OpenCode providers using
   `@ai-sdk/openai-compatible`, and provider SDKs that expose documented
   OpenAI-compatible HTTP endpoints: xAI, Groq, DeepInfra, Cerebras, Together AI,
-  Perplexity Sonar, Vercel AI Gateway, Venice, AIHubMix, and Merge Gateway
+  Perplexity Sonar, Vercel AI Gateway, Venice, AIHubMix, Merge Gateway, and
+  Cloudflare AI Gateway when `CLOUDFLARE_ACCOUNT_ID` and
+  `CLOUDFLARE_GATEWAY_ID` or equivalent OpenCode provider options are available
 - OpenCode provider `models` metadata for custom and Models.dev providers, so
   configured models remain visible even when the upstream does not expose an
   OpenAI-style model listing endpoint
 
 Credentials for providers whose native API adapter is not implemented yet, such
-as Azure, Amazon Bedrock, Vertex, Cloudflare AI Gateway, GitLab, SAP AI Core,
-v0, and other provider-specific SDK adapters, are imported and shown as
-auth-only disabled accounts. They are preserved for management, but are not sent
-through the proxy until a native adapter or exact compatibility bridge is added.
+as Azure, Amazon Bedrock, Vertex, GitLab, SAP AI Core, v0, Cloudflare AI Gateway
+without account/gateway routing metadata, and other provider-specific SDK
+adapters, are imported and shown as auth-only disabled accounts. They are
+preserved for management, but are not sent through the proxy until a native
+adapter or exact compatibility bridge is added.
 
 Default expected redirect URI:
 

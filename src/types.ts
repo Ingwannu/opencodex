@@ -8,7 +8,8 @@ export type RouteProviderId =
   | "cohere"
   | "amazon-bedrock"
   | "vertex"
-  | "vertex-anthropic";
+  | "vertex-anthropic"
+  | "gitlab";
 export type ProviderAdapter =
   | RouteProviderId
   | "azure"

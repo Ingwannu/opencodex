@@ -20,6 +20,19 @@ type NativeProviderRequest = {
   body: Record<string, unknown>;
 };
 
+type GitLabProviderKind = "anthropic" | "openai-chat" | "openai-responses";
+
+type GitLabDirectAccessToken = {
+  token: string;
+  headers?: Record<string, string>;
+  aiGatewayUrl?: string;
+};
+
+type GitLabProviderRequest = NativeProviderRequest & {
+  baseUrl: string;
+  kind: GitLabProviderKind;
+};
+
 type NativeModelMetadata = {
   id: string;
   context_window: number | null;
@@ -28,6 +41,70 @@ type NativeModelMetadata = {
 
 const ANTHROPIC_VERSION =
   process.env.ANTHROPIC_VERSION ?? "2023-06-01";
+const DEFAULT_GITLAB_AI_GATEWAY_URL = "https://cloud.gitlab.com";
+
+const GITLAB_MODEL_MAPPINGS: Record<
+  string,
+  { provider: GitLabProviderKind; model: string }
+> = {
+  "duo-chat-fable-5": { provider: "anthropic", model: "claude-fable-5" },
+  "duo-chat-opus-4-8": { provider: "anthropic", model: "claude-opus-4-8" },
+  "duo-chat-opus-4-7": { provider: "anthropic", model: "claude-opus-4-7" },
+  "duo-chat-opus-4-6": { provider: "anthropic", model: "claude-opus-4-6" },
+  "duo-chat-sonnet-4-6": { provider: "anthropic", model: "claude-sonnet-4-6" },
+  "duo-chat-opus-4-5": {
+    provider: "anthropic",
+    model: "claude-opus-4-5-20251101",
+  },
+  "duo-chat-sonnet-4-5": {
+    provider: "anthropic",
+    model: "claude-sonnet-4-5-20250929",
+  },
+  "duo-chat-haiku-4-5": {
+    provider: "anthropic",
+    model: "claude-haiku-4-5-20251001",
+  },
+  "duo-chat-gpt-5-1": {
+    provider: "openai-chat",
+    model: "gpt-5.1-2025-11-13",
+  },
+  "duo-chat-gpt-5-2": {
+    provider: "openai-chat",
+    model: "gpt-5.2-2025-12-11",
+  },
+  "duo-chat-gpt-5-4": {
+    provider: "openai-chat",
+    model: "gpt-5.4-2026-03-05",
+  },
+  "duo-chat-gpt-5-5": {
+    provider: "openai-chat",
+    model: "gpt-5.5-2026-04-23",
+  },
+  "duo-chat-gpt-5-mini": {
+    provider: "openai-chat",
+    model: "gpt-5-mini-2025-08-07",
+  },
+  "duo-chat-gpt-5-4-mini": {
+    provider: "openai-chat",
+    model: "gpt-5.4-mini",
+  },
+  "duo-chat-gpt-5-4-nano": {
+    provider: "openai-chat",
+    model: "gpt-5.4-nano",
+  },
+  "duo-chat-gpt-5-codex": {
+    provider: "openai-responses",
+    model: "gpt-5-codex",
+  },
+  "duo-chat-gpt-5-2-codex": {
+    provider: "openai-responses",
+    model: "gpt-5.2-codex",
+  },
+  "duo-chat-gpt-5-3-codex": {
+    provider: "openai-responses",
+    model: "gpt-5.3-codex",
+  },
+};
 
 export function isNativeProvider(provider: string): provider is NativeProviderId {
   return (
@@ -331,6 +408,101 @@ function buildVertexAnthropicPayload(payload: Record<string, unknown>) {
   delete body.model;
   body.anthropic_version = "vertex-2023-10-16";
   return body;
+}
+
+function gitLabAiGatewayBaseUrl(token: GitLabDirectAccessToken): string {
+  return String(
+    token.aiGatewayUrl ??
+      process.env.GITLAB_AI_GATEWAY_URL ??
+      DEFAULT_GITLAB_AI_GATEWAY_URL,
+  ).replace(/\/+$/, "");
+}
+
+function gitLabModelTarget(model: unknown): { provider: GitLabProviderKind; model: string } {
+  const modelId = String(model ?? "").trim();
+  const mapped = GITLAB_MODEL_MAPPINGS[modelId];
+  if (mapped) return mapped;
+  if (modelId.startsWith("duo-chat-gpt-")) {
+    return { provider: "openai-chat", model: modelId.replace(/^duo-chat-/, "") };
+  }
+  return { provider: "anthropic", model: "claude-sonnet-4-5-20250929" };
+}
+
+export function gitLabProviderKindForModel(model: unknown): GitLabProviderKind {
+  return gitLabModelTarget(model).provider;
+}
+
+function directAccessHeaders(token: GitLabDirectAccessToken): Record<string, string> {
+  const headers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(token.headers ?? {})) {
+    if (key.toLowerCase() === "x-api-key") continue;
+    headers[key] = value;
+  }
+  return headers;
+}
+
+function buildGitLabOpenAiPayload(
+  payload: Record<string, unknown>,
+  model: string,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = { ...payload, model, stream: false };
+  if (body.max_completion_tokens === undefined) {
+    const maxTokens = optionalOutputLimit(payload);
+    if (maxTokens !== undefined) body.max_completion_tokens = maxTokens;
+  }
+  delete body.max_tokens;
+  delete body.max_output_tokens;
+  return body;
+}
+
+export function buildGitLabDirectAccessRequest(
+  account: Pick<Account, "accessToken">,
+): NativeProviderRequest {
+  return {
+    path: "/api/v4/ai/third_party_agents/direct_access",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+      authorization: `Bearer ${account.accessToken}`,
+    },
+    body: {},
+  };
+}
+
+export function buildGitLabProviderRequest(
+  token: GitLabDirectAccessToken,
+  payload: Record<string, unknown>,
+  _stream: boolean,
+): GitLabProviderRequest {
+  const target = gitLabModelTarget(payload.model);
+  const baseGateway = gitLabAiGatewayBaseUrl(token);
+  const commonHeaders = {
+    ...directAccessHeaders(token),
+    "content-type": "application/json",
+    accept: "application/json",
+    authorization: `Bearer ${token.token}`,
+  };
+
+  if (target.provider === "anthropic") {
+    return {
+      kind: "anthropic",
+      baseUrl: `${baseGateway}/ai/v1/proxy/anthropic`,
+      path: "/v1/messages",
+      headers: commonHeaders,
+      body: buildAnthropicPayload({ ...payload, model: target.model }),
+    };
+  }
+
+  return {
+    kind: target.provider,
+    baseUrl: `${baseGateway}/ai/v1/proxy/openai`,
+    path:
+      target.provider === "openai-responses"
+        ? "/v1/responses"
+        : "/v1/chat/completions",
+    headers: commonHeaders,
+    body: buildGitLabOpenAiPayload(payload, target.model),
+  };
 }
 
 function buildCoherePayload(payload: Record<string, unknown>) {

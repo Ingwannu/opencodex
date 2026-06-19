@@ -1037,3 +1037,102 @@ test("proxy routes Vertex Anthropic chat completions through rawPredict API", as
     await closeServer(upstream);
   }
 });
+
+test("proxy exchanges GitLab token and routes Duo Claude through AI Gateway", async () => {
+  let capturedDirectAccess;
+  let capturedGatewayRequest;
+  let capturedGatewayAuthorization;
+  let directAccessCalls = 0;
+  const upstream = http.createServer(async (req, res) => {
+    if (
+      req.method === "POST" &&
+      req.url === "/api/v4/ai/third_party_agents/direct_access"
+    ) {
+      directAccessCalls += 1;
+      capturedDirectAccess = await readJson(req);
+      assert.equal(req.headers.authorization, "Bearer glpat-smoke-token");
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          token: "gitlab-direct-smoke-token",
+          headers: { "x-gitlab-realm": "saas" },
+        }),
+      );
+      return;
+    }
+    if (
+      req.method === "POST" &&
+      req.url === "/ai/v1/proxy/anthropic/v1/messages"
+    ) {
+      capturedGatewayRequest = await readJson(req);
+      capturedGatewayAuthorization = req.headers.authorization;
+      assert.equal(req.headers["x-gitlab-realm"], "saas");
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "msg_gitlab_smoke",
+          model: "claude-opus-4-5-20251101",
+          role: "assistant",
+          content: [{ type: "text", text: "GitLab Duo OK" }],
+          stop_reason: "end_turn",
+          usage: { input_tokens: 5, output_tokens: 3 },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+  const previousGatewayUrl = process.env.GITLAB_AI_GATEWAY_URL;
+  process.env.GITLAB_AI_GATEWAY_URL = `http://127.0.0.1:${upstreamPort}`;
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "gitlab-smoke",
+          provider: "gitlab",
+          providerId: "gitlab",
+          providerAdapter: "gitlab",
+          accessToken: "glpat-smoke-token",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          providerModels: {
+            "duo-chat-opus-4-5": {
+              id: "duo-chat-opus-4-5",
+              name: "Agentic Chat (Claude Opus 4.5)",
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "duo-chat-opus-4-5",
+            messages: [
+              { role: "system", content: "Be concise." },
+              { role: "user", content: "Hello" },
+            ],
+            max_tokens: 64,
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.choices[0].message.content, "GitLab Duo OK");
+        assert.equal(directAccessCalls, 1);
+        assert.deepEqual(capturedDirectAccess, {});
+        assert.equal(capturedGatewayAuthorization, "Bearer gitlab-direct-smoke-token");
+        assert.equal(capturedGatewayRequest.model, "claude-opus-4-5-20251101");
+        assert.equal(capturedGatewayRequest.system, "Be concise.");
+        assert.equal(capturedGatewayRequest.messages[0].content[0].text, "Hello");
+        assert.equal(capturedGatewayRequest.max_tokens, 64);
+      },
+    );
+  } finally {
+    if (previousGatewayUrl === undefined) delete process.env.GITLAB_AI_GATEWAY_URL;
+    else process.env.GITLAB_AI_GATEWAY_URL = previousGatewayUrl;
+    await closeServer(upstream);
+  }
+});

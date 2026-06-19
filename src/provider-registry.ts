@@ -436,6 +436,9 @@ export function providerAdapterFromNpm(
   if (npm === "@ai-sdk/amazon-bedrock") return "amazon-bedrock";
   if (npm === "@ai-sdk/google-vertex/anthropic") return "vertex-anthropic";
   if (npm === "@ai-sdk/google-vertex") return "vertex";
+  if (npm === "gitlab-ai-provider" || npm === "@gitlab/gitlab-ai-provider") {
+    return "gitlab";
+  }
   if (npm.includes("google-vertex")) return "unsupported";
   return "unsupported";
 }
@@ -451,7 +454,8 @@ export function isRuntimeSupportedProvider(adapter: ProviderAdapter): adapter is
     adapter === "cohere" ||
     adapter === "amazon-bedrock" ||
     adapter === "vertex" ||
-    adapter === "vertex-anthropic"
+    adapter === "vertex-anthropic" ||
+    adapter === "gitlab"
   );
 }
 
@@ -531,6 +535,8 @@ export function providerRegistryEntryFromMetadata(
                     ? bedrockBaseUrl
                     : adapter === "vertex" || adapter === "vertex-anthropic"
                       ? vertexBaseUrl
+                    : adapter === "gitlab"
+                      ? "https://gitlab.com"
                     : undefined),
         );
 

@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   buildNativeProviderRequest,
+  buildGitLabDirectAccessRequest,
+  buildGitLabProviderRequest,
   convertNativeProviderResponse,
   nativeProviderModelsFromResponse,
 } from "../dist/provider-native.js";
@@ -246,6 +248,63 @@ test("Vertex Anthropic adapter converts chat payloads and responses", () => {
   assert.equal(converted.object, "chat.completion");
   assert.equal(converted.choices[0].message.content, "Hi Vertex Claude");
   assert.equal(converted.usage.total_tokens, 7);
+});
+
+test("GitLab adapter builds direct-access and AI Gateway proxy requests", () => {
+  const directAccess = buildGitLabDirectAccessRequest(
+    { accessToken: "glpat-user-token" },
+  );
+  assert.equal(directAccess.path, "/api/v4/ai/third_party_agents/direct_access");
+  assert.equal(directAccess.headers.authorization, "Bearer glpat-user-token");
+  assert.deepEqual(directAccess.body, {});
+
+  const anthropicRequest = buildGitLabProviderRequest(
+    {
+      token: "gitlab-direct-token",
+      headers: { "x-gitlab-realm": "saas" },
+    },
+    {
+      model: "duo-chat-opus-4-5",
+      messages: [
+        { role: "system", content: "Be concise." },
+        { role: "user", content: "Hello" },
+      ],
+      max_tokens: 64,
+      stream: true,
+    },
+    false,
+  );
+
+  assert.equal(anthropicRequest.kind, "anthropic");
+  assert.equal(anthropicRequest.baseUrl, "https://cloud.gitlab.com/ai/v1/proxy/anthropic");
+  assert.equal(anthropicRequest.path, "/v1/messages");
+  assert.equal(anthropicRequest.headers.authorization, "Bearer gitlab-direct-token");
+  assert.equal(anthropicRequest.headers["x-gitlab-realm"], "saas");
+  assert.equal(anthropicRequest.body.model, "claude-opus-4-5-20251101");
+  assert.equal(anthropicRequest.body.system, "Be concise.");
+  assert.equal(anthropicRequest.body.max_tokens, 64);
+  assert.equal(anthropicRequest.body.stream, false);
+
+  const openAiRequest = buildGitLabProviderRequest(
+    {
+      token: "gitlab-direct-token",
+      headers: {},
+      aiGatewayUrl: "https://gateway.example.test",
+    },
+    {
+      model: "duo-chat-gpt-5-4",
+      messages: [{ role: "user", content: "Hello" }],
+      max_tokens: 32,
+    },
+    false,
+  );
+
+  assert.equal(openAiRequest.kind, "openai-chat");
+  assert.equal(openAiRequest.baseUrl, "https://gateway.example.test/ai/v1/proxy/openai");
+  assert.equal(openAiRequest.path, "/v1/chat/completions");
+  assert.equal(openAiRequest.headers.authorization, "Bearer gitlab-direct-token");
+  assert.equal(openAiRequest.body.model, "gpt-5.4-2026-03-05");
+  assert.equal(openAiRequest.body.max_completion_tokens, 32);
 });
 
 test("Cohere adapter converts chat payloads, responses, and model lists", () => {

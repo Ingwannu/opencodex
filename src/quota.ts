@@ -36,6 +36,7 @@ export function normalizeProvider(
   if (provider === "amazon-bedrock") return "amazon-bedrock";
   if (provider === "vertex") return "vertex";
   if (provider === "vertex-anthropic") return "vertex-anthropic";
+  if (provider === "gitlab") return "gitlab";
   if (provider === "unsupported") return "unsupported";
   return "openai";
 }
@@ -53,7 +54,8 @@ export function isRuntimeRoutableProvider(
     provider === "cohere" ||
     provider === "amazon-bedrock" ||
     provider === "vertex" ||
-    provider === "vertex-anthropic"
+    provider === "vertex-anthropic" ||
+    provider === "gitlab"
   );
 }
 

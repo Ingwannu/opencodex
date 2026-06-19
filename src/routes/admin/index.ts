@@ -90,6 +90,7 @@ function normalizeProviderAdapter(value: unknown): ProviderAdapter | undefined {
   if (value === "azure") return "azure";
   if (value === "vertex") return "vertex";
   if (value === "vertex-anthropic") return "vertex-anthropic";
+  if (value === "gitlab") return "gitlab";
   if (value === "unsupported") return "unsupported";
   return undefined;
 }

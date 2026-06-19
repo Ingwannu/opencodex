@@ -326,12 +326,13 @@ function providerAdapterFromNpm(providerId, npmPackage) {
   if (npm === "@ai-sdk/amazon-bedrock") return "amazon-bedrock";
   if (npm === "@ai-sdk/google-vertex/anthropic") return "vertex-anthropic";
   if (npm === "@ai-sdk/google-vertex") return "vertex";
+  if (npm === "gitlab-ai-provider" || npm === "@gitlab/gitlab-ai-provider") return "gitlab";
   if (npm.includes("google-vertex")) return "unsupported";
   return "unsupported";
 }
 
 function isRuntimeSupportedAdapter(adapter) {
-  return adapter === "openai" || adapter === "openai-compatible" || adapter === "mistral" || adapter === "zai" || adapter === "anthropic" || adapter === "google" || adapter === "cohere" || adapter === "amazon-bedrock" || adapter === "vertex" || adapter === "vertex-anthropic";
+  return adapter === "openai" || adapter === "openai-compatible" || adapter === "mistral" || adapter === "zai" || adapter === "anthropic" || adapter === "google" || adapter === "cohere" || adapter === "amazon-bedrock" || adapter === "vertex" || adapter === "vertex-anthropic" || adapter === "gitlab";
 }
 
 function providerForAdapter(providerId, adapter) {
@@ -381,7 +382,7 @@ function modelsDevProviderToPreset(providerId, source) {
     ((adapter !== "vertex" && adapter !== "vertex-anthropic") || Boolean(vertexBaseUrl));
   const baseUrl = adapter === "openai-compatible"
     ? normalizeOpenAiCompatibleBaseUrl(openAiCompatibleBaseUrl)
-    : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : adapter === "cohere" ? "https://api.cohere.com" : adapter === "amazon-bedrock" ? bedrockBaseUrl : adapter === "vertex" || adapter === "vertex-anthropic" ? vertexBaseUrl : undefined));
+    : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : adapter === "cohere" ? "https://api.cohere.com" : adapter === "amazon-bedrock" ? bedrockBaseUrl : adapter === "vertex" || adapter === "vertex-anthropic" ? vertexBaseUrl : adapter === "gitlab" ? "https://gitlab.com" : undefined));
   return {
     label: source?.name || id,
     provider: providerForAdapter(id, adapter),

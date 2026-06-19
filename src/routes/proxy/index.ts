@@ -70,13 +70,17 @@ import {
   sanitizeGenericChatCompletionsPayload,
 } from "../../responses/payloads.js";
 import {
+  buildGitLabDirectAccessRequest,
+  buildGitLabProviderRequest,
   buildNativeProviderModelsRequest,
   buildNativeProviderRequest,
   convertNativeProviderResponse,
+  gitLabProviderKindForModel,
   isNativeProvider,
   nativeProviderDefaultBaseUrl,
   nativeProviderModelsFromResponse,
 } from "../../provider-native.js";
+import type { NativeProviderId } from "../../provider-native.js";
 
 import { AccountStore } from "../../store.js";
 import type { OAuthConfig } from "../../oauth.js";
@@ -353,6 +357,9 @@ function accountBaseUrl(
       String(account.baseUrl ?? nativeProviderDefaultBaseUrl(provider)),
     );
   }
+  if (provider === "gitlab") {
+    return trimTrailingSlash(String(account.baseUrl ?? "https://gitlab.com"));
+  }
   if (!isRuntimeRoutableProvider(provider)) return "";
   return openaiBaseUrl;
 }
@@ -376,7 +383,8 @@ function resolveUpstreamMode(
     provider === "cohere" ||
     provider === "amazon-bedrock" ||
     provider === "vertex" ||
-    provider === "vertex-anthropic"
+    provider === "vertex-anthropic" ||
+    provider === "gitlab"
   ) {
     return "chat/completions";
   }
@@ -627,6 +635,7 @@ async function discoverModels(
       if (!isRuntimeRoutableProvider(normalizedProvider)) continue;
       const provider = normalizedProvider;
       mergeConfiguredAccountModels(byId, account, provider);
+      if (provider === "gitlab") continue;
       try {
         const headers: Record<string, string> = {
           authorization: `Bearer ${account.accessToken}`,
@@ -1647,6 +1656,7 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
             : UPSTREAM_PATH;
           let upstreamHeaders = headers;
           let upstreamBody = payloadToUpstream;
+          let nativeResponseProvider: NativeProviderId | undefined;
 
           if (candidate.provider === "mistral") {
             upstreamBaseUrl = mistralBaseUrl;
@@ -1663,6 +1673,66 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
             upstreamPath = nativeRequest.path;
             upstreamHeaders = nativeRequest.headers;
             upstreamBody = nativeRequest.body;
+            nativeResponseProvider = candidate.provider;
+          } else if (candidate.provider === "gitlab") {
+            const gitLabKind = gitLabProviderKindForModel(payloadToUpstream?.model);
+            let gitLabPayload = payloadToUpstream;
+            if (gitLabKind === "openai-responses") {
+              gitLabPayload = shouldSendChatCompletions
+                ? chatCompletionsToResponsesPayload(gitLabPayload, sessionId)
+                : normalizeResponsesPayload(req.body, sessionId);
+            } else if (!shouldSendChatCompletions) {
+              gitLabPayload = responsesToChatCompletionsPayload(gitLabPayload);
+            }
+
+            const directRequest = buildGitLabDirectAccessRequest(selected);
+            const directResponse = await fetchCodexWithRetry(
+              `${upstreamBaseUrl}${directRequest.path}`,
+              {
+                method: "POST",
+                headers: directRequest.headers,
+                body: JSON.stringify(directRequest.body),
+              },
+            );
+            const directText = await directResponse.text();
+            if (!directResponse.ok) {
+              throw new Error(
+                `gitlab direct-access ${directResponse.status}: ${directText.slice(0, 200)}`,
+              );
+            }
+            const directJson = JSON.parse(directText) as {
+              token?: unknown;
+              headers?: unknown;
+            };
+            if (typeof directJson.token !== "string" || !directJson.token.trim()) {
+              throw new Error("gitlab direct-access response did not include a token");
+            }
+            const directHeaders =
+              directJson.headers &&
+              typeof directJson.headers === "object" &&
+              !Array.isArray(directJson.headers)
+                ? Object.fromEntries(
+                    Object.entries(directJson.headers).filter(
+                      (entry): entry is [string, string] =>
+                        typeof entry[1] === "string",
+                    ),
+                  )
+                : {};
+            const gitLabRequest = buildGitLabProviderRequest(
+              {
+                token: directJson.token,
+                headers: directHeaders,
+              },
+              gitLabPayload,
+              clientRequestedStream,
+            );
+            upstreamBaseUrl = gitLabRequest.baseUrl;
+            upstreamPath = gitLabRequest.path;
+            upstreamHeaders = gitLabRequest.headers;
+            upstreamBody = gitLabRequest.body;
+            if (gitLabRequest.kind === "anthropic") {
+              nativeResponseProvider = "anthropic";
+            }
           } else if (candidate.provider === "openai-compatible") {
             upstreamPath = shouldSendChatCompletions
               ? "/v1/chat/completions"
@@ -1697,7 +1767,7 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
           const contentType = upstream.headers.get("content-type") ?? "";
           const isStream = contentType.includes("text/event-stream");
 
-          if (isNativeProvider(candidate.provider)) {
+          if (nativeResponseProvider) {
             let text = await upstream.text();
             const upstreamEmptyBody = !text;
             if (!text) {
@@ -1757,7 +1827,7 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
             }
 
             const converted = convertNativeProviderResponse(
-              candidate.provider,
+              nativeResponseProvider,
               parsed,
               shouldReturnChatCompletions ? "chat.completions" : "responses",
               req.body?.model ?? payloadToUpstream?.model ?? "unknown",

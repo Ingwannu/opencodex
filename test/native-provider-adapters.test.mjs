@@ -858,6 +858,38 @@ test("OpenCode config parser accepts JSONC trailing commas without changing stri
   );
 });
 
+test("OpenCode config strips native provider version suffixes from baseURL", async () => {
+  const payload = parseOpenCodeConfigPayload(`{
+    "provider": {
+      "anthropic": {
+        "npm": "@ai-sdk/anthropic",
+        "options": {
+          "baseURL": "https://api.anthropic.com/v1",
+          "apiKey": "ant-config-key"
+        },
+        "models": {
+          "claude-sonnet-4-5": { "name": "Claude Sonnet 4.5" }
+        }
+      }
+    }
+  }`);
+
+  const accounts = await accountsFromOpenCodeAuthPayload(
+    {},
+    {
+      providerConfig: providerConfigFromOpenCodeConfigPayload(payload),
+      providerConfigSecrets: providerSecretsFromOpenCodeConfigPayload(payload),
+    },
+  );
+  const anthropic = accounts.find((account) => account.providerId === "anthropic");
+
+  assert.equal(anthropic?.providerAdapter, "anthropic");
+  assert.equal(anthropic?.baseUrl, "https://api.anthropic.com");
+  assert.equal(anthropic?.accessToken, "ant-config-key");
+  assert.equal(anthropic?.enabled, true);
+  assert.ok(anthropic?.providerModels?.["claude-sonnet-4-5"]);
+});
+
 test("OpenCode auth import enables Amazon Bedrock through AWS credential-chain config", async () => {
   const previous = {
     AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,

@@ -246,7 +246,10 @@ function baseUrlForRegistry(
         vertexBaseUrlFromOptions(registry.providerOptions),
     );
   }
-  return normalizeBaseUrl(detectedBaseUrl || registry.baseUrl);
+  return stripNativeVersionSuffix(
+    registry.providerAdapter,
+    normalizeBaseUrl(detectedBaseUrl || registry.baseUrl),
+  );
 }
 
 type ModelProviderOverride = {
@@ -284,7 +287,7 @@ function firstProviderOverrideString(
 }
 
 function stripNativeVersionSuffix(
-  adapter: RouteProviderId,
+  adapter: ProviderAdapter,
   baseUrl: string | undefined,
 ): string | undefined {
   if (!baseUrl) return undefined;

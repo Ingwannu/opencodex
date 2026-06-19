@@ -867,6 +867,18 @@ export function normalizeOpenAiCompatibleBaseUrl(value: unknown): string | undef
   return normalized.replace(/\/v1$/i, "");
 }
 
+function normalizeNativeProviderBaseUrl(
+  adapter: ProviderAdapter,
+  value: unknown,
+): string | undefined {
+  const normalized = normalizeBaseUrl(value);
+  if (!normalized) return undefined;
+  if (adapter === "anthropic") return normalized.replace(/\/v1$/i, "");
+  if (adapter === "google") return normalized.replace(/\/v1(?:beta)?$/i, "");
+  if (adapter === "cohere") return normalized.replace(/\/v2$/i, "");
+  return normalized;
+}
+
 export function providerAdapterFromNpm(
   providerId: string,
   npmPackage?: string,
@@ -1034,7 +1046,8 @@ export function providerRegistryEntryFromMetadata(
   const baseUrl =
     adapter === "openai-compatible"
       ? normalizeOpenAiCompatibleBaseUrl(openAiCompatibleBaseUrl)
-      : normalizeBaseUrl(
+      : normalizeNativeProviderBaseUrl(
+          adapter,
           source.api ??
             (adapter === "anthropic"
               ? "https://api.anthropic.com"
@@ -1214,7 +1227,10 @@ export async function resolveProviderRegistryEntry(
       baseUrl:
         found.providerAdapter === "openai-compatible"
           ? normalizeOpenAiCompatibleBaseUrl(baseUrl || found.baseUrl)
-          : normalizeBaseUrl(baseUrl || found.baseUrl),
+          : normalizeNativeProviderBaseUrl(
+              found.providerAdapter,
+              baseUrl || found.baseUrl,
+            ),
       providerSource:
         found.providerSource === "builtin" ? "builtin" : "models.dev",
     };

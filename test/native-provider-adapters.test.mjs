@@ -1342,6 +1342,10 @@ test("OpenCode directory OpenAI-compatible providers have offline runtime defaul
     ovhcloud: "https://oai.endpoints.kepler.ai.cloud.ovh.net",
     scaleway: "https://api.scaleway.ai",
     stackit: "https://api.openai-compat.model-serving.eu01.onstackit.cloud",
+    xiaomi: "https://api.xiaomimimo.com",
+    "xiaomi-token-plan-ams": "https://token-plan-ams.xiaomimimo.com",
+    "xiaomi-token-plan-cn": "https://token-plan-cn.xiaomimimo.com",
+    "xiaomi-token-plan-sgp": "https://token-plan-sgp.xiaomimimo.com",
     zenmux: "https://zenmux.ai/api",
   };
   const output = execFileSync(
@@ -2496,6 +2500,16 @@ test("OpenCode config imports ordinary bundled OpenAI-compatible SDK packages", 
         "models": {
           "v0-1.5-md": { "name": "v0 1.5 MD" }
         }
+      },
+      "custom-responses": {
+        "npm": "@ai-sdk/openai",
+        "options": {
+          "baseURL": "https://responses.example/v1",
+          "apiKey": "responses-secret"
+        },
+        "models": {
+          "response-model": { "name": "Response Model" }
+        }
       }
     }
   }`);
@@ -2561,6 +2575,14 @@ test("OpenCode config imports ordinary bundled OpenAI-compatible SDK packages", 
   assert.equal(byId.get("custom-vercel-v0")?.accessToken, "vercel-secret");
   assert.equal(byId.get("custom-vercel-v0")?.enabled, true);
   assert.ok(byId.get("custom-vercel-v0")?.providerModels?.["v0-1.5-md"]);
+
+  assert.equal(byId.get("custom-responses")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("custom-responses")?.baseUrl, "https://responses.example");
+  assert.equal(byId.get("custom-responses")?.accessToken, "responses-secret");
+  assert.equal(byId.get("custom-responses")?.upstreamMode, "responses");
+  assert.equal(byId.get("custom-responses")?.compatibilityMode, "responses");
+  assert.equal(byId.get("custom-responses")?.enabled, true);
+  assert.ok(byId.get("custom-responses")?.providerModels?.["response-model"]);
 });
 
 test("OpenCode auth import enables OpenAI-compatible SDK providers", async () => {

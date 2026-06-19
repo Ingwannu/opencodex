@@ -414,7 +414,7 @@ const PROVIDER_ALIASES: Record<string, string> = {
 };
 
 type OpenAiCompatibleProviderDefault = {
-  baseUrl: string;
+  baseUrl?: string;
   label?: string;
   tokenEnv?: string[];
   providerDoc?: string;
@@ -517,6 +517,26 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     baseUrl: "https://api.openai-compat.model-serving.eu01.onstackit.cloud/v1",
     tokenEnv: ["STACKIT_API_KEY"],
   },
+  xiaomi: {
+    label: "Xiaomi",
+    baseUrl: "https://api.xiaomimimo.com/v1",
+    tokenEnv: ["XIAOMI_API_KEY"],
+  },
+  "xiaomi-token-plan-ams": {
+    label: "Xiaomi Token Plan (Europe)",
+    baseUrl: "https://token-plan-ams.xiaomimimo.com/v1",
+    tokenEnv: ["XIAOMI_API_KEY"],
+  },
+  "xiaomi-token-plan-cn": {
+    label: "Xiaomi Token Plan (China)",
+    baseUrl: "https://token-plan-cn.xiaomimimo.com/v1",
+    tokenEnv: ["XIAOMI_API_KEY"],
+  },
+  "xiaomi-token-plan-sgp": {
+    label: "Xiaomi Token Plan (Singapore)",
+    baseUrl: "https://token-plan-sgp.xiaomimimo.com/v1",
+    tokenEnv: ["XIAOMI_API_KEY"],
+  },
   xai: { baseUrl: "https://api.x.ai" },
   groq: { baseUrl: "https://api.groq.com/openai" },
   deepinfra: { baseUrl: "https://api.deepinfra.com/v1/openai" },
@@ -548,6 +568,10 @@ const OPENAI_COMPATIBLE_SDK_PACKAGE_DEFAULTS: Record<
   string,
   OpenAiCompatibleProviderDefault
 > = {
+  "@ai-sdk/openai": {
+    upstreamMode: "responses",
+    compatibilityMode: "responses",
+  },
   "@ai-sdk/alibaba": {
     baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
   },

@@ -723,34 +723,44 @@ export function AccountsTab(props: Props) {
           </div>
         </div>
         <div className="opencode-import-bar">
-          <label className="compact-field">
-            OpenCode auth path
+          <div className="compact-field">
+            <label htmlFor="opencode-auth-path">OpenCode auth path</label>
             <input
+              id="opencode-auth-path"
               value={openCodeAuthPath}
               onChange={(e) => setOpenCodeAuthPath(e.target.value)}
               placeholder="Default OpenCode auth.json"
             />
+            <label htmlFor="opencode-auth-content">
+              OpenCode auth content
+            </label>
             <textarea
+              id="opencode-auth-content"
               rows={3}
               value={openCodeAuthContent}
               onChange={(e) => setOpenCodeAuthContent(e.target.value)}
               placeholder="Or paste auth.json content"
             />
-          </label>
-          <label className="compact-field">
-            OpenCode config path
+          </div>
+          <div className="compact-field">
+            <label htmlFor="opencode-config-path">OpenCode config path</label>
             <input
+              id="opencode-config-path"
               value={openCodeConfigPath}
               onChange={(e) => setOpenCodeConfigPath(e.target.value)}
               placeholder="Optional opencode.json or opencode.jsonc"
             />
+            <label htmlFor="opencode-config-content">
+              OpenCode config content
+            </label>
             <textarea
+              id="opencode-config-content"
               rows={3}
               value={openCodeConfigContent}
               onChange={(e) => setOpenCodeConfigContent(e.target.value)}
               placeholder="Or paste opencode.jsonc content"
             />
-          </label>
+          </div>
           <button
             className="btn secondary"
             disabled={isImportingOpenCode}

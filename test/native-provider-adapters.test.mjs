@@ -1058,6 +1058,70 @@ test("OpenAI-compatible SDK providers are runtime-routable through the bridge", 
   assert.ok(perplexity.models?.["sonar-pro"]);
 });
 
+test("OpenCode directory OpenAI-compatible providers have offline runtime defaults", () => {
+  const expected = {
+    "302ai": "https://api.302.ai",
+    cortecs: "https://api.cortecs.ai",
+    deepseek: "https://api.deepseek.com",
+    "fireworks-ai": "https://api.fireworks.ai/inference",
+    huggingface: "https://router.huggingface.co",
+    helicone: "https://ai-gateway.helicone.ai",
+    "io-net": "https://api.intelligence.io.solutions/api",
+    llmgateway: "https://api.llmgateway.io",
+    moonshotai: "https://api.moonshot.ai",
+    "moonshotai-cn": "https://api.moonshot.cn",
+    nvidia: "https://integrate.api.nvidia.com",
+    nebius: "https://api.tokenfactory.nebius.com",
+    "ollama-cloud": "https://ollama.com",
+    opencode: "https://opencode.ai/zen",
+    "opencode-go": "https://opencode.ai/zen/go",
+    ovhcloud: "https://oai.endpoints.kepler.ai.cloud.ovh.net",
+    scaleway: "https://api.scaleway.ai",
+    stackit: "https://api.openai-compat.model-serving.eu01.onstackit.cloud",
+    zenmux: "https://zenmux.ai/api",
+  };
+  const output = execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `const { resolveProviderRegistryEntry } = await import("./dist/provider-registry.js");
+const expected = ${JSON.stringify(expected)};
+const out = {};
+for (const providerId of Object.keys(expected)) {
+  const entry = await resolveProviderRegistryEntry(providerId);
+  out[providerId] = {
+    providerAdapter: entry.providerAdapter,
+    runtimeSupported: entry.runtimeSupported,
+    baseUrl: entry.baseUrl,
+    compatibilityMode: entry.compatibilityMode,
+  };
+}
+console.log(JSON.stringify(out));`,
+    ],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MODELS_DEV_API_URL: "data:application/json,{}",
+      },
+      encoding: "utf8",
+    },
+  );
+  const entries = JSON.parse(output);
+
+  for (const [providerId, baseUrl] of Object.entries(expected)) {
+    assert.equal(entries[providerId]?.providerAdapter, "openai-compatible", providerId);
+    assert.equal(entries[providerId]?.runtimeSupported, true, providerId);
+    assert.equal(entries[providerId]?.baseUrl, baseUrl, providerId);
+    assert.equal(
+      entries[providerId]?.compatibilityMode,
+      "chat-completions-bridge",
+      providerId,
+    );
+  }
+});
+
 test("built-in registry entries preserve Models.dev model metadata", () => {
   const api = `data:application/json,${encodeURIComponent(JSON.stringify({
     anthropic: {

@@ -357,23 +357,123 @@ const BUILTIN_PROVIDERS: ProviderRegistryEntry[] = [
 ];
 
 const PROVIDER_ALIASES: Record<string, string> = {
+  "302.ai": "302ai",
+  "302-ai": "302ai",
   chatgpt: "openai-chatgpt",
+  "io.net": "io-net",
+  "llm-gateway": "llmgateway",
   openai: "openai-api",
   "openai-responses": "openai-api",
+  "opencode-zen": "opencode",
   "z.ai": "zai",
   zaiorg: "zai",
   zhipu: "zai",
 };
 
+type OpenAiCompatibleProviderDefault = {
+  baseUrl: string;
+  label?: string;
+  tokenEnv?: string[];
+  providerDoc?: string;
+  openAiPathPrefix?: OpenAiPathPrefix;
+  upstreamMode?: UpstreamMode;
+  compatibilityMode?: CompatibilityMode;
+};
+
 const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
   string,
-  {
-    baseUrl: string;
-    openAiPathPrefix?: OpenAiPathPrefix;
-    upstreamMode?: UpstreamMode;
-    compatibilityMode?: CompatibilityMode;
-  }
+  OpenAiCompatibleProviderDefault
 > = {
+  "302ai": {
+    label: "302.AI",
+    baseUrl: "https://api.302.ai/v1",
+    tokenEnv: ["302AI_API_KEY"],
+  },
+  cortecs: {
+    label: "Cortecs",
+    baseUrl: "https://api.cortecs.ai/v1",
+    tokenEnv: ["CORTECS_API_KEY"],
+  },
+  deepseek: {
+    label: "DeepSeek",
+    baseUrl: "https://api.deepseek.com",
+    tokenEnv: ["DEEPSEEK_API_KEY"],
+  },
+  "fireworks-ai": {
+    label: "Fireworks AI",
+    baseUrl: "https://api.fireworks.ai/inference/v1/",
+    tokenEnv: ["FIREWORKS_API_KEY"],
+  },
+  huggingface: {
+    label: "Hugging Face",
+    baseUrl: "https://router.huggingface.co/v1",
+    tokenEnv: ["HF_TOKEN"],
+  },
+  helicone: {
+    label: "Helicone",
+    baseUrl: "https://ai-gateway.helicone.ai/v1",
+    tokenEnv: ["HELICONE_API_KEY"],
+  },
+  "io-net": {
+    label: "IO.NET",
+    baseUrl: "https://api.intelligence.io.solutions/api/v1",
+    tokenEnv: ["IOINTELLIGENCE_API_KEY"],
+  },
+  llmgateway: {
+    label: "LLM Gateway",
+    baseUrl: "https://api.llmgateway.io/v1",
+    tokenEnv: ["LLMGATEWAY_API_KEY"],
+  },
+  moonshotai: {
+    label: "Moonshot AI",
+    baseUrl: "https://api.moonshot.ai/v1",
+    tokenEnv: ["MOONSHOT_API_KEY"],
+  },
+  "moonshotai-cn": {
+    label: "Moonshot AI (China)",
+    baseUrl: "https://api.moonshot.cn/v1",
+    tokenEnv: ["MOONSHOT_API_KEY"],
+  },
+  nvidia: {
+    label: "NVIDIA",
+    baseUrl: "https://integrate.api.nvidia.com/v1",
+    tokenEnv: ["NVIDIA_API_KEY"],
+  },
+  nebius: {
+    label: "Nebius Token Factory",
+    baseUrl: "https://api.tokenfactory.nebius.com/v1",
+    tokenEnv: ["NEBIUS_API_KEY"],
+  },
+  "ollama-cloud": {
+    label: "Ollama Cloud",
+    baseUrl: "https://ollama.com/v1",
+    tokenEnv: ["OLLAMA_API_KEY"],
+  },
+  opencode: {
+    label: "OpenCode Zen",
+    baseUrl: "https://opencode.ai/zen/v1",
+    tokenEnv: ["OPENCODE_API_KEY"],
+  },
+  "opencode-go": {
+    label: "OpenCode Go",
+    baseUrl: "https://opencode.ai/zen/go/v1",
+    tokenEnv: ["OPENCODE_API_KEY"],
+  },
+  ovhcloud: {
+    label: "OVHcloud AI Endpoints",
+    baseUrl: "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
+    tokenEnv: ["OVHCLOUD_API_KEY"],
+  },
+  scaleway: {
+    label: "Scaleway",
+    baseUrl: "https://api.scaleway.ai/v1",
+    tokenEnv: ["SCALEWAY_API_KEY"],
+  },
+  stackit: {
+    label: "STACKIT",
+    baseUrl: "https://api.openai-compat.model-serving.eu01.onstackit.cloud/v1",
+    tokenEnv: ["STACKIT_API_KEY"],
+  },
   xai: { baseUrl: "https://api.x.ai" },
   groq: { baseUrl: "https://api.groq.com/openai" },
   deepinfra: { baseUrl: "https://api.deepinfra.com/v1/openai" },
@@ -395,6 +495,11 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
   aihubmix: { baseUrl: "https://aihubmix.com/v1" },
   "merge-gateway": { baseUrl: "https://api-gateway.merge.dev/v1/openai" },
   v0: { baseUrl: "https://api.v0.dev/v1" },
+  zenmux: {
+    label: "ZenMux",
+    baseUrl: "https://zenmux.ai/api/v1",
+    tokenEnv: ["ZENMUX_API_KEY"],
+  },
 };
 
 function firstStringValue(
@@ -1006,7 +1111,7 @@ function providerForAdapter(
 export function providerRegistryEntryFromMetadata(
   providerId: string,
   source: ModelsDevProvider,
-  providerSource: "models.dev" | "manual" = "models.dev",
+  providerSource: "builtin" | "models.dev" | "manual" = "models.dev",
 ): ProviderRegistryEntry {
   const id = sanitizeProviderId(source.id || providerId);
   const openAiCompatibleDefault = OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS[id];
@@ -1131,6 +1236,27 @@ export function providerRegistryEntryFromMetadata(
   };
 }
 
+function fallbackOpenAiCompatibleRegistryEntry(
+  providerId: string,
+): ProviderRegistryEntry | undefined {
+  const id = sanitizeProviderId(providerId);
+  const defaults = OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS[id];
+  if (!defaults) return undefined;
+
+  return providerRegistryEntryFromMetadata(
+    id,
+    {
+      id,
+      name: defaults.label ?? id,
+      npm: "@ai-sdk/openai-compatible",
+      api: defaults.baseUrl,
+      env: defaults.tokenEnv ?? [],
+      doc: defaults.providerDoc ?? "https://opencode.ai/docs/providers/",
+    },
+    "builtin",
+  );
+}
+
 function builtinMap(): Map<string, ProviderRegistryEntry> {
   return new Map(BUILTIN_PROVIDERS.map((entry) => [entry.id, entry]));
 }
@@ -1200,6 +1326,11 @@ export async function listProviderRegistry(): Promise<ProviderRegistryEntry[]> {
   for (const [id, entry] of builtinMap()) {
     merged.set(id, mergeBuiltinWithModelsDevEntry(entry, merged.get(id)));
   }
+  for (const id of Object.keys(OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS)) {
+    if (merged.has(id)) continue;
+    const fallback = fallbackOpenAiCompatibleRegistryEntry(id);
+    if (fallback) merged.set(id, fallback);
+  }
   return Array.from(merged.values()).sort((a, b) =>
     a.label.localeCompare(b.label),
   );
@@ -1219,7 +1350,8 @@ export async function resolveProviderRegistryEntry(
   const builtin = builtins.get(canonicalId);
   const found = builtin
     ? mergeBuiltinWithModelsDevEntry(builtin, modelsDev.get(canonicalId))
-    : modelsDev.get(canonicalId);
+    : (modelsDev.get(canonicalId) ??
+      fallbackOpenAiCompatibleRegistryEntry(canonicalId));
 
   if (found) {
     return {

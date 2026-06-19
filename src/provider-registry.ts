@@ -1111,6 +1111,10 @@ const OPENAI_COMPATIBLE_SDK_PACKAGE_DEFAULTS: Record<
   "@ai-sdk/cerebras": { baseUrl: "https://api.cerebras.ai/v1" },
   "@ai-sdk/deepinfra": { baseUrl: "https://api.deepinfra.com/v1/openai" },
   "@ai-sdk/groq": { baseUrl: "https://api.groq.com/openai/v1" },
+  "@ai-sdk/github-copilot": {
+    baseUrl: "https://api.githubcopilot.com",
+    tokenEnv: ["GITHUB_TOKEN"],
+  },
   "@ai-sdk/perplexity": {
     baseUrl: "https://api.perplexity.ai",
     openAiPathPrefix: "none",
@@ -1226,6 +1230,24 @@ function providerRuntimeOptionsFromSource(
     out.setCacheKey = options.setCacheKey;
   }
   return Object.keys(out).length ? out : undefined;
+}
+
+function normalizeGithubEnterpriseDomain(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const raw = value.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+  return raw || undefined;
+}
+
+function githubCopilotBaseUrlFromOptions(
+  options: Record<string, unknown> | undefined,
+  fallback = "https://api.githubcopilot.com",
+): string {
+  const enterpriseUrl =
+    normalizeGithubEnterpriseDomain(options?.enterpriseUrl) ??
+    normalizeGithubEnterpriseDomain(options?.enterprise_url) ??
+    normalizeGithubEnterpriseDomain(options?.githubEnterpriseUrl) ??
+    normalizeGithubEnterpriseDomain(options?.github_enterprise_url);
+  return enterpriseUrl ? `https://copilot-api.${enterpriseUrl}` : fallback;
 }
 
 function tokenEnvHasSecret(
@@ -1778,6 +1800,7 @@ export function providerAdapterFromNpm(
   if (npm === "@ai-sdk/openai" || npm.includes("openai-compatible")) {
     return "openai-compatible";
   }
+  if (npm === "@ai-sdk/github-copilot") return "openai-compatible";
   if (npm === "@openrouter/ai-sdk-provider") return "openai-compatible";
   if (npm === "@ai-sdk/mistral") return "mistral";
   if (npm === "@ai-sdk/anthropic") return "anthropic";
@@ -1875,6 +1898,9 @@ function tokenEnvForProvider(
       "CLOUDFLARE_GATEWAY_ID",
     ];
   }
+  if (providerId === "github-copilot") {
+    return ["GITHUB_TOKEN", "GITHUB_COPILOT_TOKEN"];
+  }
   if (providerId === "sap-ai-core" || adapter === "sap-ai-core") {
     return ["AICORE_SERVICE_KEY"];
   }
@@ -1924,8 +1950,14 @@ export function providerRegistryEntryFromMetadata(
     String(source.npm ?? "").trim().toLowerCase() === "@ai-sdk/gateway"
       ? (source.api ?? DEFAULT_GATEWAY_BASE_URL)
       : undefined;
+  const githubCopilotBaseUrl =
+    id === "github-copilot" ||
+    String(source.npm ?? "").trim().toLowerCase() === "@ai-sdk/github-copilot"
+      ? githubCopilotBaseUrlFromOptions(source.options, source.api)
+      : undefined;
   const openAiCompatibleBaseUrl =
     source.api ??
+    githubCopilotBaseUrl ??
     openAiCompatibleDefault?.baseUrl ??
     cloudflareAiGatewayBaseUrl ??
     cloudflareWorkersAiBaseUrl ??

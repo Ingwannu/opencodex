@@ -2683,6 +2683,49 @@ test("OpenCode auth import derives env-templated endpoints from credential metad
   }
 });
 
+test("OpenCode auth import enables GitHub Copilot OAuth and enterprise routing", async () => {
+  const payload = parseOpenCodeConfigPayload(`{
+    "provider": {
+      "github-copilot": {
+        "npm": "@ai-sdk/github-copilot",
+        "options": {
+          "enterpriseUrl": "https://ghe.example.com"
+        },
+        "models": {
+          "gpt-5.1-codex": { "name": "GPT 5.1 Codex" }
+        }
+      }
+    }
+  }`);
+  const accounts = await accountsFromOpenCodeAuthPayload(
+    {
+      "github-copilot": {
+        type: "oauth",
+        access: "copilot-access-token",
+        refresh: "copilot-refresh-token",
+        expires: 0,
+        enterpriseUrl: "https://ghe.example.com",
+      },
+    },
+    {
+      providerConfig: providerConfigFromOpenCodeConfigPayload(payload),
+      providerConfigSecrets: providerSecretsFromOpenCodeConfigPayload(payload),
+    },
+  );
+  const copilot = accounts.find((account) => account.providerId === "github-copilot");
+
+  assert.equal(copilot?.providerAdapter, "openai-compatible");
+  assert.equal(copilot?.providerNpm, "@ai-sdk/github-copilot");
+  assert.equal(copilot?.providerAuthType, "oauth");
+  assert.equal(copilot?.accessToken, "copilot-refresh-token");
+  assert.equal(copilot?.refreshToken, "copilot-refresh-token");
+  assert.equal(copilot?.expiresAt, 0);
+  assert.equal(copilot?.baseUrl, "https://copilot-api.ghe.example.com");
+  assert.equal(copilot?.providerOptions?.enterpriseUrl, "ghe.example.com");
+  assert.equal(copilot?.enabled, true);
+  assert.ok(copilot?.providerModels?.["gpt-5.1-codex"]);
+});
+
 test("OpenCode auth import preserves configured model metadata", async () => {
   const config = new Map([
     [

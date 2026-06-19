@@ -178,6 +178,13 @@ function openCodeCredentialFields(value: unknown): OpenCodeCredentialFields {
   return {};
 }
 
+function githubCopilotCredentialToken(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  if (source.type !== "oauth") return undefined;
+  return secretStringFromValue(source.refresh) ?? secretStringFromValue(source.access);
+}
+
 function findSecretInHeaders(value: unknown): string | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const headers = value as Record<string, unknown>;
@@ -595,12 +602,33 @@ function credentialMetadataOptions(value: unknown): Record<string, unknown> | un
     "vertex_location",
     "googleVertexLocation",
     "google_vertex_location",
+    "enterpriseUrl",
+    "enterprise_url",
+    "githubEnterpriseUrl",
+    "github_enterprise_url",
   ]) {
     if (typeof source[key] === "string" && source[key].trim()) {
       out[key] = source[key];
     }
   }
   return Object.keys(out).length ? out : undefined;
+}
+
+function normalizeGithubEnterpriseDomain(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const raw = value.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+  return raw || undefined;
+}
+
+function githubCopilotBaseUrlFromOptions(
+  options: Record<string, unknown> | undefined,
+): string | undefined {
+  const enterpriseUrl =
+    normalizeGithubEnterpriseDomain(options?.enterpriseUrl) ??
+    normalizeGithubEnterpriseDomain(options?.enterprise_url) ??
+    normalizeGithubEnterpriseDomain(options?.githubEnterpriseUrl) ??
+    normalizeGithubEnterpriseDomain(options?.github_enterprise_url);
+  return enterpriseUrl ? `https://copilot-api.${enterpriseUrl}` : undefined;
 }
 
 function detectedBaseUrlForAuthEntry(
@@ -623,6 +651,8 @@ function detectedBaseUrlForAuthEntry(
           ? snowflakeCortexBaseUrlFromOptions(metadataOptions)
         : id === "google-vertex" || id === "google-vertex-anthropic"
           ? vertexBaseUrlFromOptions(metadataOptions)
+        : id === "github-copilot"
+          ? githubCopilotBaseUrlFromOptions(metadataOptions)
         : undefined) ??
     azureOpenAiBaseUrlFromOptions(providerId, metadataOptions)
   );
@@ -650,9 +680,20 @@ function providerOptionsForAuthEntry(
     id === "cloudflare-ai-gateway" || id === "cloudflare-workers-ai"
       ? gatewayIdFromOptions(credentialMetadataOptions(body))
       : undefined;
+  const metadataOptions = credentialMetadataOptions(body);
+  const enterpriseUrl =
+    id === "github-copilot"
+      ? normalizeGithubEnterpriseDomain(
+          metadataOptions?.enterpriseUrl ??
+            metadataOptions?.enterprise_url ??
+            metadataOptions?.githubEnterpriseUrl ??
+            metadataOptions?.github_enterprise_url,
+        )
+      : undefined;
   const merged = {
     ...base,
     ...(gatewayId ? { gatewayId } : {}),
+    ...(enterpriseUrl ? { enterpriseUrl } : {}),
   };
   return Object.keys(merged).length ? merged : undefined;
 }
@@ -786,8 +827,12 @@ export async function accountsFromOpenCodeAuthPayload(
         baseUrl: detectedBaseUrl,
       }));
     const credential = openCodeCredentialFields(body);
+    const credentialToken =
+      providerKey === "github-copilot"
+        ? githubCopilotCredentialToken(body) ?? credential.accessToken
+        : credential.accessToken;
     const token =
-      credential.accessToken ??
+      credentialToken ??
       findSecretInObject(body) ??
       options.providerConfigSecrets?.get(providerKey) ??
       envSecretForProvider(providerKey, registry) ??

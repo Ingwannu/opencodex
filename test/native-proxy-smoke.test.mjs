@@ -1676,6 +1676,91 @@ test("proxy routes v0 through OpenAI-compatible chat completions", async () => {
   }
 });
 
+test("proxy routes GitHub Copilot with OpenCode-compatible headers", async () => {
+  let capturedModelsHeaders;
+  let capturedChatHeaders;
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      capturedModelsHeaders = req.headers;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "gpt-5.1-codex" }] }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/chat/completions") {
+      capturedChatHeaders = req.headers;
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl-copilot",
+          object: "chat.completion",
+          created: 1,
+          model: "gpt-5.1-codex",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Copilot OK" },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "github-copilot-smoke",
+          provider: "openai-compatible",
+          providerId: "github-copilot",
+          providerAdapter: "openai-compatible",
+          providerNpm: "@ai-sdk/github-copilot",
+          providerAuthType: "oauth",
+          accessToken: "copilot-refresh-token",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "gpt-5.1-codex",
+            messages: [{ role: "user", content: "Hello" }],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.choices[0].message.content, "Copilot OK");
+        assert.equal(
+          capturedModelsHeaders.authorization,
+          "Bearer copilot-refresh-token",
+        );
+        assert.equal(
+          capturedChatHeaders.authorization,
+          "Bearer copilot-refresh-token",
+        );
+        assert.equal(capturedChatHeaders["x-github-api-version"], "2026-06-01");
+        assert.equal(capturedChatHeaders["openai-intent"], "conversation-edits");
+        assert.equal(capturedChatHeaders["x-initiator"], "user");
+        assert.ok(capturedChatHeaders["user-agent"]?.includes("pi ("));
+        assert.equal(capturedRequest.model, "gpt-5.1-codex");
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy routes Amazon Bedrock chat completions through Converse API", async () => {
   let capturedRequest;
   let capturedAuthorization;

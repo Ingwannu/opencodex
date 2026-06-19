@@ -218,6 +218,10 @@ OpenCodex can route providers that map to the current runtime adapters:
 - Azure OpenAI v1 endpoints when `AZURE_RESOURCE_NAME` or an equivalent
   OpenCode `resourceName` / `baseURL` provider option is available; requests use
   Azure's `api-key` header and `/openai/v1` API shape
+- GitHub Copilot subscription credentials imported from OpenCode OAuth entries,
+  including GitHub Enterprise `enterpriseUrl` routing to
+  `https://copilot-api.<enterprise-domain>` and Copilot-specific upstream
+  headers required by OpenCode's `@ai-sdk/github-copilot` provider
 - GitLab Duo agentic chat models by exchanging `GITLAB_TOKEN`/OpenCode GitLab
   auth for a third-party agent direct-access token, then routing Claude models
   through GitLab's Anthropic AI Gateway proxy and GPT models through GitLab's

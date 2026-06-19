@@ -354,6 +354,10 @@ function isAzureOpenAiAccount(account: { providerId?: string }): boolean {
   return providerId === "azure" || providerId === "azure-cognitive-services";
 }
 
+function isGithubCopilotAccount(account: { providerId?: string }): boolean {
+  return String(account.providerId ?? "").toLowerCase() === "github-copilot";
+}
+
 function isSnowflakeCortexAccount(account: { providerId?: string }): boolean {
   return String(account.providerId ?? "").toLowerCase() === "snowflake-cortex";
 }
@@ -387,6 +391,12 @@ function applyOpenAiCompatibleAuthHeaders(
   } else if (isAzureOpenAiAccount(account)) {
     delete headers.authorization;
     headers["api-key"] = account.accessToken;
+  } else if (isGithubCopilotAccount(account)) {
+    headers.authorization = `Bearer ${account.accessToken}`;
+    headers["User-Agent"] = PI_USER_AGENT;
+    headers["X-GitHub-Api-Version"] = "2026-06-01";
+    headers["Openai-Intent"] = "conversation-edits";
+    headers["x-initiator"] = "user";
   }
   applyProviderOptionHeaders(headers, account);
   return headers;

@@ -196,6 +196,46 @@ test("admin patch promotes an OpenCode auth-only OpenAI-compatible account to ro
   }
 });
 
+test("admin account creation derives native provider endpoints from provider options", async () => {
+  const { store, server, baseUrl } = await createAdminFixture();
+  try {
+    const res = await fetch(`${baseUrl}/accounts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "bedrock-from-ui",
+        provider: "amazon-bedrock",
+        providerId: "amazon-bedrock",
+        providerAdapter: "amazon-bedrock",
+        providerAuthType: "api-key",
+        providerOptions: { region: "eu-west-1" },
+        accessToken: "bedrock-token",
+        enabled: true,
+      }),
+    });
+    const payload = await res.json();
+
+    assert.equal(res.status, 200, JSON.stringify(payload));
+    assert.equal(payload.ok, true);
+    assert.equal(
+      payload.account.baseUrl,
+      "https://bedrock-runtime.eu-west-1.amazonaws.com",
+    );
+    assert.deepEqual(payload.account.providerOptions, { region: "eu-west-1" });
+
+    const stored = (await store.listAccounts()).find(
+      (account) => account.id === "bedrock-from-ui",
+    );
+    assert.equal(
+      stored?.baseUrl,
+      "https://bedrock-runtime.eu-west-1.amazonaws.com",
+    );
+    assert.deepEqual(stored?.providerOptions, { region: "eu-west-1" });
+  } finally {
+    await closeServer(server);
+  }
+});
+
 test("admin OpenCode import reads current opencode.db credential records", async (t) => {
   const { store, server, baseUrl } = await createAdminFixture();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-admin-db-"));

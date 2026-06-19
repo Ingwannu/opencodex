@@ -12,6 +12,7 @@ import {
   isAuthOnlyAccount,
   normalizeOpenCodeImportOptions,
   parseProviderOptionsInput,
+  providerOptionsCanDeriveEndpoint,
 } from "../../lib/account-ui";
 import { fmt, maskEmail, maskId } from "../../lib/ui";
 
@@ -213,9 +214,24 @@ export function AccountsTab(props: Props) {
   const manualProviderOptionsError = providerOptionsError(
     manualProviderOptionsJson,
   );
+  const manualProviderOptionsEndpoint =
+    !manualProviderOptionsError &&
+    providerOptionsCanDeriveEndpoint(
+      selectedProvider?.providerId ?? provider,
+      selectedProvider?.providerAdapter ?? provider,
+      manualProviderOptionsJson,
+    );
   const editingProviderOptionsError = editingAccount
     ? providerOptionsError(editingAccount.providerOptionsJson)
     : "";
+  const editingProviderOptionsEndpoint =
+    editingAccount &&
+    !editingProviderOptionsError &&
+    providerOptionsCanDeriveEndpoint(
+      editingAccount.provider,
+      editingAccount.providerAdapter ?? editingAccount.provider,
+      editingAccount.providerOptionsJson,
+    );
 
   useEffect(() => {
     const closeMenu = () => setOpenMenu(null);
@@ -353,7 +369,12 @@ export function AccountsTab(props: Props) {
 
     const authless = isAuthlessProvider(selectedProvider);
     if (!authless && !manualAccessToken.trim()) return;
-    if (isOpenAiCompatibleProvider(provider, selectedProvider) && !manualBaseUrl.trim()) return;
+    if (
+      isOpenAiCompatibleProvider(provider, selectedProvider) &&
+      !manualBaseUrl.trim() &&
+      !manualProviderOptionsEndpoint
+    )
+      return;
     const providerOptions = parseProviderOptionsInput(manualProviderOptionsJson);
     setIsSubmitting(true);
     try {
@@ -458,7 +479,8 @@ export function AccountsTab(props: Props) {
     if (!authless && !editingAccount.accessToken.trim()) return;
     if (
       editingAccount.providerAdapter === "openai-compatible" &&
-      !editingAccount.baseUrl.trim()
+      !editingAccount.baseUrl.trim() &&
+      !editingProviderOptionsEndpoint
     )
       return;
     const providerOptions = parseProviderOptionsInput(
@@ -1188,7 +1210,8 @@ export function AccountsTab(props: Props) {
                         !manualAccessToken.trim()) ||
                       Boolean(manualProviderOptionsError) ||
                       (isOpenAiCompatibleProvider(provider, selectedProvider) &&
-                        !manualBaseUrl.trim()))
+                        !manualBaseUrl.trim() &&
+                        !manualProviderOptionsEndpoint))
                 }
                 onClick={() => void submitManualAccount()}
               >
@@ -1377,7 +1400,8 @@ export function AccountsTab(props: Props) {
                         !editingAccount.accessToken.trim()) ||
                       Boolean(editingProviderOptionsError) ||
                       (editingAccount.providerAdapter === "openai-compatible" &&
-                        !editingAccount.baseUrl.trim()))
+                        !editingAccount.baseUrl.trim() &&
+                        !editingProviderOptionsEndpoint))
                 }
                 onClick={() => void saveEditedAccount()}
               >

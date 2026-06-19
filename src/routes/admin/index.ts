@@ -19,8 +19,14 @@ import {
   isRuntimeRoutableProvider,
 } from "../../quota.js";
 import {
+  amazonBedrockBaseUrlFromOptions,
+  azureOpenAiBaseUrlFromOptions,
+  cloudflareAiGatewayBaseUrlFromOptions,
+  cloudflareWorkersAiBaseUrlFromOptions,
   listProviderRegistry,
   normalizeOpenAiCompatibleBaseUrl,
+  sapAiCoreBaseUrlFromOptions,
+  vertexBaseUrlFromOptions,
 } from "../../provider-registry.js";
 import {
   accountsFromOpenCodeAuthPayload,
@@ -105,6 +111,88 @@ function normalizeProviderAuthType(value: unknown): ProviderAuthType | undefined
   if (value === "api-key") return "api-key";
   if (value === "none") return "none";
   return undefined;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function optionString(
+  source: Record<string, unknown> | undefined,
+  keys: string[],
+): string | undefined {
+  if (!source) return undefined;
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function genericBaseUrlFromProviderOptions(
+  options: Record<string, unknown> | undefined,
+): string | undefined {
+  const found = optionString(options, [
+    "baseURL",
+    "baseUrl",
+    "base_url",
+    "url",
+    "endpoint",
+  ]);
+  return found && /^https?:\/\//.test(found) ? found : undefined;
+}
+
+function providerOptionsBaseUrl(
+  providerId: string,
+  providerAdapter: ProviderAdapter,
+  providerOptions: Record<string, unknown> | undefined,
+): string | undefined {
+  if (providerAdapter === "amazon-bedrock") {
+    return amazonBedrockBaseUrlFromOptions(providerOptions);
+  }
+  if (providerAdapter === "vertex" || providerAdapter === "vertex-anthropic") {
+    return vertexBaseUrlFromOptions(providerOptions);
+  }
+  if (providerAdapter === "sap-ai-core") {
+    return sapAiCoreBaseUrlFromOptions(providerOptions);
+  }
+  if (providerAdapter === "openai-compatible") {
+    const id = providerId.trim().toLowerCase();
+    if (id === "azure" || id === "azure-cognitive-services") {
+      return azureOpenAiBaseUrlFromOptions(id, providerOptions);
+    }
+    if (id === "cloudflare-ai-gateway") {
+      return cloudflareAiGatewayBaseUrlFromOptions(providerOptions);
+    }
+    if (id === "cloudflare-workers-ai") {
+      return cloudflareWorkersAiBaseUrlFromOptions(providerOptions);
+    }
+  }
+  return genericBaseUrlFromProviderOptions(providerOptions);
+}
+
+function accountBaseUrlFromBody(
+  body: Record<string, unknown>,
+  providerId: string,
+  providerAdapter: ProviderAdapter,
+  providerOptions: Record<string, unknown> | undefined,
+): string | undefined {
+  const explicit =
+    providerAdapter === "openai-compatible"
+      ? normalizeOpenAiCompatibleBaseUrl(body.baseUrl)
+      : normalizeBaseUrl(body.baseUrl);
+  if (explicit) return explicit;
+
+  const derived = providerOptionsBaseUrl(
+    providerId,
+    providerAdapter,
+    providerOptions,
+  );
+  return providerAdapter === "openai-compatible"
+    ? normalizeOpenAiCompatibleBaseUrl(derived)
+    : normalizeBaseUrl(derived);
 }
 
 function patchUpdatesRoutingInputs(patch: Record<string, unknown>): boolean {
@@ -757,10 +845,17 @@ export function createAdminRouter(options: AdminRoutesOptions) {
     const providerAdapter =
       normalizeProviderAdapter(body.providerAdapter) ??
       normalizeProvider({ provider });
-    const baseUrl =
-      providerAdapter === "openai-compatible"
-        ? normalizeOpenAiCompatibleBaseUrl(body.baseUrl)
-        : normalizeBaseUrl(body.baseUrl);
+    const providerId =
+      typeof body.providerId === "string" && body.providerId.trim()
+        ? body.providerId.trim()
+        : provider;
+    const providerOptions = recordValue(body.providerOptions);
+    const baseUrl = accountBaseUrlFromBody(
+      body,
+      providerId,
+      providerAdapter,
+      providerOptions,
+    );
     const upstreamMode = normalizeUpstreamMode(body.upstreamMode);
     const compatibilityMode = normalizeCompatibilityMode(
       body.compatibilityMode,
@@ -772,10 +867,7 @@ export function createAdminRouter(options: AdminRoutesOptions) {
     const account: Account = {
       id: body.id ?? randomUUID(),
       provider,
-      providerId:
-        typeof body.providerId === "string" && body.providerId.trim()
-          ? body.providerId.trim()
-          : provider,
+      providerId,
       providerAdapter,
       providerLabel:
         typeof body.providerLabel === "string" && body.providerLabel.trim()
@@ -797,12 +889,7 @@ export function createAdminRouter(options: AdminRoutesOptions) {
         ? body.providerAuthEnv.filter((value: unknown): value is string => typeof value === "string")
         : undefined,
       providerAuthType,
-      providerOptions:
-        body.providerOptions &&
-        typeof body.providerOptions === "object" &&
-        !Array.isArray(body.providerOptions)
-          ? body.providerOptions
-          : undefined,
+      providerOptions,
       upstreamMode,
       compatibilityMode,
       email: body.email,
@@ -844,6 +931,23 @@ export function createAdminRouter(options: AdminRoutesOptions) {
     const existing = (await store.listAccounts()).find((a) => a.id === req.params.id);
     if (!existing) return res.status(404).json({ error: "not found" });
     const next = { ...existing, ...body };
+    const nextProvider = normalizeProvider(next);
+    const nextProviderOptions = recordValue(next.providerOptions);
+    const nextProviderId =
+      typeof next.providerId === "string" && next.providerId.trim()
+        ? next.providerId.trim()
+        : typeof next.provider === "string" && next.provider.trim()
+          ? next.provider.trim()
+          : nextProvider;
+    if (!next.baseUrl && nextProviderOptions) {
+      next.baseUrl = accountBaseUrlFromBody(
+        {},
+        nextProviderId,
+        nextProvider,
+        nextProviderOptions,
+      );
+      if (next.baseUrl) body.baseUrl = next.baseUrl;
+    }
     if (normalizeProvider(next) === "openai-compatible") {
       next.baseUrl = normalizeOpenAiCompatibleBaseUrl(next.baseUrl);
       body.baseUrl = next.baseUrl;

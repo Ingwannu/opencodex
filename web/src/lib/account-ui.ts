@@ -98,6 +98,99 @@ export function parseProviderOptionsInput(
   return parsed as Record<string, unknown>;
 }
 
+function optionString(
+  source: Record<string, unknown> | undefined,
+  keys: string[],
+): string | undefined {
+  if (!source) return undefined;
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function hasGenericEndpointOption(
+  options: Record<string, unknown> | undefined,
+): boolean {
+  const endpoint = optionString(options, [
+    "baseURL",
+    "baseUrl",
+    "base_url",
+    "url",
+    "endpoint",
+  ]);
+  return Boolean(endpoint && /^https?:\/\//.test(endpoint));
+}
+
+export function providerOptionsCanDeriveEndpoint(
+  providerId: string | undefined,
+  providerAdapter: string | undefined,
+  providerOptionsJson: string,
+): boolean {
+  let options: Record<string, unknown> | undefined;
+  try {
+    options = parseProviderOptionsInput(providerOptionsJson);
+  } catch {
+    return false;
+  }
+  if (!options) return false;
+  if (hasGenericEndpointOption(options)) return true;
+
+  const id = String(providerId ?? "").trim().toLowerCase();
+  const adapter = String(providerAdapter ?? "").trim();
+  if (adapter === "amazon-bedrock") {
+    return Boolean(optionString(options, ["region", "awsRegion", "aws_region"]));
+  }
+  if (adapter === "vertex" || adapter === "vertex-anthropic") {
+    return Boolean(
+      optionString(options, [
+        "project",
+        "projectId",
+        "projectID",
+        "googleCloudProject",
+        "google_cloud_project",
+        "googleVertexProject",
+        "google_vertex_project",
+      ]),
+    );
+  }
+  if (adapter === "sap-ai-core") {
+    return Boolean(
+      optionString(options, ["apiUrl", "AI_API_URL"]) ??
+        options.serviceKey ??
+        options.service_key ??
+        options.aicoreServiceKey ??
+        options.aicore_service_key,
+    );
+  }
+  if (adapter === "openai-compatible") {
+    if (id === "azure" || id === "azure-cognitive-services") {
+      return Boolean(
+        optionString(options, [
+          "resourceName",
+          "resource_name",
+          "resource",
+          "resourceId",
+          "resource_id",
+        ]),
+      );
+    }
+    if (id === "cloudflare-ai-gateway") {
+      return Boolean(
+        optionString(options, ["accountId", "accountID", "account_id", "account"]) &&
+          optionString(options, ["gatewayId", "gatewayID", "gateway_id", "gateway"]),
+      );
+    }
+    if (id === "cloudflare-workers-ai") {
+      return Boolean(
+        optionString(options, ["accountId", "accountID", "account_id", "account"]),
+      );
+    }
+  }
+  return false;
+}
+
 export function normalizeOpenCodeImportOptions(
   authPath: string,
   configPath: string,

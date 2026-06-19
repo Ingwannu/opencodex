@@ -8,6 +8,7 @@ import {
   isAuthOnlyAccount,
   normalizeOpenCodeImportOptions,
   parseProviderOptionsInput,
+  providerOptionsCanDeriveEndpoint,
 } from "../web/src/lib/account-ui";
 import type { Account, ProviderRegistryEntry } from "../web/src/types";
 
@@ -143,6 +144,49 @@ test("provider option JSON helpers preserve editable provider-specific routing o
   assert.throws(
     () => parseProviderOptionsInput("{not json}"),
     /Provider options must be valid JSON/,
+  );
+});
+
+test("provider option endpoint helper recognizes OpenCode-style endpoint options", () => {
+  assert.equal(
+    providerOptionsCanDeriveEndpoint(
+      "cloudflare-ai-gateway",
+      "openai-compatible",
+      '{ "accountId": "cf-account", "gatewayId": "team-gateway" }',
+    ),
+    true,
+  );
+  assert.equal(
+    providerOptionsCanDeriveEndpoint(
+      "azure",
+      "openai-compatible",
+      '{ "resourceName": "az-resource" }',
+    ),
+    true,
+  );
+  assert.equal(
+    providerOptionsCanDeriveEndpoint(
+      "custom-router",
+      "openai-compatible",
+      '{ "baseURL": "https://router.example/v1" }',
+    ),
+    true,
+  );
+  assert.equal(
+    providerOptionsCanDeriveEndpoint(
+      "custom-router",
+      "openai-compatible",
+      '{ "headers": { "x-api-key": "secret" } }',
+    ),
+    false,
+  );
+  assert.equal(
+    providerOptionsCanDeriveEndpoint(
+      "custom-router",
+      "openai-compatible",
+      "{not json}",
+    ),
+    false,
   );
 });
 

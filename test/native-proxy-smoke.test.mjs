@@ -298,3 +298,158 @@ test("proxy preserves OpenAI-compatible base paths that already contain /v1", as
     await new Promise((resolve) => upstream.close(resolve));
   }
 });
+
+test("proxy exposes configured OpenCode models when upstream model listing is unavailable", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "no model listing" }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/chat/completions") {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl-configured",
+          object: "chat.completion",
+          created: 1,
+          model: "configured-model",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Configured OK" },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "configured-smoke",
+          provider: "openai-compatible",
+          providerId: "configured",
+          providerAdapter: "openai-compatible",
+          accessToken: "configured-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          providerModels: {
+            "configured-model": {
+              id: "configured-model",
+              name: "Configured Model",
+              limit: { context: 1234, output: 567 },
+              tool_call: true,
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const modelsRes = await fetch(`${baseUrl}/v1/models`);
+        const modelsJson = await modelsRes.json();
+        assert.equal(modelsRes.status, 200);
+        assert.ok(modelsJson.data.some((model) => model.id === "configured-model"));
+
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "configured-model",
+            messages: [{ role: "user", content: "Hello" }],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.choices[0].message.content, "Configured OK");
+        assert.equal(capturedRequest.model, "configured-model");
+      },
+    );
+  } finally {
+    await new Promise((resolve) => upstream.close(resolve));
+  }
+});
+
+test("proxy routes Perplexity Sonar compatibility without a /v1 prefix", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/models") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "no model listing" }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/chat/completions") {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl-sonar",
+          object: "chat.completion",
+          created: 1,
+          model: "sonar-pro",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Sonar OK" },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "perplexity-smoke",
+          provider: "openai-compatible",
+          providerId: "perplexity",
+          providerAdapter: "openai-compatible",
+          accessToken: "pplx-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          openAiPathPrefix: "none",
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          providerModels: {
+            "sonar-pro": {
+              id: "sonar-pro",
+              name: "Sonar Pro",
+              limit: { context: 200000, output: 8192 },
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "sonar-pro",
+            messages: [{ role: "user", content: "Hello" }],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.choices[0].message.content, "Sonar OK");
+        assert.equal(capturedRequest.model, "sonar-pro");
+      },
+    );
+  } finally {
+    await new Promise((resolve) => upstream.close(resolve));
+  }
+});

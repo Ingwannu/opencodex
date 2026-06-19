@@ -152,4 +152,5 @@ test("imports custom OpenCode provider metadata from opencode config", () => {
   assert.equal(haimaker?.baseUrl, "https://api.haimaker.ai");
   assert.equal(haimaker?.accessToken, "hm-test-key");
   assert.equal(haimaker?.enabled, true);
+  assert.ok(haimaker?.providerModels?.["z-ai/glm-4.6"]);
 });

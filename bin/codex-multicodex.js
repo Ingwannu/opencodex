@@ -201,6 +201,17 @@ const openAiCompatibleSdkProviderDefaults = {
   deepinfra: { baseUrl: "https://api.deepinfra.com/v1/openai" },
   cerebras: { baseUrl: "https://api.cerebras.ai" },
   togetherai: { baseUrl: "https://api.together.ai" },
+  perplexity: {
+    baseUrl: "https://api.perplexity.ai",
+    openAiPathPrefix: "none",
+    upstreamMode: "chat/completions",
+    compatibilityMode: "chat-completions-bridge",
+  },
+  "perplexity-agent": {
+    baseUrl: "https://api.perplexity.ai/v1",
+    upstreamMode: "responses",
+    compatibilityMode: "responses",
+  },
   vercel: { baseUrl: "https://ai-gateway.vercel.sh" },
 };
 
@@ -245,9 +256,9 @@ function modelsDevProviderToPreset(providerId, source) {
   const id = sanitizeProviderId(source?.id || providerId);
   const adapter = providerAdapterFromNpm(id, source?.npm);
   const runtimeSupported = isRuntimeSupportedAdapter(adapter);
-  const openAiCompatibleDefault = openAiCompatibleSdkProviderDefaults[id]?.baseUrl;
+  const openAiCompatibleDefault = openAiCompatibleSdkProviderDefaults[id];
   const baseUrl = adapter === "openai-compatible"
-    ? normalizeOpenAiCompatibleBaseUrl(source?.api || openAiCompatibleDefault)
+    ? normalizeOpenAiCompatibleBaseUrl(source?.api || openAiCompatibleDefault?.baseUrl)
     : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : undefined));
   return {
     label: source?.name || id,
@@ -258,9 +269,11 @@ function modelsDevProviderToPreset(providerId, source) {
     providerSource: "models.dev",
     providerDoc: source?.doc,
     baseUrl,
-    upstreamMode: adapter === "openai-compatible" ? "chat/completions" : undefined,
-    compatibilityMode: adapter === "openai-compatible" ? "chat-completions-bridge" : undefined,
+    openAiPathPrefix: openAiCompatibleDefault?.openAiPathPrefix,
+    upstreamMode: adapter === "openai-compatible" ? (openAiCompatibleDefault?.upstreamMode || "chat/completions") : undefined,
+    compatibilityMode: adapter === "openai-compatible" ? (openAiCompatibleDefault?.compatibilityMode || "chat-completions-bridge") : undefined,
     tokenEnv: Array.isArray(source?.env) ? source.env.filter((value) => typeof value === "string") : [],
+    models: source?.models && typeof source.models === "object" ? source.models : undefined,
     runtimeSupported,
   };
 }
@@ -1019,8 +1032,10 @@ async function authLogin(providerName, opts = {}) {
     providerSource: preset.providerSource || "manual",
     providerDoc: preset.providerDoc,
     providerAuthEnv: preset.tokenEnv,
+    providerModels: preset.models,
     upstreamMode,
     compatibilityMode,
+    openAiPathPrefix: preset.openAiPathPrefix,
     email,
     accessToken: token,
     refreshToken,
@@ -1221,8 +1236,10 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         providerSource: "opencode",
         providerDoc: preset.providerDoc,
         providerAuthEnv: preset.tokenEnv,
+        providerModels: preset.models,
         upstreamMode: preset.upstreamMode,
         compatibilityMode: preset.compatibilityMode,
+        openAiPathPrefix: preset.openAiPathPrefix,
         email: id,
         accessToken: token,
         baseUrl,

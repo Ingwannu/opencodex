@@ -14,7 +14,9 @@ import {
   UPSTREAM_PATH,
 } from "../../config.js";
 import type {
+  Account,
   ModelAlias,
+  OpenAiPathPrefix,
   ProviderAdapter,
   RouteProviderId,
   UpstreamMode,
@@ -184,16 +186,20 @@ function modelObject(
   upstream?: Record<string, unknown>,
 ): ExposedModel {
   const upstreamObject = upstream ?? {};
+  const limit =
+    upstreamObject.limit && typeof upstreamObject.limit === "object"
+      ? (upstreamObject.limit as Record<string, unknown>)
+      : {};
   const contextWindow = firstKnownNumber(upstreamObject, [
     "context_window",
     "contextWindow",
     "max_context_tokens",
     "max_input_tokens",
-  ]);
+  ]) ?? firstKnownNumber(limit, ["context"]);
   const maxOutputTokens = firstKnownNumber(upstreamObject, [
     "max_output_tokens",
     "maxOutputTokens",
-  ]);
+  ]) ?? firstKnownNumber(limit, ["output"]);
   const toolTypesRaw = upstreamObject.tool_types;
   const supportedToolTypes = Array.isArray(toolTypesRaw)
     ? toolTypesRaw.filter(
@@ -204,6 +210,8 @@ function modelObject(
   const supportsReasoning =
     typeof upstreamObject.supports_reasoning === "boolean"
       ? upstreamObject.supports_reasoning
+      : typeof upstreamObject.reasoning === "boolean"
+        ? upstreamObject.reasoning
       : inferSupportsReasoning(id);
 
   return {
@@ -226,9 +234,16 @@ function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
-function appendOpenAiCompatiblePath(baseUrl: string, apiPath: string): string {
+function appendOpenAiCompatiblePath(
+  baseUrl: string,
+  apiPath: string,
+  pathPrefix: OpenAiPathPrefix = "v1",
+): string {
   const base = trimTrailingSlash(baseUrl);
   if (apiPath.startsWith("/v1/")) {
+    if (pathPrefix === "none") {
+      return `${base}${apiPath.slice(3)}`;
+    }
     try {
       const { pathname } = new URL(base);
       if (/\/v1(?:\/|$)/i.test(pathname)) {
@@ -241,6 +256,46 @@ function appendOpenAiCompatiblePath(baseUrl: string, apiPath: string): string {
     }
   }
   return `${base}${apiPath}`;
+}
+
+function configuredModelsForAccount(
+  account: Account,
+): Array<{ id: string; metadata: Record<string, unknown> }> {
+  const source = account.providerModels;
+  if (!source || typeof source !== "object") return [];
+  const out: Array<{ id: string; metadata: Record<string, unknown> }> = [];
+  for (const [key, value] of Object.entries(source)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      out.push({ id: key, metadata: { id: key } });
+      continue;
+    }
+    const metadata = value as Record<string, unknown>;
+    const id =
+      typeof metadata.id === "string" && metadata.id.trim()
+        ? metadata.id.trim()
+        : key;
+    if (id) out.push({ id, metadata: { ...metadata, id } });
+  }
+  return out;
+}
+
+function mergeConfiguredAccountModels(
+  byId: Map<string, ExposedModel>,
+  account: Account,
+  provider: RouteProviderId,
+): void {
+  for (const entry of configuredModelsForAccount(account)) {
+    if (isModelExcludedFromProvider(entry.id, provider)) continue;
+    byId.set(
+      entry.id,
+      mergeModelAvailability(
+        byId.get(entry.id),
+        modelObject(entry.id, provider, entry.metadata),
+        provider,
+        account.id,
+      ),
+    );
+  }
 }
 
 function isHopByHopHeader(name: string): boolean {
@@ -526,6 +581,7 @@ async function discoverModels(
       const normalizedProvider = normalizeProvider(account);
       if (!isRuntimeRoutableProvider(normalizedProvider)) continue;
       const provider = normalizedProvider;
+      mergeConfiguredAccountModels(byId, account, provider);
       try {
         const headers: Record<string, string> = {
           authorization: `Bearer ${account.accessToken}`,
@@ -560,7 +616,11 @@ async function discoverModels(
             zaiBaseUrl,
           );
           if (!baseUrl) continue;
-          url = appendOpenAiCompatiblePath(baseUrl, "/v1/models");
+          url = appendOpenAiCompatiblePath(
+            baseUrl,
+            "/v1/models",
+            account.openAiPathPrefix,
+          );
         }
 
         const r = await fetch(url, { headers });
@@ -1566,7 +1626,11 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
           }
           const upstreamUrl =
             candidate.provider === "openai-compatible"
-              ? appendOpenAiCompatiblePath(upstreamBaseUrl, upstreamPath)
+              ? appendOpenAiCompatiblePath(
+                  upstreamBaseUrl,
+                  upstreamPath,
+                  selected.openAiPathPrefix,
+                )
               : `${upstreamBaseUrl}${upstreamPath}`;
           const upstream = await fetchCodexWithRetry(
             upstreamUrl,

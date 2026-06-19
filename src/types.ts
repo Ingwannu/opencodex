@@ -17,6 +17,7 @@ export type CompatibilityMode =
   | "auto"
   | "responses"
   | "chat-completions-bridge";
+export type OpenAiPathPrefix = "v1" | "none";
 
 export type UsageWindow = {
   usedPercent?: number;
@@ -54,8 +55,10 @@ export type Account = {
   providerSource?: "builtin" | "models.dev" | "opencode" | "manual";
   providerDoc?: string;
   providerAuthEnv?: string[];
+  providerModels?: Record<string, unknown>;
   upstreamMode?: UpstreamMode;
   compatibilityMode?: CompatibilityMode;
+  openAiPathPrefix?: OpenAiPathPrefix;
   email?: string;
   accessToken: string;
   refreshToken?: string;

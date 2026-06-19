@@ -1,5 +1,6 @@
 import type {
   CompatibilityMode,
+  OpenAiPathPrefix,
   ProviderAdapter,
   RouteProviderId,
   UpstreamMode,
@@ -21,11 +22,13 @@ export type ProviderRegistryEntry = {
   providerSource: "builtin" | "models.dev" | "manual";
   providerDoc?: string;
   baseUrl?: string;
+  openAiPathPrefix?: OpenAiPathPrefix;
   upstreamMode?: UpstreamMode;
   compatibilityMode?: CompatibilityMode;
   tokenEnv: string[];
   authType: "oauth" | "api-key";
   runtimeSupported: boolean;
+  models?: Record<string, unknown>;
   modelsCount?: number;
 };
 
@@ -198,13 +201,29 @@ const PROVIDER_ALIASES: Record<string, string> = {
 
 const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
   string,
-  { baseUrl: string }
+  {
+    baseUrl: string;
+    openAiPathPrefix?: OpenAiPathPrefix;
+    upstreamMode?: UpstreamMode;
+    compatibilityMode?: CompatibilityMode;
+  }
 > = {
   xai: { baseUrl: "https://api.x.ai" },
   groq: { baseUrl: "https://api.groq.com/openai" },
   deepinfra: { baseUrl: "https://api.deepinfra.com/v1/openai" },
   cerebras: { baseUrl: "https://api.cerebras.ai" },
   togetherai: { baseUrl: "https://api.together.ai" },
+  perplexity: {
+    baseUrl: "https://api.perplexity.ai",
+    openAiPathPrefix: "none",
+    upstreamMode: "chat/completions",
+    compatibilityMode: "chat-completions-bridge",
+  },
+  "perplexity-agent": {
+    baseUrl: "https://api.perplexity.ai/v1",
+    upstreamMode: "responses",
+    compatibilityMode: "responses",
+  },
   vercel: { baseUrl: "https://ai-gateway.vercel.sh" },
 };
 
@@ -288,11 +307,10 @@ export function providerRegistryEntryFromMetadata(
   const id = sanitizeProviderId(source.id || providerId);
   const adapter = providerAdapterFromNpm(id, source.npm);
   const runtimeSupported = isRuntimeSupportedProvider(adapter);
-  const openAiCompatibleDefault =
-    OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS[id]?.baseUrl;
+  const openAiCompatibleDefault = OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS[id];
   const baseUrl =
     adapter === "openai-compatible"
-      ? normalizeOpenAiCompatibleBaseUrl(source.api ?? openAiCompatibleDefault)
+      ? normalizeOpenAiCompatibleBaseUrl(source.api ?? openAiCompatibleDefault?.baseUrl)
       : normalizeBaseUrl(
           source.api ??
             (adapter === "anthropic"
@@ -312,15 +330,25 @@ export function providerRegistryEntryFromMetadata(
     providerSource,
     providerDoc: source.doc,
     baseUrl,
+    openAiPathPrefix: openAiCompatibleDefault?.openAiPathPrefix,
     upstreamMode:
-      adapter === "openai-compatible" ? "chat/completions" : undefined,
+      adapter === "openai-compatible"
+        ? (openAiCompatibleDefault?.upstreamMode ?? "chat/completions")
+        : undefined,
     compatibilityMode:
-      adapter === "openai-compatible" ? "chat-completions-bridge" : undefined,
+      adapter === "openai-compatible"
+        ? (openAiCompatibleDefault?.compatibilityMode ??
+          "chat-completions-bridge")
+        : undefined,
     tokenEnv: Array.isArray(source.env)
       ? source.env.filter((value): value is string => typeof value === "string")
       : [],
     authType: "api-key",
     runtimeSupported,
+    models:
+      source.models && typeof source.models === "object"
+        ? source.models
+        : undefined,
     modelsCount:
       source.models && typeof source.models === "object"
         ? Object.keys(source.models).length

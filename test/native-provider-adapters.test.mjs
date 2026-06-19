@@ -164,6 +164,7 @@ test("OpenAI-compatible SDK providers are runtime-routable through the bridge", 
     ["deepinfra", "https://api.deepinfra.com/v1/openai"],
     ["cerebras", "https://api.cerebras.ai"],
     ["togetherai", "https://api.together.ai"],
+    ["perplexity", "https://api.perplexity.ai"],
     ["vercel", "https://ai-gateway.vercel.sh"],
   ]);
 
@@ -175,6 +176,44 @@ test("OpenAI-compatible SDK providers are runtime-routable through the bridge", 
     assert.equal(entry.baseUrl, baseUrl, providerId);
     assert.equal(entry.compatibilityMode, "chat-completions-bridge", providerId);
   }
+
+  const perplexity = await resolveProviderRegistryEntry("perplexity");
+  assert.equal(perplexity.openAiPathPrefix, "none");
+  assert.ok(perplexity.models?.["sonar-pro"]);
+});
+
+test("OpenCode auth import preserves configured model metadata", async () => {
+  const config = new Map([
+    [
+      "haimaker",
+      await resolveProviderRegistryEntry("haimaker", {
+        baseUrl: "https://api.haimaker.ai/v1",
+      }),
+    ],
+  ]);
+  const custom = config.get("haimaker");
+  custom.providerNpm = "@ai-sdk/openai-compatible";
+  custom.providerAdapter = "openai-compatible";
+  custom.provider = "openai-compatible";
+  custom.runtimeSupported = true;
+  custom.models = {
+    "z-ai/glm-4.6": {
+      id: "z-ai/glm-4.6",
+      name: "GLM 4.6",
+      limit: { context: 200000, output: 32000 },
+      tool_call: true,
+    },
+  };
+
+  const accounts = await accountsFromOpenCodeAuthPayload(
+    {
+      haimaker: { apiKey: "hm-key" },
+    },
+    { providerConfig: config },
+  );
+
+  assert.equal(accounts[0]?.providerId, "haimaker");
+  assert.ok(accounts[0]?.providerModels?.["z-ai/glm-4.6"]);
 });
 
 test("OpenCode auth import enables OpenAI-compatible SDK providers", async () => {

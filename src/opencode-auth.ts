@@ -539,14 +539,54 @@ function findBaseUrlInObject(value: unknown, seen = new Set<object>()): string |
   return undefined;
 }
 
-function entriesFromAuthPayload(payload: unknown): Array<[string, unknown]> {
+type OpenCodeAuthEntry = {
+  name: string;
+  body: unknown;
+  label?: string;
+  credentialId?: string;
+};
+
+function trimmedString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function storedCredentialEntry(
+  value: unknown,
+): OpenCodeAuthEntry | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  const name =
+    trimmedString(source.integrationID) ?? trimmedString(source.integration_id);
+  if (!name) return undefined;
+  const body = source.value;
+  if (!body || typeof body !== "object" || Array.isArray(body)) return undefined;
+  const label = trimmedString(source.label);
+  const credentialId = trimmedString(source.id);
+  return {
+    name,
+    body,
+    ...(label ? { label } : {}),
+    ...(credentialId ? { credentialId } : {}),
+  };
+}
+
+function entriesFromAuthArray(payload: unknown[]): OpenCodeAuthEntry[] {
+  return payload.map((entry, index) => {
+    return storedCredentialEntry(entry) ?? { name: String(index), body: entry };
+  });
+}
+
+function entriesFromAuthPayload(payload: unknown): OpenCodeAuthEntry[] {
   if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-    return Object.entries(payload as Record<string, unknown>).filter(
-      ([key]) => key !== "$schema",
-    );
+    const source = payload as Record<string, unknown>;
+    return Object.entries(source)
+      .filter(([key]) => key !== "$schema")
+      .map(([name, body]) => ({ name, body }));
   }
   if (Array.isArray(payload)) {
-    return payload.map((entry, index) => [String(index), entry]);
+    return entriesFromAuthArray(payload);
   }
   return [];
 }
@@ -558,7 +598,8 @@ export async function accountsFromOpenCodeAuthPayload(
   const accounts: Account[] = [];
   const seenProviderIds = new Set<string>();
 
-  for (const [name, body] of entriesFromAuthPayload(payload)) {
+  for (const entry of entriesFromAuthPayload(payload)) {
+    const { name, body } = entry;
     const providerKey = sanitizeProviderId(name);
     seenProviderIds.add(providerKey);
     const detectedBaseUrl = findBaseUrlInObject(body);
@@ -578,7 +619,10 @@ export async function accountsFromOpenCodeAuthPayload(
       (registry.authType === "none" ? NO_AUTH_ACCESS_TOKEN : undefined);
     if (!token) continue;
     const providerId = sanitizeProviderId(registry.providerId || name);
-    const id = `${providerId}-${sanitizeProviderId(name) || randomUUID().slice(0, 8)}`;
+    const accountSuffix =
+      sanitizeProviderId(entry.label ?? entry.credentialId ?? name) ||
+      randomUUID().slice(0, 8);
+    const id = `${providerId}-${accountSuffix}`;
     const runtimeSupported = registry.runtimeSupported;
     const baseUrl = baseUrlForRegistry(registry, detectedBaseUrl);
 

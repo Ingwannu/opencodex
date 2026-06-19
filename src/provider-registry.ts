@@ -707,12 +707,24 @@ function cloudflareGatewayProviderOptionsFromSource(
 
 const AZURE_OPENAI_PROVIDER_IDS = new Set(["azure", "azure-cognitive-services"]);
 
+function isAzureOpenAiProviderSource(
+  providerId: string,
+  npmPackage: string | undefined,
+): boolean {
+  return (
+    AZURE_OPENAI_PROVIDER_IDS.has(sanitizeProviderId(providerId)) ||
+    String(npmPackage ?? "").trim().toLowerCase() === "@ai-sdk/azure"
+  );
+}
+
 export function azureOpenAiBaseUrlFromOptions(
   providerId: string,
   options: Record<string, unknown> | undefined = {},
   env: Record<string, string | undefined> = process.env,
+  allowCustomProviderId = false,
 ): string | undefined {
-  if (!AZURE_OPENAI_PROVIDER_IDS.has(sanitizeProviderId(providerId))) {
+  const id = sanitizeProviderId(providerId);
+  if (!allowCustomProviderId && !AZURE_OPENAI_PROVIDER_IDS.has(id)) {
     return undefined;
   }
 
@@ -733,7 +745,7 @@ export function azureOpenAiBaseUrlFromOptions(
       "resourceId",
       "resource_id",
     ]) ??
-    (sanitizeProviderId(providerId) === "azure-cognitive-services"
+    (id === "azure-cognitive-services"
       ? env.AZURE_COGNITIVE_SERVICES_RESOURCE_NAME
       : env.AZURE_RESOURCE_NAME);
 
@@ -1176,7 +1188,10 @@ export function providerRegistryEntryFromMetadata(
     id === "cloudflare-workers-ai"
       ? cloudflareWorkersAiBaseUrlFromOptions(source.options)
       : undefined;
-  const azureOpenAiBaseUrl = azureOpenAiBaseUrlFromOptions(id, source.options);
+  const isAzureOpenAiProvider = isAzureOpenAiProviderSource(id, source.npm);
+  const azureOpenAiBaseUrl = isAzureOpenAiProvider
+    ? azureOpenAiBaseUrlFromOptions(id, source.options, process.env, true)
+    : undefined;
   const bedrockBaseUrl =
     id === "amazon-bedrock"
       ? amazonBedrockBaseUrlFromOptions(source.options)
@@ -1201,7 +1216,7 @@ export function providerRegistryEntryFromMetadata(
   const requiresOpenAiCompatibleEndpoint =
     id === "cloudflare-ai-gateway" ||
     id === "cloudflare-workers-ai" ||
-    AZURE_OPENAI_PROVIDER_IDS.has(id);
+    isAzureOpenAiProvider;
   const adapter =
     requiresOpenAiCompatibleEndpoint
       ? "openai-compatible"
@@ -1260,13 +1275,13 @@ export function providerRegistryEntryFromMetadata(
     openAiPathPrefix: openAiCompatibleDefault?.openAiPathPrefix,
     upstreamMode:
       adapter === "openai-compatible"
-        ? (AZURE_OPENAI_PROVIDER_IDS.has(id)
+        ? (isAzureOpenAiProvider
           ? "responses"
           : (openAiCompatibleDefault?.upstreamMode ?? "chat/completions"))
         : undefined,
     compatibilityMode:
       adapter === "openai-compatible"
-        ? (AZURE_OPENAI_PROVIDER_IDS.has(id)
+        ? (isAzureOpenAiProvider
           ? "responses"
           : (openAiCompatibleDefault?.compatibilityMode ??
           "chat-completions-bridge")

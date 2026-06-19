@@ -503,9 +503,16 @@ function cloudflareAiGatewayBaseUrlFromOptions(options = {}, env = process.env) 
 
 const azureOpenAiProviderIds = new Set(["azure", "azure-cognitive-services"]);
 
-function azureOpenAiBaseUrlFromOptions(providerId, options = {}, env = process.env) {
+function isAzureOpenAiProviderSource(providerId, npmPackage) {
+  return (
+    azureOpenAiProviderIds.has(sanitizeProviderId(providerId)) ||
+    String(npmPackage || "").trim().toLowerCase() === "@ai-sdk/azure"
+  );
+}
+
+function azureOpenAiBaseUrlFromOptions(providerId, options = {}, env = process.env, allowCustomProviderId = false) {
   const id = sanitizeProviderId(providerId);
-  if (!azureOpenAiProviderIds.has(id)) return undefined;
+  if (!allowCustomProviderId && !azureOpenAiProviderIds.has(id)) return undefined;
   const explicit = firstStringValue(options, ["baseURL", "baseUrl", "base_url", "url", "endpoint"]);
   if (explicit && /^https?:\/\//.test(explicit)) return explicit;
   const resourceName =
@@ -920,7 +927,10 @@ function modelsDevProviderToPreset(providerId, source) {
     id === "cloudflare-ai-gateway"
       ? cloudflareAiGatewayBaseUrlFromOptions(source?.options)
       : undefined;
-  const azureOpenAiBaseUrl = azureOpenAiBaseUrlFromOptions(id, source?.options);
+  const isAzureOpenAiProvider = isAzureOpenAiProviderSource(id, source?.npm);
+  const azureOpenAiBaseUrl = isAzureOpenAiProvider
+    ? azureOpenAiBaseUrlFromOptions(id, source?.options, process.env, true)
+    : undefined;
   const bedrockBaseUrl =
     id === "amazon-bedrock"
       ? amazonBedrockBaseUrlFromOptions(source?.options)
@@ -937,7 +947,7 @@ function modelsDevProviderToPreset(providerId, source) {
   const openAiCompatibleBaseUrl =
     source?.api || openAiCompatibleDefault?.baseUrl || cloudflareAiGatewayBaseUrl || azureOpenAiBaseUrl;
   const requiresOpenAiCompatibleEndpoint =
-    id === "cloudflare-ai-gateway" || azureOpenAiProviderIds.has(id);
+    id === "cloudflare-ai-gateway" || isAzureOpenAiProvider;
   const adapter =
     requiresOpenAiCompatibleEndpoint
       ? "openai-compatible"
@@ -970,8 +980,8 @@ function modelsDevProviderToPreset(providerId, source) {
     providerDoc: source?.doc,
     baseUrl,
     openAiPathPrefix: openAiCompatibleDefault?.openAiPathPrefix,
-    upstreamMode: adapter === "openai-compatible" ? (azureOpenAiProviderIds.has(id) ? "responses" : (openAiCompatibleDefault?.upstreamMode || "chat/completions")) : undefined,
-    compatibilityMode: adapter === "openai-compatible" ? (azureOpenAiProviderIds.has(id) ? "responses" : (openAiCompatibleDefault?.compatibilityMode || "chat-completions-bridge")) : undefined,
+    upstreamMode: adapter === "openai-compatible" ? (isAzureOpenAiProvider ? "responses" : (openAiCompatibleDefault?.upstreamMode || "chat/completions")) : undefined,
+    compatibilityMode: adapter === "openai-compatible" ? (isAzureOpenAiProvider ? "responses" : (openAiCompatibleDefault?.compatibilityMode || "chat-completions-bridge")) : undefined,
     providerOptions: adapter === "amazon-bedrock"
       ? amazonBedrockProviderOptionsFromSource(source)
       : adapter === "vertex" || adapter === "vertex-anthropic"

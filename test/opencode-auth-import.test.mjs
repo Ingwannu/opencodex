@@ -531,6 +531,64 @@ test("imports Vercel AI Gateway through the CLI", () => {
   assert.ok(gateway?.providerModels?.["openai/gpt-5"]);
 });
 
+test("imports custom Azure SDK providers through the CLI", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-custom-azure-auth-"));
+  const storePath = path.join(dir, "accounts.json");
+  const authPath = path.join(dir, "auth.json");
+  const configPath = path.join(dir, "opencode.jsonc");
+
+  fs.writeFileSync(authPath, JSON.stringify({}, null, 2));
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify(
+      {
+        provider: {
+          "custom-azure": {
+            npm: "@ai-sdk/azure",
+            options: {
+              resourceName: "custom-az-resource",
+              apiKey: "custom-az-key",
+            },
+            models: {
+              "gpt-5.1-prod": { name: "GPT 5.1 Azure deployment" },
+            },
+          },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  execFileSync(
+    process.execPath,
+    [cli, "auth", "import-opencode", authPath, "--config", configPath],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        MULTICODEX_STORE_PATH: storePath,
+        MULTICODEX_DATA_DIR: dir,
+      },
+      encoding: "utf8",
+    },
+  );
+
+  const store = readStore(storePath);
+  const azure = store.accounts.find(
+    (account) =>
+      account.providerId === "custom-azure" &&
+      account.providerAdapter === "openai-compatible",
+  );
+  assert.equal(azure?.provider, "openai-compatible");
+  assert.equal(azure?.baseUrl, "https://custom-az-resource.openai.azure.com/openai");
+  assert.equal(azure?.upstreamMode, "responses");
+  assert.equal(azure?.compatibilityMode, "responses");
+  assert.equal(azure?.accessToken, "custom-az-key");
+  assert.equal(azure?.enabled, true);
+  assert.ok(azure?.providerModels?.["gpt-5.1-prod"]);
+});
+
 test("imports OpenCode model-level provider overrides through the CLI", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-model-override-auth-"));
   const storePath = path.join(dir, "accounts.json");

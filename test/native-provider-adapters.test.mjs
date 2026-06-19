@@ -1623,6 +1623,43 @@ test("OpenCode auth import derives Azure endpoint from credential metadata", asy
   assert.equal(azure?.enabled, true);
 });
 
+test("OpenCode config imports custom Azure SDK providers with resource metadata", async () => {
+  const payload = parseOpenCodeConfigPayload(`{
+    "provider": {
+      "custom-azure": {
+        "npm": "@ai-sdk/azure",
+        "options": {
+          "resourceName": "custom-az-resource",
+          "apiKey": "custom-az-key"
+        },
+        "models": {
+          "gpt-5.1-prod": { "name": "GPT 5.1 Azure deployment" }
+        }
+      }
+    }
+  }`);
+  const providerConfig = providerConfigFromOpenCodeConfigPayload(payload);
+  const providerConfigSecrets = providerSecretsFromOpenCodeConfigPayload(payload);
+
+  const accounts = await accountsFromOpenCodeAuthPayload({}, {
+    providerConfig,
+    providerConfigSecrets,
+  });
+  const azure = accounts.find(
+    (account) =>
+      account.providerId === "custom-azure" &&
+      account.providerAdapter === "openai-compatible",
+  );
+
+  assert.equal(azure?.provider, "openai-compatible");
+  assert.equal(azure?.baseUrl, "https://custom-az-resource.openai.azure.com/openai");
+  assert.equal(azure?.upstreamMode, "responses");
+  assert.equal(azure?.compatibilityMode, "responses");
+  assert.equal(azure?.accessToken, "custom-az-key");
+  assert.equal(azure?.enabled, true);
+  assert.ok(azure?.providerModels?.["gpt-5.1-prod"]);
+});
+
 test("OpenCode auth import splits model-level provider overrides into virtual accounts", async () => {
   const previous = {
     AZURE_COGNITIVE_SERVICES_RESOURCE_NAME:

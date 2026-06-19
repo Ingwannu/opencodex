@@ -1,13 +1,30 @@
 import express from "express";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { AccountStore, OAuthStateStore } from "../../store.js";
 import type {
   Account,
   CompatibilityMode,
   ModelAlias,
+  ProviderAdapter,
   UpstreamMode,
 } from "../../types.js";
-import { normalizeProvider, refreshUsageIfNeeded } from "../../quota.js";
+import {
+  normalizeProvider,
+  refreshUsageIfNeeded,
+  isRuntimeRoutableProvider,
+} from "../../quota.js";
+import {
+  listProviderRegistry,
+  normalizeOpenAiCompatibleBaseUrl,
+} from "../../provider-registry.js";
+import {
+  accountsFromOpenCodeAuthPayload,
+  parseOpenCodeConfigPayload,
+  providerConfigFromOpenCodeConfigPayload,
+} from "../../opencode-auth.js";
 import {
   accountFromOAuth,
   buildAuthorizationUrl,
@@ -57,6 +74,20 @@ function normalizeCompatibilityMode(
   if (value === "responses") return "responses";
   if (value === "chat-completions-bridge")
     return "chat-completions-bridge";
+  return undefined;
+}
+
+function normalizeProviderAdapter(value: unknown): ProviderAdapter | undefined {
+  if (value === "openai") return "openai";
+  if (value === "openai-compatible") return "openai-compatible";
+  if (value === "mistral") return "mistral";
+  if (value === "zai") return "zai";
+  if (value === "anthropic") return "anthropic";
+  if (value === "google") return "google";
+  if (value === "azure") return "azure";
+  if (value === "amazon-bedrock") return "amazon-bedrock";
+  if (value === "vertex") return "vertex";
+  if (value === "unsupported") return "unsupported";
   return undefined;
 }
 
@@ -156,8 +187,19 @@ function filterVisibleTraces<T extends { route?: string }>(traces: T[]): T[] {
   return traces.filter((trace) => !isHiddenTraceRoute(trace.route));
 }
 
+async function readFirstExistingText(paths: string[]): Promise<{ path: string; raw: string } | undefined> {
+  for (const candidate of paths) {
+    try {
+      return { path: candidate, raw: await fs.readFile(candidate, "utf8") };
+    } catch {
+      // Try next candidate.
+    }
+  }
+  return undefined;
+}
+
 function isOpenAiEnabledAccount(account: Account | undefined): account is Account {
-  return Boolean(account && (account.provider ?? "openai") === "openai" && account.enabled);
+  return Boolean(account && normalizeProvider(account) === "openai" && account.enabled);
 }
 
 function formatZipDosTime(date: Date) {
@@ -306,6 +348,51 @@ export function createAdminRouter(options: AdminRoutesOptions) {
   router.get("/accounts", async (_req, res) =>
     res.json({ accounts: (await store.listAccounts()).map(redact) }),
   );
+
+  router.get("/providers", async (_req, res) => {
+    const providers = await listProviderRegistry();
+    res.json({ ok: true, providers });
+  });
+
+  router.post("/auth/import-opencode", async (req, res) => {
+    const filePath =
+      typeof req.body?.path === "string" && req.body.path.trim()
+        ? req.body.path.trim()
+        : process.env.OPENCODE_AUTH_PATH ||
+          path.join(os.homedir(), ".local", "share", "opencode", "auth.json");
+    const configPath =
+      typeof req.body?.configPath === "string" && req.body.configPath.trim()
+        ? req.body.configPath.trim()
+        : undefined;
+    const configCandidates = configPath
+      ? [configPath]
+      : [
+          path.join(process.cwd(), "opencode.jsonc"),
+          path.join(process.cwd(), "opencode.json"),
+          path.join(os.homedir(), ".config", "opencode", "opencode.jsonc"),
+          path.join(os.homedir(), ".config", "opencode", "opencode.json"),
+        ];
+    const config = await readFirstExistingText(configCandidates);
+    const providerConfig = config
+      ? providerConfigFromOpenCodeConfigPayload(
+          parseOpenCodeConfigPayload(config.raw),
+        )
+      : undefined;
+    const raw = await fs.readFile(filePath, "utf8");
+    const payload = JSON.parse(raw);
+    const accounts = await accountsFromOpenCodeAuthPayload(payload, {
+      providerConfig,
+    });
+    await Promise.all(accounts.map((account) => store.upsertAccount(account)));
+    await store.flushIfDirty();
+    res.json({
+      ok: true,
+      path: filePath,
+      configPath: config?.path,
+      imported: accounts.length,
+      accounts: accounts.map(redact),
+    });
+  });
 
   router.get("/settings", async (_req, res) =>
     res.json({ ok: true, settings: await store.getSettings() }),
@@ -538,6 +625,9 @@ export function createAdminRouter(options: AdminRoutesOptions) {
         {
           id: a.id,
           provider: a.provider ?? "openai",
+          providerId: a.providerId,
+          providerAdapter: a.providerAdapter,
+          providerLabel: a.providerLabel,
           email: a.email,
           enabled: a.enabled,
         },
@@ -601,24 +691,51 @@ export function createAdminRouter(options: AdminRoutesOptions) {
     if (!body.accessToken)
       return res.status(400).json({ error: "accessToken required" });
     const provider =
-      body.provider === "mistral"
-        ? "mistral"
-        : body.provider === "zai"
-          ? "zai"
-          : body.provider === "openai-compatible"
-            ? "openai-compatible"
-            : "openai";
-    const baseUrl = normalizeBaseUrl(body.baseUrl);
+      typeof body.provider === "string" && body.provider.trim()
+        ? body.provider.trim()
+        : "openai";
+    const providerAdapter =
+      normalizeProviderAdapter(body.providerAdapter) ??
+      normalizeProvider({ provider });
+    const baseUrl =
+      providerAdapter === "openai-compatible"
+        ? normalizeOpenAiCompatibleBaseUrl(body.baseUrl)
+        : normalizeBaseUrl(body.baseUrl);
     const upstreamMode = normalizeUpstreamMode(body.upstreamMode);
     const compatibilityMode = normalizeCompatibilityMode(
       body.compatibilityMode,
     );
-    if (provider === "openai-compatible" && !baseUrl) {
+    if (providerAdapter === "openai-compatible" && !baseUrl) {
       return res.status(400).json({ error: "baseUrl required for openai-compatible accounts" });
     }
+    const enabled = Boolean(body.enabled ?? true) && isRuntimeRoutableProvider(providerAdapter);
     const account: Account = {
       id: body.id ?? randomUUID(),
       provider,
+      providerId:
+        typeof body.providerId === "string" && body.providerId.trim()
+          ? body.providerId.trim()
+          : provider,
+      providerAdapter,
+      providerLabel:
+        typeof body.providerLabel === "string" && body.providerLabel.trim()
+          ? body.providerLabel.trim()
+          : undefined,
+      providerNpm:
+        typeof body.providerNpm === "string" && body.providerNpm.trim()
+          ? body.providerNpm.trim()
+          : undefined,
+      providerSource:
+        body.providerSource === "models.dev" || body.providerSource === "opencode"
+          ? body.providerSource
+          : "manual",
+      providerDoc:
+        typeof body.providerDoc === "string" && body.providerDoc.trim()
+          ? body.providerDoc.trim()
+          : undefined,
+      providerAuthEnv: Array.isArray(body.providerAuthEnv)
+        ? body.providerAuthEnv.filter((value: unknown): value is string => typeof value === "string")
+        : undefined,
       upstreamMode,
       compatibilityMode,
       email: body.email,
@@ -627,10 +744,14 @@ export function createAdminRouter(options: AdminRoutesOptions) {
       expiresAt: body.expiresAt,
       chatgptAccountId: body.chatgptAccountId,
       baseUrl,
-      enabled: body.enabled ?? true,
+      enabled,
       priority: body.priority ?? 0,
       usage: body.usage,
-      state: body.state,
+      state:
+        body.state ??
+        (enabled || isRuntimeRoutableProvider(providerAdapter)
+          ? undefined
+          : { lastError: `${providerAdapter} adapter not implemented yet` }),
     };
     await store.upsertAccount(account);
     res.json({ ok: true, account: redact(account) });
@@ -649,11 +770,21 @@ export function createAdminRouter(options: AdminRoutesOptions) {
         body.compatibilityMode,
       );
     }
+    if ("providerAdapter" in body) {
+      body.providerAdapter = normalizeProviderAdapter(body.providerAdapter);
+    }
     const existing = (await store.listAccounts()).find((a) => a.id === req.params.id);
     if (!existing) return res.status(404).json({ error: "not found" });
     const next = { ...existing, ...body };
+    if (normalizeProvider(next) === "openai-compatible") {
+      next.baseUrl = normalizeOpenAiCompatibleBaseUrl(next.baseUrl);
+      body.baseUrl = next.baseUrl;
+    }
     if (normalizeProvider(next) === "openai-compatible" && !next.baseUrl) {
       return res.status(400).json({ error: "baseUrl required for openai-compatible accounts" });
+    }
+    if (body.enabled && !isRuntimeRoutableProvider(normalizeProvider(next))) {
+      return res.status(400).json({ error: "provider adapter is not routable yet" });
     }
     const updated = await store.patchAccount(req.params.id, body);
     if (!updated) return res.status(404).json({ error: "not found" });
@@ -725,7 +856,7 @@ export function createAdminRouter(options: AdminRoutesOptions) {
     if (targetAccountId) {
       const account = (await store.listAccounts()).find((a) => a.id === targetAccountId);
       if (!account) return res.status(404).json({ error: "account not found" });
-      if ((account.provider ?? "openai") !== "openai") {
+      if (normalizeProvider(account) !== "openai") {
         return res.status(400).json({ error: "oauth reauth is only supported for OpenAI accounts" });
       }
     }

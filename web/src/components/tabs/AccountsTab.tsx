@@ -1,4 +1,9 @@
-import type { Account, StoreSettings, TraceStats } from "../../types";
+import type {
+  Account,
+  ProviderRegistryEntry,
+  StoreSettings,
+  TraceStats,
+} from "../../types";
 import React, { useEffect, useState } from "react";
 import { fmt, maskEmail, maskId } from "../../lib/ui";
 
@@ -8,6 +13,7 @@ import { createPortal } from "react-dom";
 type Props = {
   traceStats: TraceStats;
   accounts: Account[];
+  providers: ProviderRegistryEntry[];
   settings: StoreSettings;
   sanitized: boolean;
   patch: (id: string, body: any) => Promise<void>;
@@ -15,17 +21,19 @@ type Props = {
   unblock: (id: string) => Promise<void>;
   refreshUsage: (id: string) => Promise<void>;
   createAccount: (body: any) => Promise<void>;
+  importOpenCodeAuth: () => Promise<any>;
   patchSettings: (body: Partial<StoreSettings>) => Promise<void>;
   startOAuth: (email: string, accountId?: string) => Promise<any>;
   completeOAuth: (flowId: string, input: string) => Promise<any>;
   oauthRedirectUri: string;
 };
 
-type AccountProvider = "openai" | "openai-compatible" | "mistral" | "zai";
+type AccountProvider = string;
 
 type EditAccountState = {
   id: string;
   provider: AccountProvider;
+  providerAdapter?: string;
   upstreamMode: "" | "responses" | "chat/completions";
   email: string;
   accessToken: string;
@@ -49,21 +57,41 @@ type OAuthDialogState = {
   pendingEnabled?: boolean;
 };
 
-function isOAuthProvider(provider: AccountProvider) {
-  return provider === "openai";
+function isOAuthProvider(provider: AccountProvider, entry?: ProviderRegistryEntry) {
+  return provider === "openai" || provider === "openai-chatgpt" || entry?.authType === "oauth";
 }
 
-function isManualTokenProvider(provider: AccountProvider) {
-  return provider === "mistral" || provider === "openai-compatible" || provider === "zai";
+function isOpenAiCompatibleProvider(provider: AccountProvider, entry?: ProviderRegistryEntry) {
+  return provider === "openai-compatible" || entry?.providerAdapter === "openai-compatible";
 }
 
-function providerFavicon(provider?: string) {
+function isManualTokenProvider(provider: AccountProvider, entry?: ProviderRegistryEntry) {
+  return !isOAuthProvider(provider, entry);
+}
+
+function isEditOAuthProvider(account: EditAccountState) {
+  return (
+    account.providerAdapter === "openai" ||
+    (!account.providerAdapter && isOAuthProvider(account.provider))
+  );
+}
+
+function accountProviderId(account: Account) {
+  return account.providerId ?? account.provider ?? "openai";
+}
+
+function providerFavicon(provider?: string, providerId?: string) {
   if (provider === "mistral") return "https://mistral.ai/favicon.ico";
   if (provider === "zai") return "https://z.ai/favicon.ico";
+  if (providerId && providerId !== "openai" && providerId !== "openai-chatgpt") {
+    return `https://models.dev/logos/${encodeURIComponent(providerId)}.svg`;
+  }
   return "https://openai.com/favicon.ico";
 }
 
-function providerLabel(provider?: string) {
+function providerLabel(account: Account) {
+  const provider = account.providerAdapter ?? account.provider;
+  if (account.providerLabel) return account.providerLabel;
   if (provider === "mistral") return "Mistral";
   if (provider === "openai-compatible") return "OpenAI-compatible";
   if (provider === "zai") return "z.ai";
@@ -80,6 +108,7 @@ export function AccountsTab(props: Props) {
   const {
     traceStats,
     accounts,
+    providers,
     settings,
     sanitized,
     patch,
@@ -87,13 +116,14 @@ export function AccountsTab(props: Props) {
     unblock,
     refreshUsage,
     createAccount,
+    importOpenCodeAuth,
     patchSettings,
     startOAuth,
     completeOAuth,
     oauthRedirectUri,
   } = props;
   const [showAddAccount, setShowAddAccount] = useState(false);
-  const [provider, setProvider] = useState<AccountProvider>("openai");
+  const [provider, setProvider] = useState<AccountProvider>("openai-chatgpt");
   const [manualEmail, setManualEmail] = useState("");
   const [manualAccessToken, setManualAccessToken] = useState("");
   const [manualRefreshToken, setManualRefreshToken] = useState("");
@@ -105,6 +135,7 @@ export function AccountsTab(props: Props) {
   const [manualPriority, setManualPriority] = useState("0");
   const [manualEnabled, setManualEnabled] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isImportingOpenCode, setIsImportingOpenCode] = useState(false);
   const [editingAccount, setEditingAccount] = useState<EditAccountState | null>(
     null,
   );
@@ -116,6 +147,29 @@ export function AccountsTab(props: Props) {
     top: number;
     left: number;
   } | null>(null);
+
+  const providerOptions = React.useMemo(() => {
+    const byId = new Map<string, ProviderRegistryEntry>();
+    for (const entry of providers) byId.set(entry.id, entry);
+    if (!byId.has("openai-chatgpt")) {
+      byId.set("openai-chatgpt", {
+        id: "openai-chatgpt",
+        providerId: "openai-chatgpt",
+        label: "OpenAI ChatGPT",
+        provider: "openai",
+        providerAdapter: "openai",
+        providerSource: "builtin",
+        tokenEnv: [],
+        authType: "oauth",
+        runtimeSupported: true,
+      });
+    }
+    return Array.from(byId.values()).sort((a, b) =>
+      a.label.localeCompare(b.label),
+    );
+  }, [providers]);
+
+  const selectedProvider = providerOptions.find((entry) => entry.id === provider);
 
   useEffect(() => {
     const closeMenu = () => setOpenMenu(null);
@@ -177,7 +231,7 @@ export function AccountsTab(props: Props) {
 
   const closeModal = () => {
     setShowAddAccount(false);
-    setProvider("openai");
+    setProvider("openai-chatgpt");
     setManualEmail("");
     setManualAccessToken("");
     setManualRefreshToken("");
@@ -190,6 +244,13 @@ export function AccountsTab(props: Props) {
     sessionStorage.removeItem("multivibe-oauth-pending");
   };
 
+  useEffect(() => {
+    if (!selectedProvider) return;
+    setManualBaseUrl(selectedProvider.baseUrl ?? "");
+    setManualUpstreamMode(selectedProvider.upstreamMode ?? "");
+    if (!selectedProvider.runtimeSupported) setManualEnabled(false);
+  }, [selectedProvider?.id]);
+
   const closeEditModal = () => {
     setEditingAccount(null);
     setIsSavingEdit(false);
@@ -201,7 +262,7 @@ export function AccountsTab(props: Props) {
   };
 
   const submitManualAccount = async () => {
-    if (isOAuthProvider(provider)) {
+    if (isOAuthProvider(provider, selectedProvider)) {
       if (!manualEmail.trim()) return;
       setIsSubmitting(true);
       try {
@@ -243,19 +304,31 @@ export function AccountsTab(props: Props) {
     }
 
     if (!manualAccessToken.trim()) return;
-    if (provider === "openai-compatible" && !manualBaseUrl.trim()) return;
+    if (isOpenAiCompatibleProvider(provider, selectedProvider) && !manualBaseUrl.trim()) return;
     setIsSubmitting(true);
     try {
       await createAccount({
-        provider,
+        provider: selectedProvider?.provider ?? provider,
+        providerId: selectedProvider?.providerId ?? provider,
+        providerAdapter:
+          selectedProvider?.providerAdapter ??
+          (provider === "openai-compatible" ? "openai-compatible" : provider),
+        providerLabel: selectedProvider?.label,
+        providerNpm: selectedProvider?.providerNpm,
+        providerSource: selectedProvider?.providerSource ?? "manual",
+        providerDoc: selectedProvider?.providerDoc,
+        providerAuthEnv: selectedProvider?.tokenEnv,
         email: manualEmail.trim() || undefined,
         accessToken: manualAccessToken.trim(),
         refreshToken: manualRefreshToken.trim() || undefined,
         baseUrl:
-          provider === "openai-compatible" ? manualBaseUrl.trim() : undefined,
-        upstreamMode: manualUpstreamMode || undefined,
+          isOpenAiCompatibleProvider(provider, selectedProvider)
+            ? manualBaseUrl.trim()
+            : undefined,
+        upstreamMode: manualUpstreamMode || selectedProvider?.upstreamMode || undefined,
+        compatibilityMode: selectedProvider?.compatibilityMode,
         priority: Number(manualPriority) || 0,
-        enabled: manualEnabled,
+        enabled: manualEnabled && (selectedProvider?.runtimeSupported ?? true),
       });
       closeModal();
     } finally {
@@ -266,16 +339,11 @@ export function AccountsTab(props: Props) {
   const openEditModal = (account: Account) => {
     setOpenMenu(null);
     const nextProvider: AccountProvider =
-      account.provider === "mistral"
-        ? "mistral"
-        : account.provider === "zai"
-          ? "zai"
-        : account.provider === "openai-compatible"
-          ? "openai-compatible"
-          : "openai";
+      account.providerId ?? account.providerAdapter ?? account.provider ?? "openai";
     setEditingAccount({
       id: account.id,
       provider: nextProvider,
+      providerAdapter: account.providerAdapter ?? account.provider,
       upstreamMode: account.upstreamMode ?? "",
       email: account.email ?? "",
       accessToken: account.accessToken ?? "",
@@ -289,7 +357,7 @@ export function AccountsTab(props: Props) {
 
   const saveEditedAccount = async () => {
     if (!editingAccount) return;
-    if (isOAuthProvider(editingAccount.provider)) {
+    if (isEditOAuthProvider(editingAccount)) {
       if (!editingAccount.email.trim()) return;
       setIsSavingEdit(true);
       try {
@@ -334,7 +402,7 @@ export function AccountsTab(props: Props) {
 
     if (!editingAccount.accessToken.trim()) return;
     if (
-      editingAccount.provider === "openai-compatible" &&
+      editingAccount.providerAdapter === "openai-compatible" &&
       !editingAccount.baseUrl.trim()
     )
       return;
@@ -345,7 +413,7 @@ export function AccountsTab(props: Props) {
         accessToken: editingAccount.accessToken.trim(),
         refreshToken: editingAccount.refreshToken.trim() || undefined,
         baseUrl:
-          editingAccount.provider === "openai-compatible"
+          editingAccount.providerAdapter === "openai-compatible"
             ? editingAccount.baseUrl.trim()
             : undefined,
         upstreamMode: editingAccount.upstreamMode || undefined,
@@ -393,7 +461,7 @@ export function AccountsTab(props: Props) {
 
   const reauthAccount = async (account: Account) => {
     setOpenMenu(null);
-    if ((account.provider ?? "openai") !== "openai") return;
+    if ((account.providerAdapter ?? account.provider ?? "openai") !== "openai") return;
     if (!account.email?.trim()) {
       window.alert(
         "This OpenAI account has no email, so reauth cannot be started.",
@@ -435,23 +503,41 @@ export function AccountsTab(props: Props) {
     }
   };
 
+  const runOpenCodeImport = async () => {
+    setIsImportingOpenCode(true);
+    try {
+      await importOpenCodeAuth();
+    } finally {
+      setIsImportingOpenCode(false);
+    }
+  };
+
   const openAiCount = accounts.filter(
-    (account) => (account.provider ?? "openai") === "openai",
+    (account) => (account.providerAdapter ?? account.provider ?? "openai") === "openai",
   ).length;
   const passthroughAccounts = accounts.filter(
-    (account) => (account.provider ?? "openai") === "openai" && account.enabled,
+    (account) =>
+      (account.providerAdapter ?? account.provider ?? "openai") === "openai" &&
+      account.enabled,
   );
   const selectedPassthroughAccount = accounts.find(
     (account) => account.id === settings.defaultPassthroughAccountId,
   );
   const openAiCompatibleCount = accounts.filter(
-    (account) => account.provider === "openai-compatible",
+    (account) => (account.providerAdapter ?? account.provider) === "openai-compatible",
   ).length;
   const mistralCount = accounts.filter(
-    (account) => account.provider === "mistral",
+    (account) => (account.providerAdapter ?? account.provider) === "mistral",
   ).length;
   const zaiCount = accounts.filter(
-    (account) => account.provider === "zai",
+    (account) => (account.providerAdapter ?? account.provider) === "zai",
+  ).length;
+  const authOnlyCount = accounts.filter(
+    (account) =>
+      account.providerAdapter &&
+      !["openai", "openai-compatible", "mistral", "zai"].includes(
+        account.providerAdapter,
+      ),
   ).length;
   const blockedCount = accounts.filter(
     (account) => activeModelBlocks(account).length > 0,
@@ -540,7 +626,9 @@ export function AccountsTab(props: Props) {
         <div className="state-stack">
           {settings.defaultPassthroughAccountId ? (
             selectedPassthroughAccount &&
-            (selectedPassthroughAccount.provider ?? "openai") === "openai" &&
+            (selectedPassthroughAccount.providerAdapter ??
+              selectedPassthroughAccount.provider ??
+              "openai") === "openai" &&
             selectedPassthroughAccount.enabled ? (
               <span className="badge badge-live">
                 Active: {sanitized
@@ -568,6 +656,14 @@ export function AccountsTab(props: Props) {
             </span>
             <span className="badge">{mistralCount} Mistral</span>
             <span className="badge">{zaiCount} z.ai</span>
+            <span className="badge">{authOnlyCount} auth-only</span>
+            <button
+              className="btn secondary"
+              disabled={isImportingOpenCode}
+              onClick={() => void runOpenCodeImport()}
+            >
+              {isImportingOpenCode ? "Importing..." : "Import OpenCode auth"}
+            </button>
             <button className="btn" onClick={() => setShowAddAccount(true)}>
               Add account
             </button>
@@ -595,11 +691,11 @@ export function AccountsTab(props: Props) {
                     <span className="provider-badge">
                       <img
                         className="provider-icon"
-                        src={providerFavicon(a.provider)}
-                        alt={`${providerLabel(a.provider)} icon`}
+                        src={providerFavicon(a.providerAdapter ?? a.provider, accountProviderId(a))}
+                        alt={`${providerLabel(a)} icon`}
                         loading="lazy"
                       />
-                      {providerLabel(a.provider)}
+                      {providerLabel(a)}
                     </span>
                   </td>
                   <td>
@@ -615,6 +711,11 @@ export function AccountsTab(props: Props) {
                       {a.upstreamMode && (
                         <span className="mono muted">
                           upstream: {a.upstreamMode}
+                        </span>
+                      )}
+                      {a.providerAdapter && (
+                        <span className="mono muted">
+                          adapter: {a.providerAdapter}
                         </span>
                       )}
                     </div>
@@ -721,7 +822,7 @@ export function AccountsTab(props: Props) {
                             >
                               Refresh usage
                             </button>
-                            {a.provider === "openai" ? (
+                            {(a.providerAdapter ?? a.provider) === "openai" ? (
                               <button
                                 className="account-action-item"
                                 disabled={oauthBusyId === a.id}
@@ -757,9 +858,8 @@ export function AccountsTab(props: Props) {
               {!accounts.length && (
                 <tr>
                   <td colSpan={7} className="muted empty-row">
-                    No accounts configured yet. Add an OpenAI,
-                    OpenAI-compatible, Mistral, or z.ai account to expose models and
-                    enable routing.
+                    No accounts configured yet. Add a provider account or import
+                    OpenCode auth to expose models and enable routing.
                   </td>
                 </tr>
               )}
@@ -786,10 +886,12 @@ export function AccountsTab(props: Props) {
                     setProvider(e.target.value as AccountProvider)
                   }
                 >
-                  <option value="openai">OpenAI</option>
-                  <option value="openai-compatible">OpenAI-compatible</option>
-                  <option value="mistral">Mistral</option>
-                  <option value="zai">z.ai</option>
+                  {providerOptions.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.label}
+                      {entry.runtimeSupported ? "" : " (auth-only)"}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label>
@@ -800,7 +902,7 @@ export function AccountsTab(props: Props) {
                   placeholder="account@email.com"
                 />
               </label>
-              {provider === "openai-compatible" && (
+              {isOpenAiCompatibleProvider(provider, selectedProvider) && (
                 <label>
                   Base URL
                   <input
@@ -827,7 +929,7 @@ export function AccountsTab(props: Props) {
                   </option>
                 </select>
               </label>
-              {isManualTokenProvider(provider) ? (
+              {isManualTokenProvider(provider, selectedProvider) ? (
                 <>
                   <label>
                     API key
@@ -875,19 +977,19 @@ export function AccountsTab(props: Props) {
                 className="btn"
                 disabled={
                   isSubmitting ||
-                  (isOAuthProvider(provider)
+                  (isOAuthProvider(provider, selectedProvider)
                     ? !manualEmail.trim()
                     : !manualAccessToken.trim() ||
-                      (provider === "openai-compatible" &&
+                      (isOpenAiCompatibleProvider(provider, selectedProvider) &&
                         !manualBaseUrl.trim()))
                 }
                 onClick={() => void submitManualAccount()}
               >
                 {isSubmitting
-                  ? isOAuthProvider(provider)
+                  ? isOAuthProvider(provider, selectedProvider)
                     ? "Starting OAuth..."
                     : "Creating..."
-                  : isOAuthProvider(provider)
+                  : isOAuthProvider(provider, selectedProvider)
                     ? "Start OAuth"
                     : "Create account"}
               </button>
@@ -921,7 +1023,7 @@ export function AccountsTab(props: Props) {
                   placeholder="account@email.com"
                 />
               </label>
-              {editingAccount.provider === "openai-compatible" && (
+              {editingAccount.providerAdapter === "openai-compatible" && (
                 <label>
                   Base URL
                   <input
@@ -962,7 +1064,7 @@ export function AccountsTab(props: Props) {
                   </option>
                 </select>
               </label>
-              {isManualTokenProvider(editingAccount.provider) ? (
+              {!isEditOAuthProvider(editingAccount) ? (
                 <>
                   <label>
                     API key
@@ -1034,19 +1136,19 @@ export function AccountsTab(props: Props) {
                 className="btn"
                 disabled={
                   isSavingEdit ||
-                  (isOAuthProvider(editingAccount.provider)
+                  (isEditOAuthProvider(editingAccount)
                     ? !editingAccount.email.trim()
                     : !editingAccount.accessToken.trim() ||
-                      (editingAccount.provider === "openai-compatible" &&
+                      (editingAccount.providerAdapter === "openai-compatible" &&
                         !editingAccount.baseUrl.trim()))
                 }
                 onClick={() => void saveEditedAccount()}
               >
                 {isSavingEdit
-                  ? isOAuthProvider(editingAccount.provider)
+                  ? isEditOAuthProvider(editingAccount)
                     ? "Starting OAuth..."
                     : "Saving..."
-                  : isOAuthProvider(editingAccount.provider)
+                  : isEditOAuthProvider(editingAccount)
                     ? "Start reauth"
                     : "Save changes"}
               </button>

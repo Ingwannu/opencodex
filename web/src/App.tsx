@@ -11,6 +11,7 @@ import type {
   Account,
   ExposedModel,
   ModelAlias,
+  ProviderRegistryEntry,
   StoreSettings,
   Tab,
   Trace,
@@ -50,6 +51,7 @@ export default function App() {
   const [traceStats, setTraceStats] = useState<TraceStats>(EMPTY_TRACE_STATS);
   const [tracePagination, setTracePagination] = useState<TracePagination>(EMPTY_TRACE_PAGINATION);
   const [models, setModels] = useState<ExposedModel[]>([]);
+  const [providers, setProviders] = useState<ProviderRegistryEntry[]>([]);
   const [aliases, setAliases] = useState<ModelAlias[]>([]);
   const [settings, setSettings] = useState<StoreSettings>({});
   const [adminToken, setAdminToken] = useState(localStorage.getItem("adminToken") ?? tokenDefault);
@@ -146,10 +148,11 @@ export default function App() {
   }, []);
 
   const loadBase = async () => {
-    const [acc, cfg, mdl, aliasRes, settingsRes] = await Promise.all([
+    const [acc, cfg, mdl, providerRes, aliasRes, settingsRes] = await Promise.all([
       api("/admin/accounts"),
       api("/admin/config"),
       fetch("/v1/models").then((r) => r.json()),
+      api("/admin/providers"),
       api("/admin/model-aliases"),
       api("/admin/settings"),
     ]);
@@ -157,6 +160,7 @@ export default function App() {
     setStorageInfo(cfg.storage ?? null);
     setOauthRedirectUri(String(cfg.oauthRedirectUri ?? ""));
     setModels((mdl.data ?? []) as ExposedModel[]);
+    setProviders((providerRes.providers ?? []) as ProviderRegistryEntry[]);
     setAliases((aliasRes.modelAliases ?? []) as ModelAlias[]);
     setSettings((settingsRes.settings ?? {}) as StoreSettings);
   };
@@ -346,6 +350,15 @@ export default function App() {
     await loadBase();
   };
 
+  const importOpenCodeAuth = async () => {
+    const result = await api("/admin/auth/import-opencode", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    await loadBase();
+    return result;
+  };
+
   const patchSettings = async (body: Partial<StoreSettings>) => {
     await api("/admin/settings", { method: "PATCH", body: JSON.stringify(body) });
     await loadBase();
@@ -531,6 +544,7 @@ export default function App() {
           <AccountsTab
             traceStats={filteredTraceStats}
             accounts={accounts}
+            providers={providers}
             settings={settings}
             sanitized={sanitized}
             patch={patch}
@@ -538,6 +552,7 @@ export default function App() {
             unblock={unblock}
             refreshUsage={refreshUsage}
             createAccount={createAccount}
+            importOpenCodeAuth={importOpenCodeAuth}
             patchSettings={patchSettings}
             startOAuth={startOAuth}
             completeOAuth={completeOAuth}

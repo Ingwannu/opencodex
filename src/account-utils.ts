@@ -7,7 +7,7 @@ export async function ensureValidToken(
   account: Account,
   oauthConfig: OAuthConfig,
 ): Promise<Account> {
-  if ((account.provider ?? "openai") !== "openai") return account;
+  if (normalizeProvider(account) !== "openai") return account;
   if (!account.expiresAt || Date.now() < account.expiresAt - 5 * 60_000)
     return account;
   if (!account.refreshToken) return account;

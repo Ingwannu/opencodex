@@ -38,6 +38,7 @@ Useful commands:
 opencodex auth providers
 opencodex auth login openrouter --id openrouter --token-env OPENROUTER_API_KEY
 opencodex auth import-opencode
+opencodex auth import-opencode ~/.local/share/opencode/auth.json --config ./opencode.jsonc
 opencodex update
 opencodex uninstall
 ```
@@ -68,6 +69,9 @@ OpenCodex acts as an OpenAI-compatible gateway that lets you route requests acro
 - **Multi-account routing** with quota-aware failover
 - **Model aliases** (for example `small`) with ordered fallback across providers/models
 - **OAuth onboarding** from dashboard (manual redirect paste flow)
+- **Provider registry** from Models.dev with OpenCode-style provider IDs
+- **OpenCode auth import** from `~/.local/share/opencode/auth.json`, including
+  custom provider endpoint metadata from `opencode.json` / `opencode.jsonc`
 - **Manual OpenAI-compatible connections** with custom `baseUrl` + API key
 - **Persistent account storage** across container restarts
 - **Request tracing v2** (retention capped at 1000, server pagination, tokens/model/error/latency stats, optional full payload)
@@ -155,8 +159,25 @@ Because this is often deployed remotely (Unraid/VPS), onboarding uses a manual r
 5. Copy the full redirect URL shown after the callback completes
 6. Paste that URL in the dashboard and click **Complete OAuth**
 
-Mistral accounts still use manual token entry in the dashboard.
+Mistral and z.ai accounts use manual token entry in the dashboard.
 OpenAI-compatible accounts use manual `baseUrl` + API key entry in the dashboard.
+The provider selector is populated from Models.dev when network access is
+available, then falls back to bundled common providers.
+
+OpenCodex can route providers that map to the current runtime adapters:
+
+- OpenAI ChatGPT OAuth
+- OpenAI API through `/v1/responses`
+- Mistral
+- z.ai
+- OpenAI-compatible providers from Models.dev, including OpenRouter, Requesty,
+  local OpenAI-compatible servers, and custom OpenCode providers using
+  `@ai-sdk/openai-compatible`
+
+Credentials for providers whose native API adapter is not implemented yet, such
+as Anthropic, Google, Amazon Bedrock, and Vertex, are imported and shown as
+auth-only disabled accounts. They are preserved for management, but are not sent
+through the proxy until a native adapter is added.
 
 Default expected redirect URI:
 

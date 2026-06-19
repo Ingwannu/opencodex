@@ -1,6 +1,13 @@
 export type Account = {
   id: string;
-  provider?: "openai" | "openai-compatible" | "mistral" | "zai";
+  provider?: string;
+  providerId?: string;
+  providerAdapter?: string;
+  providerLabel?: string;
+  providerNpm?: string;
+  providerSource?: "builtin" | "models.dev" | "opencode" | "manual";
+  providerDoc?: string;
+  providerAuthEnv?: string[];
   upstreamMode?: "responses" | "chat/completions";
   compatibilityMode?: "auto" | "responses" | "chat-completions-bridge";
   email?: string;
@@ -101,11 +108,29 @@ export type ExposedModel = {
   id: string;
   owned_by?: string;
   metadata?: {
-    provider?: "openai" | "openai-compatible" | "mistral" | "zai";
-    provider_candidates?: Array<"openai" | "openai-compatible" | "mistral" | "zai">;
+    provider?: string;
+    provider_candidates?: string[];
     is_alias?: boolean;
     alias_targets?: string[];
   };
+};
+
+export type ProviderRegistryEntry = {
+  id: string;
+  providerId: string;
+  label: string;
+  provider: string;
+  providerAdapter: string;
+  providerNpm?: string;
+  providerSource: "builtin" | "models.dev" | "manual";
+  providerDoc?: string;
+  baseUrl?: string;
+  upstreamMode?: "responses" | "chat/completions";
+  compatibilityMode?: "auto" | "responses" | "chat-completions-bridge";
+  tokenEnv: string[];
+  authType: "oauth" | "api-key";
+  runtimeSupported: boolean;
+  modelsCount?: number;
 };
 
 export type ModelAlias = {

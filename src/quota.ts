@@ -1,4 +1,9 @@
-import type { Account, ProviderId, UsageSnapshot } from "./types.js";
+import type {
+  Account,
+  ProviderAdapter,
+  RouteProviderId,
+  UsageSnapshot,
+} from "./types.js";
 import {
   EMPTY_RESPONSE_BLOCK_THRESHOLD,
   EMPTY_RESPONSE_BLOCK_DURATION_MS,
@@ -17,11 +22,31 @@ type RouteCache = {
 
 const routeCache: RouteCache = { bucket: -1, accountId: undefined };
 
-export function normalizeProvider(account?: Pick<Account, "provider">): ProviderId {
-  if (account?.provider === "openai-compatible") return "openai-compatible";
-  if (account?.provider === "mistral") return "mistral";
-  if (account?.provider === "zai") return "zai";
+export function normalizeProvider(
+  account?: Pick<Account, "provider" | "providerAdapter">,
+): ProviderAdapter {
+  const provider = account?.providerAdapter ?? account?.provider;
+  if (provider === "openai-compatible") return "openai-compatible";
+  if (provider === "mistral") return "mistral";
+  if (provider === "zai") return "zai";
+  if (provider === "anthropic") return "anthropic";
+  if (provider === "google") return "google";
+  if (provider === "azure") return "azure";
+  if (provider === "amazon-bedrock") return "amazon-bedrock";
+  if (provider === "vertex") return "vertex";
+  if (provider === "unsupported") return "unsupported";
   return "openai";
+}
+
+export function isRuntimeRoutableProvider(
+  provider: ProviderAdapter,
+): provider is RouteProviderId {
+  return (
+    provider === "openai" ||
+    provider === "openai-compatible" ||
+    provider === "mistral" ||
+    provider === "zai"
+  );
 }
 
 function nowBucket(now: number, windowMs: number) {
@@ -241,6 +266,7 @@ export function isQuotaErrorText(s: string): boolean {
 
 export function accountUsable(a: Account, model?: string): boolean {
   if (!a.enabled) return false;
+  if (!isRuntimeRoutableProvider(normalizeProvider(a))) return false;
   if (!model) return true;
   const modelKey = model.toLowerCase();
   const block = a.state?.modelBlocks?.[modelKey];
@@ -313,7 +339,7 @@ export function chooseAccount(accounts: Account[]): Account | null {
 
 export function chooseAccountForProvider(
   accounts: Account[],
-  provider: ProviderId,
+  provider: RouteProviderId,
 ): Account | null {
   return chooseAccount(accounts.filter((a) => normalizeProvider(a) === provider));
 }
@@ -321,6 +347,13 @@ export function chooseAccountForProvider(
 export async function refreshUsageIfNeeded(account: Account, chatgptBaseUrl: string, force = false): Promise<Account> {
   if (!force && account.usage && Date.now() - account.usage.fetchedAt < USAGE_CACHE_TTL_MS) return account;
   const provider = normalizeProvider(account);
+  if (!isRuntimeRoutableProvider(provider)) {
+    account.usage = {
+      ...account.usage,
+      fetchedAt: Date.now(),
+    };
+    return account;
+  }
   const shouldUseZaiQuotaEndpoint =
     provider === "zai" || (provider === "openai-compatible" && isZaiQuotaBaseUrl(chatgptBaseUrl));
 

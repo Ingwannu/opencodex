@@ -13,7 +13,12 @@ import {
   UPSTREAM_COMPACT_PATH,
   UPSTREAM_PATH,
 } from "../../config.js";
-import type { ModelAlias, ProviderId, UpstreamMode } from "../../types.js";
+import type {
+  ModelAlias,
+  ProviderAdapter,
+  RouteProviderId,
+  UpstreamMode,
+} from "../../types.js";
 import {
   accountUsable,
   chooseAccountForProvider,
@@ -27,6 +32,7 @@ import {
   refreshUsageIfNeeded,
   rememberError,
   shouldBlockAccountForZaiError,
+  isRuntimeRoutableProvider,
 } from "../../quota.js";
 import {
   chatCompletionHasAssistantOutput,
@@ -119,8 +125,8 @@ type ExposedModel = {
   created: number;
   owned_by: string;
   metadata: {
-    provider: ProviderId;
-    provider_candidates?: ProviderId[];
+    provider: RouteProviderId;
+    provider_candidates?: RouteProviderId[];
     account_ids?: string[];
     context_window: number | null;
     max_output_tokens: number | null;
@@ -166,7 +172,7 @@ function inferSupportsReasoning(modelId: string): boolean {
 
 function modelObject(
   id: string,
-  provider: ProviderId,
+  provider: RouteProviderId,
   upstream?: Record<string, unknown>,
 ): ExposedModel {
   const upstreamObject = upstream ?? {};
@@ -212,12 +218,24 @@ function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
+function appendOpenAiCompatiblePath(baseUrl: string, apiPath: string): string {
+  const base = trimTrailingSlash(baseUrl);
+  if (/\/v1$/i.test(base) && apiPath.startsWith("/v1/")) {
+    return `${base}${apiPath.slice(3)}`;
+  }
+  return `${base}${apiPath}`;
+}
+
 function isHopByHopHeader(name: string): boolean {
   return HOP_BY_HOP_HEADERS.has(name.toLowerCase());
 }
 
 function accountBaseUrl(
-  account: { provider?: ProviderId; baseUrl?: string | undefined },
+  account: {
+    provider?: string;
+    providerAdapter?: ProviderAdapter;
+    baseUrl?: string | undefined;
+  },
   openaiBaseUrl: string,
   mistralBaseUrl: string,
   zaiBaseUrl: string,
@@ -228,12 +246,14 @@ function accountBaseUrl(
   }
   if (provider === "mistral") return mistralBaseUrl;
   if (provider === "zai") return zaiBaseUrl;
+  if (!isRuntimeRoutableProvider(provider)) return "";
   return openaiBaseUrl;
 }
 
 function resolveUpstreamMode(
   account: {
-    provider?: ProviderId;
+    provider?: string;
+    providerAdapter?: ProviderAdapter;
     upstreamMode?: UpstreamMode;
     compatibilityMode?: string;
   },
@@ -253,14 +273,14 @@ function resolveUpstreamMode(
 function mergeModelAvailability(
   current: ExposedModel | undefined,
   nextModel: ExposedModel,
-  provider: ProviderId,
+  provider: RouteProviderId,
   accountId: string,
 ): ExposedModel {
   const providers = Array.from(
     new Set([
       ...(current?.metadata.provider_candidates ??
-        [current?.metadata.provider].filter((value): value is ProviderId =>
-          Boolean(value),
+        [current?.metadata.provider].filter((value): value is RouteProviderId =>
+          typeof value === "string" && isRuntimeRoutableProvider(value),
         )),
       provider,
     ]),
@@ -289,7 +309,7 @@ function normalizeModelLookupKey(model?: string): string {
 }
 
 /** Check whether a model is explicitly excluded from a provider via EXCLUDED_PROVIDER_MODELS. */
-function isModelExcludedFromProvider(model: string | undefined, provider: ProviderId): boolean {
+function isModelExcludedFromProvider(model: string | undefined, provider: RouteProviderId): boolean {
   const key = normalizeModelLookupKey(model);
   if (!key || !EXCLUDED_PROVIDER_MODELS.size) return false;
   const excluded = EXCLUDED_PROVIDER_MODELS.get(provider);
@@ -299,7 +319,7 @@ function isModelExcludedFromProvider(model: string | undefined, provider: Provid
 function inferProviderFromModel(
   model: string | undefined,
   discoveredModels: ExposedModel[],
-): ProviderId {
+): RouteProviderId {
   const key = normalizeModelLookupKey(model);
   if (!key) return "openai";
 
@@ -351,7 +371,7 @@ function inferProviderFromModel(
 function providersForModel(
   model: string | undefined,
   discoveredModels: ExposedModel[],
-): ProviderId[] {
+): RouteProviderId[] {
   const key = normalizeModelLookupKey(model);
   if (!key) return ["openai"];
 
@@ -365,8 +385,8 @@ function providersForModel(
     return Array.from(
       new Set(
         candidates.filter(
-          (value): value is ProviderId =>
-            typeof value === "string" && value.length > 0,
+          (value): value is RouteProviderId =>
+            typeof value === "string" && isRuntimeRoutableProvider(value),
         ),
       ),
     );
@@ -394,7 +414,7 @@ function accountSupportsModel(
 }
 
 function supportedToolTypesForRoute(
-  provider: ProviderId,
+  provider: RouteProviderId,
   model: string | undefined,
   discoveredModels: ExposedModel[],
 ): Set<string> {
@@ -426,7 +446,7 @@ function supportedToolTypesForRoute(
 
 function filterUnsupportedTools(
   payload: any,
-  provider: ProviderId,
+  provider: RouteProviderId,
   model: string | undefined,
   discoveredModels: ExposedModel[],
 ) {
@@ -467,10 +487,17 @@ async function discoverModels(
   try {
     const accounts = await store.listAccounts();
     const byId = new Map<string, ExposedModel>();
-    const activeAccounts = accounts.filter((a) => a.enabled && a.accessToken);
+    const activeAccounts = accounts.filter(
+      (a) =>
+        a.enabled &&
+        a.accessToken &&
+        isRuntimeRoutableProvider(normalizeProvider(a)),
+    );
 
     for (const account of activeAccounts) {
-      const provider = normalizeProvider(account);
+      const normalizedProvider = normalizeProvider(account);
+      if (!isRuntimeRoutableProvider(normalizedProvider)) continue;
+      const provider = normalizedProvider;
       try {
         const headers: Record<string, string> = {
           authorization: `Bearer ${account.accessToken}`,
@@ -493,7 +520,7 @@ async function discoverModels(
             zaiBaseUrl,
           );
           if (!baseUrl) continue;
-          url = `${baseUrl}/v1/models`;
+          url = appendOpenAiCompatiblePath(baseUrl, "/v1/models");
         }
 
         const r = await fetch(url, { headers });
@@ -686,7 +713,7 @@ function defaultChatGptReasoningEffort(
   payload.reasoning.effort = "low";
 }
 
-function stripUnsupportedServiceTier(payload: any, provider: ProviderId): void {
+function stripUnsupportedServiceTier(payload: any, provider: RouteProviderId): void {
   if (!payload || typeof payload !== "object") return;
   if (provider === "openai") return;
   delete payload.service_tier;
@@ -751,7 +778,7 @@ function resolveEffortTargets(
 type RoutingCandidate = {
   requestedModel: string | undefined;
   resolvedModel: string | undefined;
-  provider: ProviderId;
+  provider: RouteProviderId;
 };
 
 function buildRoutingCandidates(
@@ -798,7 +825,7 @@ function buildRoutingCandidates(
   const fallbackProvider = inferProviderFromModel(requestModel, discoveredModels);
   if (isModelExcludedFromProvider(requestModel, fallbackProvider)) {
     // Try providers in order until we find a non-excluded one
-    const tryProviders: ProviderId[] = ["openai", "openai-compatible", "mistral", "zai"];
+    const tryProviders: RouteProviderId[] = ["openai", "openai-compatible", "mistral", "zai"];
     for (const p of tryProviders) {
       if (!isModelExcludedFromProvider(requestModel, p)) {
         return [
@@ -1436,8 +1463,12 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
               ? zaiCompactUpstreamPath
               : zaiUpstreamPath;
           }
+          const upstreamUrl =
+            candidate.provider === "openai-compatible"
+              ? appendOpenAiCompatiblePath(upstreamBaseUrl, upstreamPath)
+              : `${upstreamBaseUrl}${upstreamPath}`;
           const upstream = await fetchCodexWithRetry(
-            `${upstreamBaseUrl}${upstreamPath}`,
+            upstreamUrl,
             {
               method: "POST",
               headers,

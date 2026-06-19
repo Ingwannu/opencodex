@@ -1,4 +1,13 @@
-export type ProviderId = "openai" | "openai-compatible" | "mistral" | "zai";
+export type RouteProviderId = "openai" | "openai-compatible" | "mistral" | "zai";
+export type ProviderAdapter =
+  | RouteProviderId
+  | "anthropic"
+  | "google"
+  | "azure"
+  | "amazon-bedrock"
+  | "vertex"
+  | "unsupported";
+export type ProviderId = string;
 export type UpstreamMode = "responses" | "chat/completions";
 export type CompatibilityMode =
   | "auto"
@@ -34,6 +43,13 @@ export type AccountState = {
 export type Account = {
   id: string;
   provider?: ProviderId;
+  providerId?: string;
+  providerAdapter?: ProviderAdapter;
+  providerLabel?: string;
+  providerNpm?: string;
+  providerSource?: "builtin" | "models.dev" | "opencode" | "manual";
+  providerDoc?: string;
+  providerAuthEnv?: string[];
   upstreamMode?: UpstreamMode;
   compatibilityMode?: CompatibilityMode;
   email?: string;

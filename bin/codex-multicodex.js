@@ -67,48 +67,110 @@ const authProviderPresets = {
   "openai-chatgpt": {
     label: "OpenAI ChatGPT account token",
     provider: "openai",
+    providerId: "openai-chatgpt",
+    providerAdapter: "openai",
+    providerSource: "builtin",
     tokenEnv: ["CHATGPT_ACCESS_TOKEN", "OPENAI_ACCESS_TOKEN"],
+    runtimeSupported: true,
   },
   "openai-api": {
     label: "OpenAI API key through the proxy",
     provider: "openai-compatible",
+    providerId: "openai",
+    providerAdapter: "openai-compatible",
+    providerNpm: "@ai-sdk/openai",
+    providerSource: "builtin",
+    providerDoc: "https://platform.openai.com/docs/models",
     baseUrl: "https://api.openai.com",
     upstreamMode: "responses",
     compatibilityMode: "responses",
     tokenEnv: ["OPENAI_API_KEY"],
+    runtimeSupported: true,
   },
   openrouter: {
     label: "OpenRouter chat/completions bridge",
     provider: "openai-compatible",
+    providerId: "openrouter",
+    providerAdapter: "openai-compatible",
+    providerNpm: "@openrouter/ai-sdk-provider",
+    providerSource: "builtin",
+    providerDoc: "https://openrouter.ai/models",
     baseUrl: "https://openrouter.ai/api",
     upstreamMode: "chat/completions",
     compatibilityMode: "chat-completions-bridge",
     tokenEnv: ["OPENROUTER_API_KEY"],
+    runtimeSupported: true,
   },
   mistral: {
     label: "Mistral native provider",
     provider: "mistral",
+    providerId: "mistral",
+    providerAdapter: "mistral",
+    providerNpm: "@ai-sdk/mistral",
+    providerSource: "builtin",
     tokenEnv: ["MISTRAL_API_KEY"],
+    runtimeSupported: true,
   },
   zai: {
     label: "Z.ai native provider",
     provider: "zai",
+    providerId: "zai",
+    providerAdapter: "zai",
+    providerNpm: "@ai-sdk/openai-compatible",
+    providerSource: "builtin",
+    providerDoc: "https://docs.z.ai/guides/overview/pricing",
     tokenEnv: ["ZAI_API_KEY", "ZAI_TOKEN"],
+    runtimeSupported: true,
   },
   neuralwatt: {
     label: "Neuralwatt OpenAI-compatible bridge",
     provider: "openai-compatible",
+    providerId: "neuralwatt",
+    providerAdapter: "openai-compatible",
+    providerNpm: "@ai-sdk/openai-compatible",
+    providerSource: "builtin",
     baseUrl: "https://api.neuralwatt.com",
     upstreamMode: "chat/completions",
     compatibilityMode: "chat-completions-bridge",
     tokenEnv: ["NEURALWATT_API_KEY"],
+    runtimeSupported: true,
+  },
+  requesty: {
+    label: "Requesty",
+    provider: "openai-compatible",
+    providerId: "requesty",
+    providerAdapter: "openai-compatible",
+    providerNpm: "@ai-sdk/openai-compatible",
+    providerSource: "builtin",
+    providerDoc: "https://requesty.ai/solution/llm-routing/models",
+    baseUrl: "https://router.requesty.ai",
+    upstreamMode: "chat/completions",
+    compatibilityMode: "chat-completions-bridge",
+    tokenEnv: ["REQUESTY_API_KEY"],
+    runtimeSupported: true,
+  },
+  anthropic: {
+    label: "Anthropic",
+    provider: "anthropic",
+    providerId: "anthropic",
+    providerAdapter: "anthropic",
+    providerNpm: "@ai-sdk/anthropic",
+    providerSource: "builtin",
+    providerDoc: "https://docs.anthropic.com/en/docs/about-claude/models",
+    tokenEnv: ["ANTHROPIC_API_KEY"],
+    runtimeSupported: false,
   },
   "openai-compatible": {
     label: "Generic OpenAI-compatible endpoint",
     provider: "openai-compatible",
+    providerId: "openai-compatible",
+    providerAdapter: "openai-compatible",
+    providerNpm: "@ai-sdk/openai-compatible",
+    providerSource: "builtin",
     upstreamMode: "chat/completions",
     compatibilityMode: "chat-completions-bridge",
     tokenEnv: ["OPENAI_COMPATIBLE_API_KEY"],
+    runtimeSupported: true,
   },
 };
 
@@ -119,6 +181,95 @@ const authProviderAliases = {
   "z.ai": "zai",
   zaiorg: "zai",
 };
+
+const MODELS_DEV_API_URL = process.env.MODELS_DEV_API_URL || "https://models.dev/api.json";
+let modelsDevAuthProviderCache = null;
+
+function sanitizeProviderId(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function providerAdapterFromNpm(providerId, npmPackage) {
+  const id = sanitizeProviderId(providerId);
+  const npm = String(npmPackage || "").trim().toLowerCase();
+  if (id === "openai-chatgpt") return "openai";
+  if (id === "mistral") return "mistral";
+  if (id === "zai") return "zai";
+  if (npm === "@ai-sdk/openai" || npm.includes("openai-compatible")) return "openai-compatible";
+  if (npm === "@openrouter/ai-sdk-provider") return "openai-compatible";
+  if (npm === "@ai-sdk/mistral") return "mistral";
+  if (npm === "@ai-sdk/anthropic") return "anthropic";
+  if (npm === "@ai-sdk/google") return "google";
+  if (npm === "@ai-sdk/azure") return "azure";
+  if (npm === "@ai-sdk/amazon-bedrock") return "amazon-bedrock";
+  if (npm.includes("google-vertex")) return "vertex";
+  return "unsupported";
+}
+
+function isRuntimeSupportedAdapter(adapter) {
+  return adapter === "openai" || adapter === "openai-compatible" || adapter === "mistral" || adapter === "zai";
+}
+
+function providerForAdapter(providerId, adapter) {
+  return isRuntimeSupportedAdapter(adapter) ? adapter : sanitizeProviderId(providerId);
+}
+
+function modelsDevProviderToPreset(providerId, source) {
+  const id = sanitizeProviderId(source?.id || providerId);
+  const adapter = providerAdapterFromNpm(id, source?.npm);
+  const runtimeSupported = isRuntimeSupportedAdapter(adapter);
+  const baseUrl = adapter === "openai-compatible"
+    ? normalizeOpenAiCompatibleBaseUrl(source?.api)
+    : normalizeBaseUrl(source?.api);
+  return {
+    label: source?.name || id,
+    provider: providerForAdapter(id, adapter),
+    providerId: id,
+    providerAdapter: adapter,
+    providerNpm: source?.npm,
+    providerSource: "models.dev",
+    providerDoc: source?.doc,
+    baseUrl,
+    upstreamMode: adapter === "openai-compatible" ? "chat/completions" : undefined,
+    compatibilityMode: adapter === "openai-compatible" ? "chat-completions-bridge" : undefined,
+    tokenEnv: Array.isArray(source?.env) ? source.env.filter((value) => typeof value === "string") : [],
+    runtimeSupported,
+  };
+}
+
+async function loadModelsDevAuthProviders() {
+  if (modelsDevAuthProviderCache) return new Map(modelsDevAuthProviderCache);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(process.env.MODELS_DEV_TIMEOUT_MS || 2500));
+  try {
+    const res = await fetch(MODELS_DEV_API_URL, {
+      signal: controller.signal,
+      headers: { accept: "application/json" },
+    });
+    if (!res.ok) throw new Error(`models.dev returned ${res.status}`);
+    const payload = await res.json();
+    const entries = new Map();
+    for (const [id, body] of Object.entries(payload || {})) {
+      if (!body || typeof body !== "object") continue;
+      try {
+        const preset = modelsDevProviderToPreset(id, body);
+        entries.set(preset.providerId, preset);
+      } catch {
+        // Keep one malformed upstream provider from disabling the whole catalog.
+      }
+    }
+    modelsDevAuthProviderCache = entries;
+    return new Map(entries);
+  } catch {
+    return new Map();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 const reasoning = [
   { effort: "low", description: "Fast responses with lighter reasoning" },
@@ -513,14 +664,65 @@ function shellDefault(value) {
   return String(value).replace(/(["\\$`])/g, "\\$1");
 }
 
-function canonicalAuthProvider(name) {
+async function canonicalAuthProvider(name, opts = {}) {
   const raw = String(name || "").trim().toLowerCase();
   const canonical = authProviderAliases[raw] || raw;
-  const preset = authProviderPresets[canonical];
-  if (!preset) {
-    throw new Error(`Unknown auth provider "${name}". Run: opencodex auth providers`);
+  const builtin = authProviderPresets[canonical];
+  if (builtin) return { name: canonical, preset: builtin };
+
+  const modelsDev = await loadModelsDevAuthProviders();
+  const modelsDevPreset = modelsDev.get(canonical);
+  if (modelsDevPreset) {
+    return {
+      name: canonical,
+      preset: {
+        ...modelsDevPreset,
+        baseUrl:
+          modelsDevPreset.providerAdapter === "openai-compatible"
+            ? normalizeOpenAiCompatibleBaseUrl(optionValue(opts, "base-url", "baseUrl") || modelsDevPreset.baseUrl)
+            : normalizeBaseUrl(optionValue(opts, "base-url", "baseUrl") || modelsDevPreset.baseUrl),
+      },
+    };
   }
-  return { name: canonical, preset };
+
+  const baseUrl = optionValue(opts, "base-url", "baseUrl");
+  if (baseUrl) {
+    const providerId = sanitizeProviderId(name) || "openai-compatible";
+    return {
+      name: providerId,
+      preset: {
+        label: providerId,
+        provider: "openai-compatible",
+        providerId,
+        providerAdapter: "openai-compatible",
+        providerNpm: "@ai-sdk/openai-compatible",
+        providerSource: "manual",
+        baseUrl: normalizeOpenAiCompatibleBaseUrl(baseUrl),
+        upstreamMode: "chat/completions",
+        compatibilityMode: "chat-completions-bridge",
+        tokenEnv: [],
+        runtimeSupported: true,
+      },
+    };
+  }
+
+  const providerId = sanitizeProviderId(name);
+  if (providerId) {
+    return {
+      name: providerId,
+      preset: {
+        label: providerId,
+        provider: providerId,
+        providerId,
+        providerAdapter: "unsupported",
+        providerSource: "manual",
+        tokenEnv: [],
+        runtimeSupported: false,
+      },
+    };
+  }
+
+  throw new Error(`Unknown auth provider "${name}". Run: opencodex auth providers`);
 }
 
 function parseCliOptions(argv) {
@@ -578,6 +780,12 @@ function normalizeBaseUrl(value) {
     throw new Error(`Invalid base URL "${raw}": ${err instanceof Error ? err.message : String(err)}`);
   }
   return raw.replace(/\/+$/, "");
+}
+
+function normalizeOpenAiCompatibleBaseUrl(value) {
+  const normalized = normalizeBaseUrl(value);
+  if (!normalized) return undefined;
+  return normalized.replace(/\/v1$/i, "");
 }
 
 function normalizeUpstreamMode(value) {
@@ -670,15 +878,24 @@ function readToken(opts, preset) {
   throw new Error("No token provided. Use --token, --token-env ENV, --stdin, or the provider's default env var.");
 }
 
-function printAuthProviders() {
+async function printAuthProviders() {
+  const providers = await loadModelsDevAuthProviders();
   for (const [name, preset] of Object.entries(authProviderPresets)) {
+    providers.set(name, preset);
+  }
+  const sorted = Array.from(providers.entries()).sort((a, b) =>
+    String(a[1].label || a[0]).localeCompare(String(b[1].label || b[0])),
+  );
+  for (const [name, preset] of sorted) {
     const pieces = [
       name.padEnd(18),
       preset.provider,
+      preset.providerAdapter ? `adapter=${preset.providerAdapter}` : "",
       preset.baseUrl ? `base=${preset.baseUrl}` : "",
       preset.upstreamMode ? `mode=${preset.upstreamMode}` : "",
       preset.compatibilityMode ? `compat=${preset.compatibilityMode}` : "",
       preset.tokenEnv?.length ? `env=${preset.tokenEnv.join("|")}` : "",
+      preset.runtimeSupported === false ? "auth-only" : "",
       `- ${preset.label}`,
     ].filter(Boolean);
     console.log(pieces.join("  "));
@@ -725,8 +942,8 @@ function upsertAccount(account, resetState = false) {
   const next = {
     ...existing,
     ...account,
-    usage: resetState ? undefined : existing?.usage,
-    state: resetState ? undefined : existing?.state,
+    usage: resetState ? undefined : (account.usage ?? existing?.usage),
+    state: resetState ? undefined : (account.state ?? existing?.state),
   };
 
   if (existingIndex === -1) {
@@ -739,33 +956,19 @@ function upsertAccount(account, resetState = false) {
   return next;
 }
 
-function authLogin(providerName, opts = {}) {
+async function authLogin(providerName, opts = {}) {
   let name;
   let preset;
-  try {
-    ({ name, preset } = canonicalAuthProvider(providerName));
-  } catch (err) {
-    const baseUrl = optionValue(opts, "base-url", "baseUrl");
-    if (!baseUrl) throw err;
-    name = String(providerName || "openai-compatible")
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9._-]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "openai-compatible";
-    preset = {
-      ...authProviderPresets["openai-compatible"],
-      label: `Generic OpenAI-compatible endpoint (${name})`,
-    };
-  }
+  ({ name, preset } = await canonicalAuthProvider(providerName, opts));
   const token = readToken(opts, preset);
   if (!token) throw new Error("Token is empty");
 
-  const baseUrl = normalizeBaseUrl(optionValue(opts, "base-url", "baseUrl") || preset.baseUrl);
+  const providerAdapter = optionValue(opts, "provider-adapter", "providerAdapter") || preset.providerAdapter || preset.provider;
+  const baseUrl = providerAdapter === "openai-compatible"
+    ? normalizeOpenAiCompatibleBaseUrl(optionValue(opts, "base-url", "baseUrl") || preset.baseUrl)
+    : normalizeBaseUrl(optionValue(opts, "base-url", "baseUrl") || preset.baseUrl);
   const provider = optionValue(opts, "provider") || preset.provider;
-  if (!["openai", "openai-compatible", "mistral", "zai"].includes(provider)) {
-    throw new Error(`Unsupported provider "${provider}"`);
-  }
-  if (provider === "openai-compatible" && !baseUrl) {
+  if (providerAdapter === "openai-compatible" && !baseUrl) {
     throw new Error("--base-url is required for openai-compatible accounts");
   }
 
@@ -779,10 +982,19 @@ function authLogin(providerName, opts = {}) {
   const refreshToken = optionValue(opts, "refresh-token", "refreshToken");
   const chatgptAccountId = optionValue(opts, "chatgpt-account-id", "chatgptAccountId");
   const email = optionValue(opts, "email") || id;
+  const runtimeSupported = preset.runtimeSupported !== false && isRuntimeSupportedAdapter(providerAdapter);
+  const enabled = opts.enabled ? runtimeSupported : !opts.disabled && runtimeSupported;
 
   const account = {
     id,
     provider,
+    providerId: preset.providerId || name,
+    providerAdapter,
+    providerLabel: preset.label,
+    providerNpm: preset.providerNpm,
+    providerSource: preset.providerSource || "manual",
+    providerDoc: preset.providerDoc,
+    providerAuthEnv: preset.tokenEnv,
     upstreamMode,
     compatibilityMode,
     email,
@@ -791,11 +1003,15 @@ function authLogin(providerName, opts = {}) {
     expiresAt,
     chatgptAccountId,
     baseUrl,
-    enabled: !opts.disabled,
+    enabled,
     priority,
+    state: runtimeSupported ? undefined : { lastError: `${providerAdapter} adapter not implemented yet` },
   };
   const saved = upsertAccount(account, Boolean(opts["reset-state"]));
   console.log(`saved: ${saved.id} provider=${saved.provider || "openai"} enabled=${saved.enabled !== false}`);
+  if (!runtimeSupported) {
+    console.log(`auth-only: ${providerAdapter} adapter is not implemented in the proxy yet`);
+  }
 }
 
 function authRemove(id) {
@@ -855,6 +1071,76 @@ function findBaseUrlInObject(value, seen = new Set()) {
   return undefined;
 }
 
+function stripJsonComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+function providerConfigFromOpenCodeConfigPayload(payload) {
+  const providers = payload?.provider;
+  const out = new Map();
+  if (!providers || typeof providers !== "object" || Array.isArray(providers)) {
+    return out;
+  }
+
+  for (const [providerId, raw] of Object.entries(providers)) {
+    if (!raw || typeof raw !== "object") continue;
+    const options = raw.options && typeof raw.options === "object" ? raw.options : {};
+    const metadata = {
+      id: providerId,
+      name: typeof raw.name === "string" ? raw.name : providerId,
+      npm: typeof raw.npm === "string" ? raw.npm : undefined,
+      api:
+        typeof options.baseURL === "string"
+          ? options.baseURL
+          : typeof options.baseUrl === "string"
+            ? options.baseUrl
+            : typeof options.base_url === "string"
+              ? options.base_url
+              : undefined,
+      env: Array.isArray(raw.env)
+        ? raw.env.filter((value) => typeof value === "string")
+        : typeof raw.env === "string"
+          ? [raw.env]
+          : [],
+      doc: typeof raw.doc === "string" ? raw.doc : undefined,
+      models: raw.models && typeof raw.models === "object" ? raw.models : undefined,
+    };
+    out.set(sanitizeProviderId(providerId), {
+      ...modelsDevProviderToPreset(providerId, metadata),
+      providerSource: "manual",
+    });
+  }
+  return out;
+}
+
+function readOpenCodeProviderConfig(opts = {}) {
+  const explicit = optionValue(opts, "config", "config-path", "configPath");
+  const candidates = explicit
+    ? [explicit]
+    : [
+        path.join(process.cwd(), "opencode.jsonc"),
+        path.join(process.cwd(), "opencode.json"),
+        path.join(HOME, ".config", "opencode", "opencode.jsonc"),
+        path.join(HOME, ".config", "opencode", "opencode.json"),
+      ];
+
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate)) continue;
+    try {
+      const payload = JSON.parse(stripJsonComments(fs.readFileSync(candidate, "utf8")));
+      return {
+        path: candidate,
+        providers: providerConfigFromOpenCodeConfigPayload(payload),
+      };
+    } catch (err) {
+      throw new Error(`Failed to parse OpenCode config ${candidate}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return { path: undefined, providers: new Map() };
+}
+
 function inferAuthPresetFromName(name, body) {
   const key = String(name || "").toLowerCase();
   if (key.includes("openrouter")) return "openrouter";
@@ -869,9 +1155,10 @@ function inferAuthPresetFromName(name, body) {
   return undefined;
 }
 
-function authImportOpenCode(filePath = OPENCODE_AUTH_PATH) {
+async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
   if (!fs.existsSync(filePath)) throw new Error(`OpenCode auth file not found: ${filePath}`);
   const payload = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  const providerConfig = readOpenCodeProviderConfig(opts);
   const entries =
     payload && typeof payload === "object" && !Array.isArray(payload)
       ? Object.entries(payload)
@@ -881,36 +1168,55 @@ function authImportOpenCode(filePath = OPENCODE_AUTH_PATH) {
   let imported = 0;
 
   for (const [name, body] of entries) {
-    let presetName = inferAuthPresetFromName(name, body);
     const detectedBaseUrl = findBaseUrlInObject(body);
-    if (!presetName && detectedBaseUrl) presetName = "openai-compatible";
-    if (!presetName) continue;
-    const { preset } = canonicalAuthProvider(presetName);
     const token = findSecretInObject(body);
     if (!token) continue;
+    const configPreset = providerConfig.providers.get(sanitizeProviderId(name));
+    const resolved = configPreset
+      ? { name: sanitizeProviderId(name), preset: configPreset }
+      : await canonicalAuthProvider(name, {
+          "base-url": detectedBaseUrl,
+        });
+    const { name: presetName, preset } = resolved;
 
-    const baseUrl = normalizeBaseUrl(detectedBaseUrl || preset.baseUrl);
-    const id = `${presetName}-${String(name).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || randomUUID().slice(0, 8)}`;
+    const providerAdapter = preset.providerAdapter || preset.provider;
+    const baseUrl = providerAdapter === "openai-compatible"
+      ? normalizeOpenAiCompatibleBaseUrl(detectedBaseUrl || preset.baseUrl)
+      : normalizeBaseUrl(detectedBaseUrl || preset.baseUrl);
+    const providerId = preset.providerId || presetName;
+    const runtimeSupported = preset.runtimeSupported !== false && isRuntimeSupportedAdapter(providerAdapter);
+    const id = `${sanitizeProviderId(providerId)}-${sanitizeProviderId(name) || randomUUID().slice(0, 8)}`;
     upsertAccount(
       {
         id,
         provider: preset.provider,
+        providerId,
+        providerAdapter,
+        providerLabel: preset.label,
+        providerNpm: preset.providerNpm,
+        providerSource: "opencode",
+        providerDoc: preset.providerDoc,
+        providerAuthEnv: preset.tokenEnv,
         upstreamMode: preset.upstreamMode,
         compatibilityMode: preset.compatibilityMode,
         email: id,
         accessToken: token,
         baseUrl,
-        enabled: true,
+        enabled: runtimeSupported,
         priority: 0,
+        state: runtimeSupported ? undefined : { lastError: `${providerAdapter} adapter not implemented yet` },
       },
       false,
     );
     imported += 1;
-    console.log(`imported: ${id}`);
+    console.log(`imported: ${id}${runtimeSupported ? "" : " (auth-only)"}`);
   }
 
   if (!imported) {
     console.log(`no supported provider tokens found in ${filePath}`);
+  }
+  if (providerConfig.path) {
+    console.log(`config: ${providerConfig.path}`);
   }
 }
 
@@ -983,7 +1289,7 @@ function printAuthUsage() {
   opencodex auth remove <id>
   opencodex auth enable <id>
   opencodex auth disable <id>
-  opencodex auth import-opencode [auth.json]
+  opencodex auth import-opencode [auth.json] [--config opencode.jsonc]
 
 Providers: ${Object.keys(authProviderPresets).join(", ")}
 Any provider name is accepted with --base-url and is saved as openai-compatible.`);
@@ -994,13 +1300,13 @@ async function auth(argv) {
   const opts = parseCliOptions(argv.slice(1));
 
   if (subcommand === "providers") {
-    printAuthProviders();
+    await printAuthProviders();
   } else if (subcommand === "list" || subcommand === "ls") {
     authList(opts);
   } else if (subcommand === "login" || subcommand === "add") {
     const provider = opts._[0];
     if (!provider) throw new Error("provider required. Run: opencodex auth providers");
-    authLogin(provider, opts);
+    await authLogin(provider, opts);
   } else if (subcommand === "remove" || subcommand === "rm" || subcommand === "delete") {
     authRemove(opts._[0]);
   } else if (subcommand === "enable") {
@@ -1008,7 +1314,7 @@ async function auth(argv) {
   } else if (subcommand === "disable") {
     authSetEnabled(opts._[0], false);
   } else if (subcommand === "import-opencode") {
-    authImportOpenCode(opts._[0] || OPENCODE_AUTH_PATH);
+    await authImportOpenCode(opts._[0] || OPENCODE_AUTH_PATH, opts);
   } else if (subcommand === "oauth-start" || subcommand === "connect-openai") {
     await authOauthStart(opts);
   } else if (subcommand === "oauth-status") {

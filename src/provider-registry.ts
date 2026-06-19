@@ -196,6 +196,18 @@ const PROVIDER_ALIASES: Record<string, string> = {
   zhipu: "zai",
 };
 
+const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
+  string,
+  { baseUrl: string }
+> = {
+  xai: { baseUrl: "https://api.x.ai" },
+  groq: { baseUrl: "https://api.groq.com/openai" },
+  deepinfra: { baseUrl: "https://api.deepinfra.com/v1/openai" },
+  cerebras: { baseUrl: "https://api.cerebras.ai" },
+  togetherai: { baseUrl: "https://api.together.ai" },
+  vercel: { baseUrl: "https://ai-gateway.vercel.sh" },
+};
+
 let modelsDevCache:
   | { at: number; entries: Map<string, ProviderRegistryEntry> }
   | undefined;
@@ -234,6 +246,9 @@ export function providerAdapterFromNpm(
   if (id === "openai-chatgpt") return "openai";
   if (id === "mistral") return "mistral";
   if (id === "zai") return "zai";
+  if (OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS[id]) {
+    return "openai-compatible";
+  }
   if (npm === "@ai-sdk/openai" || npm.includes("openai-compatible")) {
     return "openai-compatible";
   }
@@ -273,9 +288,11 @@ export function providerRegistryEntryFromMetadata(
   const id = sanitizeProviderId(source.id || providerId);
   const adapter = providerAdapterFromNpm(id, source.npm);
   const runtimeSupported = isRuntimeSupportedProvider(adapter);
+  const openAiCompatibleDefault =
+    OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS[id]?.baseUrl;
   const baseUrl =
     adapter === "openai-compatible"
-      ? normalizeOpenAiCompatibleBaseUrl(source.api)
+      ? normalizeOpenAiCompatibleBaseUrl(source.api ?? openAiCompatibleDefault)
       : normalizeBaseUrl(
           source.api ??
             (adapter === "anthropic"

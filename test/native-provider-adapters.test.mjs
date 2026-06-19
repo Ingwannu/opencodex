@@ -9,6 +9,9 @@ import {
 import {
   accountsFromOpenCodeAuthPayload,
 } from "../dist/opencode-auth.js";
+import {
+  resolveProviderRegistryEntry,
+} from "../dist/provider-registry.js";
 
 test("Anthropic adapter converts chat payloads and responses", () => {
   const request = buildNativeProviderRequest(
@@ -152,4 +155,39 @@ test("OpenCode auth import enables native Anthropic and Google adapters", async 
   assert.equal(byId.get("anthropic")?.enabled, true);
   assert.equal(byId.get("google")?.providerAdapter, "google");
   assert.equal(byId.get("google")?.enabled, true);
+});
+
+test("OpenAI-compatible SDK providers are runtime-routable through the bridge", async () => {
+  const expected = new Map([
+    ["xai", "https://api.x.ai"],
+    ["groq", "https://api.groq.com/openai"],
+    ["deepinfra", "https://api.deepinfra.com/v1/openai"],
+    ["cerebras", "https://api.cerebras.ai"],
+    ["togetherai", "https://api.together.ai"],
+    ["vercel", "https://ai-gateway.vercel.sh"],
+  ]);
+
+  for (const [providerId, baseUrl] of expected) {
+    const entry = await resolveProviderRegistryEntry(providerId);
+    assert.equal(entry.providerAdapter, "openai-compatible", providerId);
+    assert.equal(entry.provider, "openai-compatible", providerId);
+    assert.equal(entry.runtimeSupported, true, providerId);
+    assert.equal(entry.baseUrl, baseUrl, providerId);
+    assert.equal(entry.compatibilityMode, "chat-completions-bridge", providerId);
+  }
+});
+
+test("OpenCode auth import enables OpenAI-compatible SDK providers", async () => {
+  const accounts = await accountsFromOpenCodeAuthPayload({
+    xai: { apiKey: "xai-key" },
+    groq: { apiKey: "groq-key" },
+    vercel: { apiKey: "vercel-key" },
+  });
+  const byId = new Map(accounts.map((account) => [account.providerId, account]));
+
+  assert.equal(byId.get("xai")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("xai")?.baseUrl, "https://api.x.ai");
+  assert.equal(byId.get("xai")?.enabled, true);
+  assert.equal(byId.get("groq")?.baseUrl, "https://api.groq.com/openai");
+  assert.equal(byId.get("vercel")?.baseUrl, "https://ai-gateway.vercel.sh");
 });

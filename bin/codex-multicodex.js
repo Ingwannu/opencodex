@@ -195,6 +195,15 @@ const authProviderAliases = {
   zaiorg: "zai",
 };
 
+const openAiCompatibleSdkProviderDefaults = {
+  xai: { baseUrl: "https://api.x.ai" },
+  groq: { baseUrl: "https://api.groq.com/openai" },
+  deepinfra: { baseUrl: "https://api.deepinfra.com/v1/openai" },
+  cerebras: { baseUrl: "https://api.cerebras.ai" },
+  togetherai: { baseUrl: "https://api.together.ai" },
+  vercel: { baseUrl: "https://ai-gateway.vercel.sh" },
+};
+
 const MODELS_DEV_API_URL = process.env.MODELS_DEV_API_URL || "https://models.dev/api.json";
 let modelsDevAuthProviderCache = null;
 
@@ -212,6 +221,7 @@ function providerAdapterFromNpm(providerId, npmPackage) {
   if (id === "openai-chatgpt") return "openai";
   if (id === "mistral") return "mistral";
   if (id === "zai") return "zai";
+  if (openAiCompatibleSdkProviderDefaults[id]) return "openai-compatible";
   if (npm === "@ai-sdk/openai" || npm.includes("openai-compatible")) return "openai-compatible";
   if (npm === "@openrouter/ai-sdk-provider") return "openai-compatible";
   if (npm === "@ai-sdk/mistral") return "mistral";
@@ -235,8 +245,9 @@ function modelsDevProviderToPreset(providerId, source) {
   const id = sanitizeProviderId(source?.id || providerId);
   const adapter = providerAdapterFromNpm(id, source?.npm);
   const runtimeSupported = isRuntimeSupportedAdapter(adapter);
+  const openAiCompatibleDefault = openAiCompatibleSdkProviderDefaults[id]?.baseUrl;
   const baseUrl = adapter === "openai-compatible"
-    ? normalizeOpenAiCompatibleBaseUrl(source?.api)
+    ? normalizeOpenAiCompatibleBaseUrl(source?.api || openAiCompatibleDefault)
     : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : undefined));
   return {
     label: source?.name || id,

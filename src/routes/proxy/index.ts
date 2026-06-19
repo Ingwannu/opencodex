@@ -228,8 +228,17 @@ function trimTrailingSlash(value: string): string {
 
 function appendOpenAiCompatiblePath(baseUrl: string, apiPath: string): string {
   const base = trimTrailingSlash(baseUrl);
-  if (/\/v1$/i.test(base) && apiPath.startsWith("/v1/")) {
-    return `${base}${apiPath.slice(3)}`;
+  if (apiPath.startsWith("/v1/")) {
+    try {
+      const { pathname } = new URL(base);
+      if (/\/v1(?:\/|$)/i.test(pathname)) {
+        return `${base}${apiPath.slice(3)}`;
+      }
+    } catch {
+      if (/\/v1(?:\/|$)/i.test(base)) {
+        return `${base}${apiPath.slice(3)}`;
+      }
+    }
   }
   return `${base}${apiPath}`;
 }

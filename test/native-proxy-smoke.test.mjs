@@ -1523,6 +1523,111 @@ test("proxy routes Azure OpenAI v1 endpoints with api-key authorization", async 
   }
 });
 
+test("proxy refreshes xAI OAuth and routes Responses API", async () => {
+  let capturedTokenBody = "";
+  let capturedModelsAuthorization;
+  let capturedResponsesAuthorization;
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "POST" && req.url === "/oauth/token") {
+      req.setEncoding("utf8");
+      req.on("data", (chunk) => {
+        capturedTokenBody += chunk;
+      });
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({
+            access_token: "xai-refreshed-access",
+            refresh_token: "xai-rotated-refresh",
+            expires_in: 3600,
+          }),
+        );
+      });
+      return;
+    }
+    if (req.method === "GET" && req.url === "/v1/models") {
+      capturedModelsAuthorization = req.headers.authorization;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "grok-4" }] }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/responses") {
+      capturedResponsesAuthorization = req.headers.authorization;
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "resp_xai",
+          object: "response",
+          created_at: 1,
+          model: "grok-4",
+          status: "completed",
+          output: [
+            {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "output_text", text: "xAI OK" }],
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+  const previousTokenUrl = process.env.XAI_OAUTH_TOKEN_URL;
+  process.env.XAI_OAUTH_TOKEN_URL = `http://127.0.0.1:${upstreamPort}/oauth/token`;
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "xai-oauth-smoke",
+          provider: "openai-compatible",
+          providerId: "xai",
+          providerAdapter: "openai-compatible",
+          providerNpm: "@ai-sdk/xai",
+          providerAuthType: "oauth",
+          accessToken: "xai-expired-access",
+          refreshToken: "xai-refresh-token",
+          expiresAt: Date.now() - 60_000,
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          upstreamMode: "responses",
+          compatibilityMode: "responses",
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/responses`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "grok-4",
+            input: "Hello",
+            stream: false,
+          }),
+        });
+        const json = await res.json();
+        const tokenParams = new URLSearchParams(capturedTokenBody);
+        assert.equal(res.status, 200);
+        assert.equal(json.output[0].content[0].text, "xAI OK");
+        assert.equal(tokenParams.get("grant_type"), "refresh_token");
+        assert.equal(tokenParams.get("client_id"), "b1a00492-073a-47ea-816f-4c329264a828");
+        assert.equal(tokenParams.get("refresh_token"), "xai-refresh-token");
+        assert.equal(capturedModelsAuthorization, "Bearer xai-refreshed-access");
+        assert.equal(capturedResponsesAuthorization, "Bearer xai-refreshed-access");
+        assert.equal(capturedRequest.model, "grok-4");
+      },
+    );
+  } finally {
+    if (previousTokenUrl === undefined) delete process.env.XAI_OAUTH_TOKEN_URL;
+    else process.env.XAI_OAUTH_TOKEN_URL = previousTokenUrl;
+    await closeServer(upstream);
+  }
+});
+
 test("proxy routes Snowflake Cortex through OpenAI-compatible chat completions", async () => {
   let capturedRequest;
   let capturedModelsAuthorization;

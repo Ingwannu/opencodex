@@ -1268,7 +1268,11 @@ test("OpenAI-compatible SDK providers are runtime-routable through the bridge", 
     assert.equal(entry.provider, "openai-compatible", providerId);
     assert.equal(entry.runtimeSupported, true, providerId);
     assert.equal(entry.baseUrl, baseUrl, providerId);
-    assert.equal(entry.compatibilityMode, "chat-completions-bridge", providerId);
+    assert.equal(
+      entry.compatibilityMode,
+      providerId === "xai" ? "responses" : "chat-completions-bridge",
+      providerId,
+    );
   }
 
   const perplexity = await resolveProviderRegistryEntry("perplexity");
@@ -2724,6 +2728,46 @@ test("OpenCode auth import enables GitHub Copilot OAuth and enterprise routing",
   assert.equal(copilot?.providerOptions?.enterpriseUrl, "ghe.example.com");
   assert.equal(copilot?.enabled, true);
   assert.ok(copilot?.providerModels?.["gpt-5.1-codex"]);
+});
+
+test("OpenCode auth import enables xAI OAuth through Responses API", async () => {
+  const payload = parseOpenCodeConfigPayload(`{
+    "provider": {
+      "xai": {
+        "npm": "@ai-sdk/xai",
+        "models": {
+          "grok-4": { "name": "Grok 4" }
+        }
+      }
+    }
+  }`);
+  const accounts = await accountsFromOpenCodeAuthPayload(
+    {
+      xai: {
+        type: "oauth",
+        access: "xai-access-token",
+        refresh: "xai-refresh-token",
+        expires: 1,
+      },
+    },
+    {
+      providerConfig: providerConfigFromOpenCodeConfigPayload(payload),
+      providerConfigSecrets: providerSecretsFromOpenCodeConfigPayload(payload),
+    },
+  );
+  const xai = accounts.find((account) => account.providerId === "xai");
+
+  assert.equal(xai?.providerAdapter, "openai-compatible");
+  assert.equal(xai?.providerNpm, "@ai-sdk/xai");
+  assert.equal(xai?.providerAuthType, "oauth");
+  assert.equal(xai?.accessToken, "xai-access-token");
+  assert.equal(xai?.refreshToken, "xai-refresh-token");
+  assert.equal(xai?.expiresAt, 1);
+  assert.equal(xai?.baseUrl, "https://api.x.ai");
+  assert.equal(xai?.upstreamMode, "responses");
+  assert.equal(xai?.compatibilityMode, "responses");
+  assert.equal(xai?.enabled, true);
+  assert.ok(xai?.providerModels?.["grok-4"]);
 });
 
 test("OpenCode auth import preserves configured model metadata", async () => {

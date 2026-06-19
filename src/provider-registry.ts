@@ -978,7 +978,11 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     baseUrl: "https://api.z.ai/api/coding/paas/v4",
     tokenEnv: ["ZHIPU_API_KEY"],
   },
-  xai: { baseUrl: "https://api.x.ai" },
+  xai: {
+    baseUrl: "https://api.x.ai",
+    upstreamMode: "responses",
+    compatibilityMode: "responses",
+  },
   groq: { baseUrl: "https://api.groq.com/openai" },
   deepinfra: { baseUrl: "https://api.deepinfra.com/v1/openai" },
   cerebras: { baseUrl: "https://api.cerebras.ai" },
@@ -1123,7 +1127,11 @@ const OPENAI_COMPATIBLE_SDK_PACKAGE_DEFAULTS: Record<
   },
   "@ai-sdk/togetherai": { baseUrl: "https://api.together.xyz/v1" },
   "@ai-sdk/vercel": { baseUrl: "https://api.v0.dev/v1" },
-  "@ai-sdk/xai": { baseUrl: "https://api.x.ai/v1" },
+  "@ai-sdk/xai": {
+    baseUrl: "https://api.x.ai/v1",
+    upstreamMode: "responses",
+    compatibilityMode: "responses",
+  },
   "@aihubmix/ai-sdk-provider": { baseUrl: "https://aihubmix.com/v1" },
   "merge-gateway-ai-sdk-provider": {
     baseUrl: "https://api-gateway.merge.dev/v1/openai",

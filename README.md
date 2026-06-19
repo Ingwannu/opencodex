@@ -222,6 +222,8 @@ OpenCodex can route providers that map to the current runtime adapters:
   including GitHub Enterprise `enterpriseUrl` routing to
   `https://copilot-api.<enterprise-domain>` and Copilot-specific upstream
   headers required by OpenCode's `@ai-sdk/github-copilot` provider
+- xAI/Grok through the Responses API, including OpenCode OAuth/SuperGrok
+  credentials with refresh-token renewal through xAI's OAuth token endpoint
 - GitLab Duo agentic chat models by exchanging `GITLAB_TOKEN`/OpenCode GitLab
   auth for a third-party agent direct-access token, then routing Claude models
   through GitLab's Anthropic AI Gateway proxy and GPT models through GitLab's

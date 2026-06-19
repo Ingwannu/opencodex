@@ -717,3 +717,76 @@ test("proxy routes Azure OpenAI v1 endpoints with api-key authorization", async 
     await closeServer(upstream);
   }
 });
+
+test("proxy routes v0 through OpenAI-compatible chat completions", async () => {
+  let capturedRequest;
+  let capturedModelsAuthorization;
+  let capturedChatAuthorization;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      capturedModelsAuthorization = req.headers.authorization;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "v0-1.5-md" }] }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/chat/completions") {
+      capturedRequest = await readJson(req);
+      capturedChatAuthorization = req.headers.authorization;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl-v0",
+          object: "chat.completion",
+          created: 1,
+          model: "v0-1.5-md",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "v0 OK" },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "v0-smoke",
+          provider: "openai-compatible",
+          providerId: "v0",
+          providerAdapter: "openai-compatible",
+          accessToken: "v0-smoke-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "v0-1.5-md",
+            messages: [{ role: "user", content: "Hello" }],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.choices[0].message.content, "v0 OK");
+        assert.equal(capturedModelsAuthorization, "Bearer v0-smoke-key");
+        assert.equal(capturedChatAuthorization, "Bearer v0-smoke-key");
+        assert.equal(capturedRequest.model, "v0-1.5-md");
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});

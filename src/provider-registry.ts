@@ -243,6 +243,7 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
   venice: { baseUrl: "https://api.venice.ai/api/v1" },
   aihubmix: { baseUrl: "https://aihubmix.com/v1" },
   "merge-gateway": { baseUrl: "https://api-gateway.merge.dev/v1/openai" },
+  v0: { baseUrl: "https://api.v0.dev/v1" },
 };
 
 function firstStringValue(
@@ -376,6 +377,7 @@ export function providerAdapterFromNpm(
   if (npm === "@ai-sdk/anthropic") return "anthropic";
   if (npm === "@ai-sdk/google") return "google";
   if (npm === "@ai-sdk/cohere") return "cohere";
+  if (npm === "@ai-sdk/vercel") return "openai-compatible";
   if (npm === "@ai-sdk/azure") return "azure";
   if (npm === "@ai-sdk/amazon-bedrock") return "amazon-bedrock";
   if (npm.includes("google-vertex")) return "vertex";

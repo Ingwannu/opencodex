@@ -237,6 +237,7 @@ test("OpenAI-compatible SDK providers are runtime-routable through the bridge", 
     ["venice", "https://api.venice.ai/api"],
     ["aihubmix", "https://aihubmix.com"],
     ["merge-gateway", "https://api-gateway.merge.dev/v1/openai"],
+    ["v0", "https://api.v0.dev"],
   ]);
 
   for (const [providerId, baseUrl] of expected) {
@@ -295,6 +296,7 @@ test("OpenCode auth import enables OpenAI-compatible SDK providers", async () =>
     venice: { apiKey: "venice-key" },
     aihubmix: { apiKey: "aihubmix-key" },
     "merge-gateway": { apiKey: "merge-key" },
+    v0: { apiKey: "v0-key" },
   });
   const byId = new Map(accounts.map((account) => [account.providerId, account]));
 
@@ -309,4 +311,7 @@ test("OpenCode auth import enables OpenAI-compatible SDK providers", async () =>
     byId.get("merge-gateway")?.baseUrl,
     "https://api-gateway.merge.dev/v1/openai",
   );
+  assert.equal(byId.get("v0")?.providerAdapter, "openai-compatible");
+  assert.equal(byId.get("v0")?.baseUrl, "https://api.v0.dev");
+  assert.equal(byId.get("v0")?.enabled, true);
 });

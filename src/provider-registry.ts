@@ -47,6 +47,8 @@ type ModelsDevProvider = {
 };
 
 const DISALLOWED_PROVIDER_OPTION_HEADERS = new Set([
+  "api-key",
+  "authorization",
   "connection",
   "content-length",
   "host",
@@ -57,6 +59,7 @@ const DISALLOWED_PROVIDER_OPTION_HEADERS = new Set([
   "trailer",
   "transfer-encoding",
   "upgrade",
+  "x-api-key",
 ]);
 
 const BUILTIN_PROVIDERS: ProviderRegistryEntry[] = [
@@ -640,6 +643,26 @@ function providerHeadersFromOptions(
     if (typeof value === "string" && value.trim()) {
       out[name] = value.trim();
     }
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function providerRuntimeOptionsFromSource(
+  options: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!options) {
+    return undefined;
+  }
+
+  const out: Record<string, unknown> = {};
+  if (typeof options.timeout === "number" || options.timeout === false) {
+    out.timeout = options.timeout;
+  }
+  if (typeof options.chunkTimeout === "number") {
+    out.chunkTimeout = options.chunkTimeout;
+  }
+  if (typeof options.setCacheKey === "boolean") {
+    out.setCacheKey = options.setCacheKey;
   }
   return Object.keys(out).length ? out : undefined;
 }
@@ -1324,8 +1347,10 @@ export function providerRegistryEntryFromMetadata(
       : id === "cloudflare-ai-gateway" || id === "cloudflare-workers-ai"
         ? cloudflareGatewayProviderOptionsFromSource(source)
         : undefined;
+  const runtimeProviderOptions = providerRuntimeOptionsFromSource(source.options);
   const providerHeaders = providerHeadersFromOptions(source.options);
   const providerOptions = {
+    ...(runtimeProviderOptions ?? {}),
     ...(adapterProviderOptions ?? {}),
     ...(providerHeaders ? { headers: providerHeaders } : {}),
   };

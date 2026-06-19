@@ -930,6 +930,43 @@ test("OpenCode config parser accepts JSONC trailing commas without changing stri
   );
 });
 
+test("OpenCode config preserves runtime provider options without duplicating secrets", () => {
+  const payload = parseOpenCodeConfigPayload(`{
+    "provider": {
+      "timed-provider": {
+        "npm": "@ai-sdk/openai-compatible",
+        "options": {
+          "baseURL": "https://timed.example/v1",
+          "apiKey": "timed-secret",
+          "timeout": 600000,
+          "chunkTimeout": 30000,
+          "setCacheKey": true,
+          "headers": {
+            "x-safe": "ok",
+            "authorization": "Bearer should-not-preserve"
+          }
+        },
+        "models": {
+          "timed-model": { "name": "Timed Model" }
+        }
+      }
+    }
+  }`);
+
+  const providerConfig = providerConfigFromOpenCodeConfigPayload(payload);
+  const providerSecrets = providerSecretsFromOpenCodeConfigPayload(payload);
+  const entry = providerConfig.get("timed-provider");
+
+  assert.equal(providerSecrets.get("timed-provider"), "timed-secret");
+  assert.equal(entry?.baseUrl, "https://timed.example");
+  assert.deepEqual(entry?.providerOptions, {
+    timeout: 600000,
+    chunkTimeout: 30000,
+    setCacheKey: true,
+    headers: { "x-safe": "ok" },
+  });
+});
+
 test("OpenCode config strips native provider version suffixes from baseURL", async () => {
   const payload = parseOpenCodeConfigPayload(`{
     "provider": {
@@ -2321,7 +2358,6 @@ test("OpenCode config secrets create accounts without auth.json entries", async 
   assert.equal(byId.get("headergenie")?.accessToken, "header-secret");
   assert.equal(byId.get("headergenie")?.baseUrl, "https://headergenie.example");
   assert.deepEqual(byId.get("headergenie")?.providerOptions?.headers, {
-    Authorization: "Bearer header-secret",
     "X-Provider-Route": "beta",
   });
   assert.ok(byId.get("headergenie")?.providerModels?.["glm-5.2"]);

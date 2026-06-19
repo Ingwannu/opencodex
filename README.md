@@ -223,7 +223,8 @@ OpenCodex can route providers that map to the current runtime adapters:
   deployment lookup falls back to the running orchestration deployment list
 - OpenCode provider `models` metadata for custom and Models.dev providers, so
   configured models remain visible even when the upstream does not expose an
-  OpenAI-style model listing endpoint
+  OpenAI-style model listing endpoint; model-level `options` are applied as
+  request defaults when the caller did not already set those payload fields
 - OpenCode and Models.dev endpoint templates that use `${ENV_NAME}` or
   `{env:ENV_NAME}` placeholders; unresolved endpoint templates are kept
   auth-only instead of being routed to a literal placeholder host

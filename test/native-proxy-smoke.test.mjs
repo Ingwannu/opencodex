@@ -834,6 +834,96 @@ test("proxy forwards OpenCode provider option headers to OpenAI-compatible upstr
   }
 });
 
+test("proxy applies configured OpenCode model options as request defaults", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "no model listing" }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/responses") {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "resp_model_options",
+          object: "response",
+          created_at: 1,
+          model: "option-model",
+          output: [
+            {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "output_text", text: "Options OK" }],
+            },
+          ],
+          usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "model-options-smoke",
+          provider: "openai-compatible",
+          providerId: "model-options",
+          providerAdapter: "openai-compatible",
+          accessToken: "configured-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          upstreamMode: "responses",
+          compatibilityMode: "responses",
+          providerModels: {
+            "option-model": {
+              name: "Option Model",
+              options: {
+                reasoningEffort: "high",
+                reasoningSummary: "auto",
+                textVerbosity: "low",
+                include: ["reasoning.encrypted_content"],
+                temperature: 0.2,
+                topP: 0.7,
+                maxOutputTokens: 123,
+              },
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/responses`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "option-model",
+            input: "Hello",
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+        assert.equal(json.output[0].content[0].text, "Options OK");
+        assert.deepEqual(capturedRequest.reasoning, {
+          effort: "high",
+          summary: "auto",
+        });
+        assert.deepEqual(capturedRequest.text, { verbosity: "low" });
+        assert.deepEqual(capturedRequest.include, ["reasoning.encrypted_content"]);
+        assert.equal(capturedRequest.temperature, 0.2);
+        assert.equal(capturedRequest.top_p, 0.7);
+        assert.equal(capturedRequest.max_output_tokens, 123);
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy routes Perplexity Sonar compatibility without a /v1 prefix", async () => {
   let capturedRequest;
   const upstream = http.createServer(async (req, res) => {

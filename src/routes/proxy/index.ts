@@ -451,6 +451,159 @@ function configuredUpstreamModelIdForAccount(
   return undefined;
 }
 
+function configuredModelMetadataForAccount(
+  account: Account,
+  model: string | undefined,
+): Record<string, unknown> | undefined {
+  const key = normalizeModelLookupKey(model);
+  if (!key) return undefined;
+  const source = account.providerModels;
+  if (!source || typeof source !== "object") return undefined;
+
+  for (const [modelKey, value] of Object.entries(source)) {
+    if (normalizeModelLookupKey(modelKey) !== key) continue;
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    return value as Record<string, unknown>;
+  }
+
+  return undefined;
+}
+
+function configuredModelOptionsForAccount(
+  account: Account,
+  model: string | undefined,
+): Record<string, unknown> | undefined {
+  const metadata = configuredModelMetadataForAccount(account, model);
+  const options = metadata?.options;
+  return options && typeof options === "object" && !Array.isArray(options)
+    ? (options as Record<string, unknown>)
+    : undefined;
+}
+
+function hasOwn(source: unknown, key: string): boolean {
+  return Boolean(
+    source &&
+      typeof source === "object" &&
+      Object.prototype.hasOwnProperty.call(source, key),
+  );
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function applyConfiguredModelOptions(
+  payload: any,
+  requestBody: any,
+  options: Record<string, unknown> | undefined,
+  shouldSendChatCompletions: boolean,
+): void {
+  if (!payload || typeof payload !== "object" || !options) return;
+
+  const temperature = finiteNumber(options.temperature);
+  if (
+    temperature !== undefined &&
+    !hasOwn(requestBody, "temperature") &&
+    !hasOwn(payload, "temperature")
+  ) {
+    payload.temperature = temperature;
+  }
+
+  const topP = finiteNumber(options.topP ?? options.top_p);
+  if (
+    topP !== undefined &&
+    !hasOwn(requestBody, "topP") &&
+    !hasOwn(requestBody, "top_p") &&
+    !hasOwn(payload, "top_p")
+  ) {
+    payload.top_p = topP;
+  }
+
+  const maxOutputTokens = finiteNumber(
+    options.maxOutputTokens ??
+      options.max_output_tokens ??
+      options.maxTokens ??
+      options.max_tokens,
+  );
+  if (
+    maxOutputTokens !== undefined &&
+    !hasOwn(requestBody, "maxOutputTokens") &&
+    !hasOwn(requestBody, "max_output_tokens") &&
+    !hasOwn(requestBody, "maxTokens") &&
+    !hasOwn(requestBody, "max_tokens") &&
+    !hasOwn(payload, "max_output_tokens") &&
+    !hasOwn(payload, "max_tokens")
+  ) {
+    if (shouldSendChatCompletions) {
+      payload.max_tokens = maxOutputTokens;
+    } else {
+      payload.max_output_tokens = maxOutputTokens;
+    }
+  }
+
+  const reasoningEffort = stringValue(
+    options.reasoningEffort ?? options.reasoning_effort,
+  );
+  const reasoningSummary = stringValue(
+    options.reasoningSummary ?? options.reasoning_summary,
+  );
+  const requestReasoning = objectValue(requestBody?.reasoning);
+  if (
+    (reasoningEffort || reasoningSummary) &&
+    !hasOwn(requestBody, "reasoning") &&
+    !hasOwn(requestBody, "reasoning_effort")
+  ) {
+    if (shouldSendChatCompletions) {
+      if (reasoningEffort && !hasOwn(payload, "reasoning_effort")) {
+        payload.reasoning_effort = reasoningEffort;
+      }
+    } else {
+      const reasoning = objectValue(payload.reasoning) ?? {};
+      if (reasoningEffort && !hasOwn(reasoning, "effort")) {
+        reasoning.effort = reasoningEffort;
+      }
+      if (reasoningSummary && !hasOwn(reasoning, "summary")) {
+        reasoning.summary = reasoningSummary;
+      }
+      payload.reasoning = reasoning;
+    }
+  } else if (requestReasoning) {
+    payload.reasoning = payload.reasoning ?? requestReasoning;
+  }
+
+  const textVerbosity = stringValue(options.textVerbosity ?? options.verbosity);
+  const requestText = objectValue(requestBody?.text);
+  if (
+    textVerbosity &&
+    !hasOwn(requestText, "verbosity")
+  ) {
+    const text = objectValue(payload.text) ?? {};
+    text.verbosity = textVerbosity;
+    payload.text = text;
+  }
+
+  if (
+    Array.isArray(options.include) &&
+    !hasOwn(requestBody, "include")
+  ) {
+    payload.include = options.include.filter(
+      (value): value is string => typeof value === "string" && value.trim().length > 0,
+    );
+  }
+}
+
 function mergeConfiguredAccountModels(
   byId: Map<string, ExposedModel>,
   account: Account,
@@ -1823,6 +1976,16 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
         const configuredUpstreamModelId = configuredUpstreamModelIdForAccount(
           selected,
           candidate.resolvedModel ?? requestModel,
+        );
+        const configuredModelOptions = configuredModelOptionsForAccount(
+          selected,
+          candidate.resolvedModel ?? requestModel,
+        );
+        applyConfiguredModelOptions(
+          payloadToUpstream,
+          req.body,
+          configuredModelOptions,
+          shouldSendChatCompletions,
         );
         if (configuredUpstreamModelId) {
           payloadToUpstream.model = configuredUpstreamModelId;

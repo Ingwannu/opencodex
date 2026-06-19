@@ -41,6 +41,7 @@ const WRAPPER_PATHS = {
   "codex-oss": path.join(BIN_DIR, "codex-oss"),
 };
 const SHIM_MARKER = "codex-multicodex managed shim v1";
+const AWS_BEDROCK_SIGV4_PLACEHOLDER = "__opencodex_aws_sigv4__";
 const DEFAULT_PROXY_MODELS = [
   "gpt-5.5",
   "gpt-5.4",
@@ -185,6 +186,34 @@ const authProviderPresets = {
     tokenEnv: ["COHERE_API_KEY"],
     runtimeSupported: true,
   },
+  "amazon-bedrock": {
+    label: "Amazon Bedrock",
+    provider: "amazon-bedrock",
+    providerId: "amazon-bedrock",
+    providerAdapter: "amazon-bedrock",
+    providerNpm: "@ai-sdk/amazon-bedrock",
+    providerSource: "builtin",
+    providerDoc: "https://docs.aws.amazon.com/bedrock/latest/userguide/",
+    baseUrl: amazonBedrockBaseUrlFromOptions(),
+    providerOptions: amazonBedrockProviderOptionsFromSource({
+      options: {
+        region: process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION,
+        profile: process.env.AWS_PROFILE || process.env.AWS_DEFAULT_PROFILE,
+      },
+    }),
+    tokenEnv: [
+      "AWS_BEARER_TOKEN_BEDROCK",
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SESSION_TOKEN",
+      "AWS_PROFILE",
+      "AWS_DEFAULT_PROFILE",
+      "AWS_REGION",
+      "AWS_DEFAULT_REGION",
+      "AWS_SHARED_CREDENTIALS_FILE",
+    ],
+    runtimeSupported: true,
+  },
   "sap-ai-core": {
     label: "SAP AI Core",
     provider: "sap-ai-core",
@@ -302,6 +331,96 @@ function amazonBedrockBaseUrlFromOptions(options = {}, env = process.env) {
   return `https://bedrock-runtime.${region.trim()}.amazonaws.com`;
 }
 
+function amazonBedrockProviderOptionsFromSource(source = {}) {
+  const options = source?.options || {};
+  const out = {};
+  for (const key of [
+    "region",
+    "awsRegion",
+    "aws_region",
+    "profile",
+    "awsProfile",
+    "aws_profile",
+    "credentialsFile",
+    "credentials_file",
+    "sharedCredentialsFile",
+    "shared_credentials_file",
+  ]) {
+    const value = options[key];
+    if (typeof value === "string" && value.trim()) out[key] = value.trim();
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function parseAwsCredentialsFile(source, profile = "default") {
+  const target = profile.trim() || "default";
+  const sections = new Map();
+  let current;
+  for (const rawLine of String(source || "").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#") || line.startsWith(";")) continue;
+    const sectionMatch = /^\[([^\]]+)\]$/.exec(line);
+    if (sectionMatch) {
+      const name = (sectionMatch[1] || "").trim().replace(/^profile\s+/i, "");
+      current = {};
+      sections.set(name, current);
+      continue;
+    }
+    if (!current) continue;
+    const separator = line.indexOf("=");
+    if (separator < 0) continue;
+    current[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
+  }
+  const section = sections.get(target);
+  if (!section?.aws_access_key_id || !section?.aws_secret_access_key) return undefined;
+  return {
+    accessKeyId: section.aws_access_key_id,
+    secretAccessKey: section.aws_secret_access_key,
+    ...(section.aws_session_token ? { sessionToken: section.aws_session_token } : {}),
+  };
+}
+
+function awsBedrockRegion(options = {}, env = process.env) {
+  return (
+    firstStringValue(options, ["region", "awsRegion", "aws_region"]) ||
+    env.AWS_REGION ||
+    env.AWS_DEFAULT_REGION
+  )?.trim();
+}
+
+function resolveAwsBedrockCredentials(options = {}, env = process.env) {
+  const region = awsBedrockRegion(options, env);
+  if (!region) return undefined;
+  if (env.AWS_ACCESS_KEY_ID?.trim() && env.AWS_SECRET_ACCESS_KEY?.trim()) {
+    return {
+      accessKeyId: env.AWS_ACCESS_KEY_ID.trim(),
+      secretAccessKey: env.AWS_SECRET_ACCESS_KEY.trim(),
+      ...(env.AWS_SESSION_TOKEN?.trim() ? { sessionToken: env.AWS_SESSION_TOKEN.trim() } : {}),
+      region,
+    };
+  }
+  try {
+    const profile =
+      firstStringValue(options, ["profile", "awsProfile", "aws_profile"]) ||
+      env.AWS_PROFILE ||
+      env.AWS_DEFAULT_PROFILE ||
+      "default";
+    const credentialsFile =
+      firstStringValue(options, [
+        "credentialsFile",
+        "credentials_file",
+        "sharedCredentialsFile",
+        "shared_credentials_file",
+      ]) ||
+      env.AWS_SHARED_CREDENTIALS_FILE ||
+      path.join(HOME, ".aws", "credentials");
+    const parsed = parseAwsCredentialsFile(fs.readFileSync(credentialsFile, "utf8"), profile);
+    return parsed ? { ...parsed, region } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function vertexBaseUrlFromOptions(options = {}, env = process.env) {
   const explicit = firstStringValue(options, ["baseURL", "baseUrl", "base_url", "url", "endpoint"]);
   if (explicit && /^https?:\/\//.test(explicit)) return explicit;
@@ -401,7 +520,17 @@ function providerForAdapter(providerId, adapter) {
 
 function tokenEnvForProvider(providerId, adapter, env) {
   if (providerId === "amazon-bedrock" || adapter === "amazon-bedrock") {
-    return ["AWS_BEARER_TOKEN_BEDROCK"];
+    return [
+      "AWS_BEARER_TOKEN_BEDROCK",
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SESSION_TOKEN",
+      "AWS_PROFILE",
+      "AWS_DEFAULT_PROFILE",
+      "AWS_REGION",
+      "AWS_DEFAULT_REGION",
+      "AWS_SHARED_CREDENTIALS_FILE",
+    ];
   }
   if (
     providerId === "google-vertex" ||
@@ -459,7 +588,11 @@ function modelsDevProviderToPreset(providerId, source) {
     openAiPathPrefix: openAiCompatibleDefault?.openAiPathPrefix,
     upstreamMode: adapter === "openai-compatible" ? (azureOpenAiProviderIds.has(id) ? "responses" : (openAiCompatibleDefault?.upstreamMode || "chat/completions")) : undefined,
     compatibilityMode: adapter === "openai-compatible" ? (azureOpenAiProviderIds.has(id) ? "responses" : (openAiCompatibleDefault?.compatibilityMode || "chat-completions-bridge")) : undefined,
-    providerOptions: adapter === "sap-ai-core" ? sapAiCoreProviderOptionsFromSource(source) : undefined,
+    providerOptions: adapter === "amazon-bedrock"
+      ? amazonBedrockProviderOptionsFromSource(source)
+      : adapter === "sap-ai-core"
+        ? sapAiCoreProviderOptionsFromSource(source)
+        : undefined,
     tokenEnv: tokenEnvForProvider(id, adapter, source?.env),
     models: source?.models && typeof source.models === "object" ? source.models : undefined,
     runtimeSupported,
@@ -1333,6 +1466,42 @@ function findSecretInProviderConfig(value) {
   return findSecretInObject(options) || findSecretInHeaders(options.headers) || findSecretInHeaders(value.headers);
 }
 
+function envSecretForProvider(providerId, preset, env = process.env) {
+  const providerAdapter = preset.providerAdapter || preset.provider;
+  if (
+    (providerId === "amazon-bedrock" || providerAdapter === "amazon-bedrock") &&
+    env.AWS_BEARER_TOKEN_BEDROCK?.trim()
+  ) {
+    return normalizeSecret(env.AWS_BEARER_TOKEN_BEDROCK);
+  }
+  return undefined;
+}
+
+function credentialChainTokenForProvider(providerId, preset) {
+  const providerAdapter = preset.providerAdapter || preset.provider;
+  if (providerId === "amazon-bedrock" || providerAdapter === "amazon-bedrock") {
+    return resolveAwsBedrockCredentials(preset.providerOptions)
+      ? AWS_BEDROCK_SIGV4_PLACEHOLDER
+      : undefined;
+  }
+  return undefined;
+}
+
+function baseUrlForPreset(preset, detectedBaseUrl) {
+  const providerAdapter = preset.providerAdapter || preset.provider;
+  if (providerAdapter === "openai-compatible") {
+    return normalizeOpenAiCompatibleBaseUrl(detectedBaseUrl || preset.baseUrl);
+  }
+  if (providerAdapter === "amazon-bedrock") {
+    return normalizeBaseUrl(
+      detectedBaseUrl ||
+        preset.baseUrl ||
+        amazonBedrockBaseUrlFromOptions(preset.providerOptions),
+    );
+  }
+  return normalizeBaseUrl(detectedBaseUrl || preset.baseUrl);
+}
+
 function findBaseUrlInObject(value, seen = new Set()) {
   if (!value || typeof value !== "object") return undefined;
   if (seen.has(value)) return undefined;
@@ -1481,8 +1650,6 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
     const providerKey = sanitizeProviderId(name);
     seenProviderIds.add(providerKey);
     const detectedBaseUrl = findBaseUrlInObject(body);
-    const token = findSecretInObject(body) || providerConfig.secrets.get(providerKey);
-    if (!token) continue;
     const configPreset = providerConfig.providers.get(providerKey);
     const resolved = configPreset
       ? { name: providerKey, preset: configPreset }
@@ -1490,11 +1657,15 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
           "base-url": detectedBaseUrl,
         });
     const { name: presetName, preset } = resolved;
+    const token =
+      findSecretInObject(body) ||
+      providerConfig.secrets.get(providerKey) ||
+      envSecretForProvider(providerKey, preset) ||
+      credentialChainTokenForProvider(providerKey, preset);
+    if (!token) continue;
 
     const providerAdapter = preset.providerAdapter || preset.provider;
-    const baseUrl = providerAdapter === "openai-compatible"
-      ? normalizeOpenAiCompatibleBaseUrl(detectedBaseUrl || preset.baseUrl)
-      : normalizeBaseUrl(detectedBaseUrl || preset.baseUrl);
+    const baseUrl = baseUrlForPreset(preset, detectedBaseUrl);
     const providerId = preset.providerId || presetName;
     const runtimeSupported = preset.runtimeSupported !== false && isRuntimeSupportedAdapter(providerAdapter);
     const id = `${sanitizeProviderId(providerId)}-${sanitizeProviderId(name) || randomUUID().slice(0, 8)}`;
@@ -1533,10 +1704,50 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
     if (!preset) continue;
 
     const providerAdapter = preset.providerAdapter || preset.provider;
-    const baseUrl = providerAdapter === "openai-compatible"
-      ? normalizeOpenAiCompatibleBaseUrl(preset.baseUrl)
-      : normalizeBaseUrl(preset.baseUrl);
+    const baseUrl = baseUrlForPreset(preset);
     const providerId = preset.providerId || providerKey;
+    const runtimeSupported = preset.runtimeSupported !== false && isRuntimeSupportedAdapter(providerAdapter);
+    const id = `${sanitizeProviderId(providerId)}-${providerKey || randomUUID().slice(0, 8)}`;
+    upsertAccount(
+      {
+        id,
+        provider: preset.provider,
+        providerId,
+        providerAdapter,
+        providerLabel: preset.label,
+        providerNpm: preset.providerNpm,
+        providerSource: "opencode",
+        providerDoc: preset.providerDoc,
+        providerAuthEnv: preset.tokenEnv,
+        providerOptions: preset.providerOptions,
+        providerModels: preset.models,
+        upstreamMode: preset.upstreamMode,
+        compatibilityMode: preset.compatibilityMode,
+        openAiPathPrefix: preset.openAiPathPrefix,
+        email: id,
+        accessToken: token,
+        baseUrl,
+        enabled: runtimeSupported,
+        priority: 0,
+        state: runtimeSupported ? undefined : { lastError: `${providerAdapter} adapter not implemented yet` },
+      },
+      false,
+    );
+    imported += 1;
+    console.log(`imported: ${id}${runtimeSupported ? "" : " (auth-only)"}`);
+  }
+
+  for (const [providerKey, preset] of providerConfig.providers) {
+    if (seenProviderIds.has(providerKey)) continue;
+    if (providerConfig.secrets.has(providerKey)) continue;
+
+    const providerAdapter = preset.providerAdapter || preset.provider;
+    const providerId = preset.providerId || providerKey;
+    const token =
+      envSecretForProvider(providerId, preset) ||
+      credentialChainTokenForProvider(providerId, preset);
+    if (!token) continue;
+    const baseUrl = baseUrlForPreset(preset);
     const runtimeSupported = preset.runtimeSupported !== false && isRuntimeSupportedAdapter(providerAdapter);
     const id = `${sanitizeProviderId(providerId)}-${providerKey || randomUUID().slice(0, 8)}`;
     upsertAccount(

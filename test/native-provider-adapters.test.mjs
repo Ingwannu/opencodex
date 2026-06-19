@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  AWS_BEDROCK_SIGV4_PLACEHOLDER,
+  buildAwsSigV4Headers,
   buildNativeProviderRequest,
   buildGitLabDirectAccessRequest,
   buildGitLabProviderRequest,
@@ -11,6 +13,8 @@ import {
   convertSapAiCoreResponse,
   nativeProviderModelsFromResponse,
   parseSapAiCoreServiceKey,
+  parseAwsCredentialsFile,
+  resolveAwsBedrockCredentials,
 } from "../dist/provider-native.js";
 import {
   accountsFromOpenCodeAuthPayload,
@@ -431,6 +435,70 @@ test("Amazon Bedrock adapter converts chat payloads and responses", () => {
   assert.equal(converted.usage.total_tokens, 7);
 });
 
+test("Amazon Bedrock adapter signs requests with AWS SigV4 credentials", () => {
+  const credentials = resolveAwsBedrockCredentials(
+    { region: "us-east-1" },
+    {
+      AWS_ACCESS_KEY_ID: "AKIDEXAMPLE",
+      AWS_SECRET_ACCESS_KEY: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+      AWS_SESSION_TOKEN: "session-token",
+    },
+  );
+  assert.deepEqual(credentials, {
+    accessKeyId: "AKIDEXAMPLE",
+    secretAccessKey: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+    sessionToken: "session-token",
+    region: "us-east-1",
+  });
+
+  const headers = buildAwsSigV4Headers({
+    method: "POST",
+    url: "https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-3-haiku-20240307-v1%3A0/converse",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ messages: [{ role: "user", content: [{ text: "Hello" }] }] }),
+    credentials,
+    now: new Date("2015-08-30T12:36:00Z"),
+  });
+
+  assert.equal(headers.authorization?.startsWith("AWS4-HMAC-SHA256 "), true);
+  assert.match(
+    headers.authorization,
+    /Credential=AKIDEXAMPLE\/20150830\/us-east-1\/bedrock\/aws4_request/,
+  );
+  assert.match(
+    headers.authorization,
+    /SignedHeaders=accept;content-type;host;x-amz-content-sha256;x-amz-date;x-amz-security-token/,
+  );
+  assert.match(headers.authorization, /Signature=[a-f0-9]{64}$/);
+  assert.equal(headers["x-amz-date"], "20150830T123600Z");
+  assert.equal(headers["x-amz-security-token"], "session-token");
+  assert.match(headers["x-amz-content-sha256"], /^[a-f0-9]{64}$/);
+});
+
+test("Amazon Bedrock adapter resolves named AWS profile credentials", () => {
+  const parsed = parseAwsCredentialsFile(
+    `
+[default]
+aws_access_key_id = DEFAULTKEY
+aws_secret_access_key = DEFAULTSECRET
+
+[prod]
+aws_access_key_id = PRODKEY
+aws_secret_access_key = PRODSECRET
+aws_session_token = PRODSESSION
+`,
+    "prod",
+  );
+  assert.deepEqual(parsed, {
+    accessKeyId: "PRODKEY",
+    secretAccessKey: "PRODSECRET",
+    sessionToken: "PRODSESSION",
+  });
+});
+
 test("SAP AI Core adapter builds service-key auth and orchestration requests", () => {
   const serviceKey = parseSapAiCoreServiceKey(
     JSON.stringify({
@@ -621,6 +689,14 @@ test("OpenCode auth import enables native Anthropic, Google, Vertex, Vertex Anth
   assert.equal(byId.get("amazon-bedrock")?.providerAdapter, "amazon-bedrock");
   assert.deepEqual(byId.get("amazon-bedrock")?.providerAuthEnv, [
     "AWS_BEARER_TOKEN_BEDROCK",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_PROFILE",
+    "AWS_DEFAULT_PROFILE",
+    "AWS_REGION",
+    "AWS_DEFAULT_REGION",
+    "AWS_SHARED_CREDENTIALS_FILE",
   ]);
   assert.equal(
     byId.get("amazon-bedrock")?.baseUrl,
@@ -679,6 +755,59 @@ test("OpenCode auth import enables native Anthropic, Google, Vertex, Vertex Anth
     JSON.parse(sapServiceKeyAccounts[0]?.accessToken ?? "{}").serviceurls.AI_API_URL,
     "http://sap-ai.example/v2",
   );
+});
+
+test("OpenCode auth import enables Amazon Bedrock through AWS credential-chain config", async () => {
+  const previous = {
+    AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
+    AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
+    AWS_SESSION_TOKEN: process.env.AWS_SESSION_TOKEN,
+    AWS_REGION: process.env.AWS_REGION,
+  };
+  process.env.AWS_ACCESS_KEY_ID = "AKIDIMPORT";
+  process.env.AWS_SECRET_ACCESS_KEY = "SECRETIMPORT";
+  process.env.AWS_SESSION_TOKEN = "SESSIONIMPORT";
+  delete process.env.AWS_REGION;
+  try {
+    const payload = parseOpenCodeConfigPayload(`{
+      "provider": {
+        "amazon-bedrock": {
+          "npm": "@ai-sdk/amazon-bedrock",
+          "options": {
+            "region": "us-west-2",
+            "profile": "prod"
+          },
+          "models": {
+            "anthropic.claude-3-haiku-20240307-v1:0": {
+              "name": "Claude 3 Haiku"
+            }
+          }
+        }
+      }
+    }`);
+    const accounts = await accountsFromOpenCodeAuthPayload(
+      { "amazon-bedrock": {} },
+      {
+        providerConfig: providerConfigFromOpenCodeConfigPayload(payload),
+        providerConfigSecrets: providerSecretsFromOpenCodeConfigPayload(payload),
+      },
+    );
+    const bedrock = accounts.find((account) => account.providerId === "amazon-bedrock");
+
+    assert.equal(bedrock?.provider, "amazon-bedrock");
+    assert.equal(bedrock?.providerAdapter, "amazon-bedrock");
+    assert.equal(bedrock?.accessToken, AWS_BEDROCK_SIGV4_PLACEHOLDER);
+    assert.equal(bedrock?.baseUrl, "https://bedrock-runtime.us-west-2.amazonaws.com");
+    assert.equal(bedrock?.providerOptions?.region, "us-west-2");
+    assert.equal(bedrock?.providerOptions?.profile, "prod");
+    assert.equal(bedrock?.enabled, true);
+    assert.ok(bedrock?.providerModels?.["anthropic.claude-3-haiku-20240307-v1:0"]);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 test("OpenAI-compatible SDK providers are runtime-routable through the bridge", async () => {

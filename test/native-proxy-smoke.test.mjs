@@ -58,6 +58,10 @@ async function closeServer(server) {
 }
 
 async function withProxy(accounts, fn) {
+  return withProxyEnv(accounts, {}, fn);
+}
+
+async function withProxyEnv(accounts, extraEnv, fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-proxy-"));
   const portServer = http.createServer((_req, res) => {
     res.writeHead(404).end();
@@ -75,6 +79,7 @@ async function withProxy(accounts, fn) {
     cwd: root,
     env: {
       ...process.env,
+      ...extraEnv,
       PORT: String(port),
       STORE_PATH: storePath,
       OAUTH_STATE_PATH: path.join(dir, "oauth.json"),
@@ -866,6 +871,102 @@ test("proxy routes Amazon Bedrock chat completions through Converse API", async 
           "Hello",
         );
         assert.equal(capturedRequest.inferenceConfig.maxTokens, 64);
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
+test("proxy signs Amazon Bedrock Converse requests with AWS SigV4 credentials", async () => {
+  let capturedRequest;
+  let capturedAuthorization;
+  let capturedAmzDate;
+  let capturedPayloadHash;
+  let capturedSessionToken;
+  const upstream = http.createServer(async (req, res) => {
+    if (
+      req.method === "POST" &&
+      req.url === "/model/anthropic.claude-3-haiku-20240307-v1%3A0/converse"
+    ) {
+      capturedRequest = await readJson(req);
+      capturedAuthorization = req.headers.authorization;
+      capturedAmzDate = req.headers["x-amz-date"];
+      capturedPayloadHash = req.headers["x-amz-content-sha256"];
+      capturedSessionToken = req.headers["x-amz-security-token"];
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          output: {
+            message: {
+              role: "assistant",
+              content: [{ text: "Bedrock SigV4 OK" }],
+            },
+          },
+          stopReason: "end_turn",
+          usage: {
+            inputTokens: 5,
+            outputTokens: 2,
+            totalTokens: 7,
+          },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxyEnv(
+      [
+        {
+          id: "bedrock-sigv4-smoke",
+          provider: "amazon-bedrock",
+          providerId: "amazon-bedrock",
+          providerAdapter: "amazon-bedrock",
+          accessToken: "__opencodex_aws_sigv4__",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          providerOptions: {
+            region: "us-east-1",
+          },
+          providerModels: {
+            "anthropic.claude-3-haiku-20240307-v1:0": {
+              id: "anthropic.claude-3-haiku-20240307-v1:0",
+              name: "Claude 3 Haiku",
+            },
+          },
+          enabled: true,
+        },
+      ],
+      {
+        AWS_ACCESS_KEY_ID: "AKIDEXAMPLE",
+        AWS_SECRET_ACCESS_KEY: "SECRETEXAMPLE",
+        AWS_SESSION_TOKEN: "SESSIONEXAMPLE",
+      },
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "anthropic.claude-3-haiku-20240307-v1:0",
+            messages: [{ role: "user", content: "Hello" }],
+            max_tokens: 64,
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.choices[0].message.content, "Bedrock SigV4 OK");
+        assert.equal(capturedAuthorization?.startsWith("AWS4-HMAC-SHA256 "), true);
+        assert.match(
+          capturedAuthorization,
+          /Credential=AKIDEXAMPLE\/\d{8}\/us-east-1\/bedrock\/aws4_request/,
+        );
+        assert.match(capturedAuthorization, /Signature=[a-f0-9]{64}$/);
+        assert.match(String(capturedAmzDate), /^\d{8}T\d{6}Z$/);
+        assert.match(String(capturedPayloadHash), /^[a-f0-9]{64}$/);
+        assert.equal(capturedSessionToken, "SESSIONEXAMPLE");
+        assert.equal(capturedRequest.messages[0].content[0].text, "Hello");
       },
     );
   } finally {

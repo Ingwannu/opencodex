@@ -181,10 +181,13 @@ OpenCodex can route providers that map to the current runtime adapters:
   `publishers/anthropic` when Vertex project/location routing metadata and a
   bearer access token are available
 - Cohere through the native v2 Chat API
-- Amazon Bedrock through the native Converse API when
-  `AWS_BEARER_TOKEN_BEDROCK`/OpenCode API key credentials and either
-  `AWS_REGION`, `AWS_DEFAULT_REGION`, `baseURL`, or provider region metadata are
-  available
+- Amazon Bedrock through the native Converse API using either
+  `AWS_BEARER_TOKEN_BEDROCK`/OpenCode API key credentials or AWS SigV4
+  credentials from `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` /
+  `AWS_SESSION_TOKEN`, plus static named profiles from `~/.aws/credentials` or
+  `AWS_SHARED_CREDENTIALS_FILE`; region routing can come from `AWS_REGION`,
+  `AWS_DEFAULT_REGION`, `baseURL`, `endpoint`, or OpenCode provider region
+  metadata
 - OpenAI-compatible providers from Models.dev, including OpenRouter, Requesty,
   local OpenAI-compatible servers, custom OpenCode providers using
   `@ai-sdk/openai-compatible`, and provider SDKs that expose documented
@@ -209,13 +212,13 @@ OpenCodex can route providers that map to the current runtime adapters:
   OpenAI-style model listing endpoint
 
 Credentials for providers whose native API adapter is not implemented yet, such
-as Azure without resource routing metadata, Amazon Bedrock SigV4 access-key
-credentials without bearer-token support, Google Vertex ADC/service-account
+as Azure without resource routing metadata, Google Vertex ADC/service-account
 credential flows without a bearer token, Cloudflare AI Gateway without
-account/gateway routing metadata, and other provider-specific SDK adapters, are
-imported and shown as auth-only disabled accounts. They are preserved for
-management, but are not sent through the proxy until a native adapter or exact
-compatibility bridge is added.
+account/gateway routing metadata, Bedrock credential flows that require AWS SDK
+providers such as SSO/IRSA/instance metadata, and other provider-specific SDK
+adapters, are imported and shown as auth-only disabled accounts. They are
+preserved for management, but are not sent through the proxy until a native
+adapter or exact compatibility bridge is added.
 
 Default expected redirect URI:
 

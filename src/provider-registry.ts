@@ -191,6 +191,36 @@ const BUILTIN_PROVIDERS: ProviderRegistryEntry[] = [
     runtimeSupported: true,
   },
   {
+    id: "amazon-bedrock",
+    providerId: "amazon-bedrock",
+    label: "Amazon Bedrock",
+    provider: "amazon-bedrock",
+    providerAdapter: "amazon-bedrock",
+    providerNpm: "@ai-sdk/amazon-bedrock",
+    providerSource: "builtin",
+    providerDoc: "https://docs.aws.amazon.com/bedrock/latest/userguide/",
+    baseUrl: amazonBedrockBaseUrlFromOptions(),
+    providerOptions: amazonBedrockProviderOptionsFromSource({
+      options: {
+        region: process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION,
+        profile: process.env.AWS_PROFILE ?? process.env.AWS_DEFAULT_PROFILE,
+      },
+    }),
+    tokenEnv: [
+      "AWS_BEARER_TOKEN_BEDROCK",
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SESSION_TOKEN",
+      "AWS_PROFILE",
+      "AWS_DEFAULT_PROFILE",
+      "AWS_REGION",
+      "AWS_DEFAULT_REGION",
+      "AWS_SHARED_CREDENTIALS_FILE",
+    ],
+    authType: "api-key",
+    runtimeSupported: true,
+  },
+  {
     id: "sap-ai-core",
     providerId: "sap-ai-core",
     label: "SAP AI Core",
@@ -495,6 +525,29 @@ function sapAiCoreProviderOptionsFromSource(
   return Object.keys(out).length ? out : undefined;
 }
 
+function amazonBedrockProviderOptionsFromSource(
+  source: ModelsDevProvider,
+): Record<string, unknown> | undefined {
+  const options = source.options ?? {};
+  const out: Record<string, unknown> = {};
+  for (const key of [
+    "region",
+    "awsRegion",
+    "aws_region",
+    "profile",
+    "awsProfile",
+    "aws_profile",
+    "credentialsFile",
+    "credentials_file",
+    "sharedCredentialsFile",
+    "shared_credentials_file",
+  ]) {
+    const value = options[key];
+    if (typeof value === "string" && value.trim()) out[key] = value.trim();
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 let modelsDevCache:
   | { at: number; entries: Map<string, ProviderRegistryEntry> }
   | undefined;
@@ -586,7 +639,17 @@ function tokenEnvForProvider(
   env: unknown,
 ): string[] {
   if (providerId === "amazon-bedrock" || adapter === "amazon-bedrock") {
-    return ["AWS_BEARER_TOKEN_BEDROCK"];
+    return [
+      "AWS_BEARER_TOKEN_BEDROCK",
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SESSION_TOKEN",
+      "AWS_PROFILE",
+      "AWS_DEFAULT_PROFILE",
+      "AWS_REGION",
+      "AWS_DEFAULT_REGION",
+      "AWS_SHARED_CREDENTIALS_FILE",
+    ];
   }
   if (
     providerId === "google-vertex" ||
@@ -695,9 +758,11 @@ export function providerRegistryEntryFromMetadata(
         )
         : undefined,
     providerOptions:
-      adapter === "sap-ai-core"
-        ? sapAiCoreProviderOptionsFromSource(source)
-        : undefined,
+      adapter === "amazon-bedrock"
+        ? amazonBedrockProviderOptionsFromSource(source)
+        : adapter === "sap-ai-core"
+          ? sapAiCoreProviderOptionsFromSource(source)
+          : undefined,
     tokenEnv: tokenEnvForProvider(id, adapter, source.env),
     authType: "api-key",
     runtimeSupported,

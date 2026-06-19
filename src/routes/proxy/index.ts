@@ -70,6 +70,8 @@ import {
   sanitizeGenericChatCompletionsPayload,
 } from "../../responses/payloads.js";
 import {
+  AWS_BEDROCK_SIGV4_PLACEHOLDER,
+  buildAwsSigV4Headers,
   buildGitLabDirectAccessRequest,
   buildGitLabProviderRequest,
   buildSapAiCoreDeploymentResolutionRequest,
@@ -84,6 +86,7 @@ import {
   nativeProviderDefaultBaseUrl,
   nativeProviderModelsFromResponse,
   parseSapAiCoreServiceKey,
+  resolveAwsBedrockCredentials,
   resolveSapAiCoreDeploymentIdFromResponse,
 } from "../../provider-native.js";
 import type { NativeProviderId } from "../../provider-native.js";
@@ -371,6 +374,37 @@ function accountBaseUrl(
   }
   if (!isRuntimeRoutableProvider(provider)) return "";
   return openaiBaseUrl;
+}
+
+function accountUsesAwsBedrockSigV4(
+  account: Pick<Account, "accessToken" | "provider" | "providerAdapter">,
+): boolean {
+  return (
+    normalizeProvider(account) === "amazon-bedrock" &&
+    account.accessToken === AWS_BEDROCK_SIGV4_PLACEHOLDER
+  );
+}
+
+function signAwsBedrockHeadersForAccount(
+  account: Pick<Account, "providerOptions">,
+  input: {
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+    body?: string;
+  },
+): Record<string, string> {
+  const credentials = resolveAwsBedrockCredentials(account.providerOptions);
+  if (!credentials) {
+    throw new Error("amazon-bedrock AWS credentials were not found for SigV4 signing");
+  }
+  return buildAwsSigV4Headers({
+    method: input.method,
+    url: input.url,
+    headers: input.headers,
+    body: input.body ?? "",
+    credentials,
+  });
 }
 
 function resolveUpstreamMode(
@@ -671,6 +705,16 @@ async function discoverModels(
           const request = buildNativeProviderModelsRequest(provider, account);
           url = `${baseUrl}${request.path}`;
           Object.assign(headers, request.headers);
+          if (accountUsesAwsBedrockSigV4(account)) {
+            Object.assign(
+              headers,
+              signAwsBedrockHeadersForAccount(account, {
+                method: "GET",
+                url,
+                headers: request.headers,
+              }),
+            );
+          }
           if (!("authorization" in request.headers)) {
             delete headers.authorization;
           }
@@ -1687,6 +1731,18 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
             upstreamPath = nativeRequest.path;
             upstreamHeaders = nativeRequest.headers;
             upstreamBody = nativeRequest.body;
+            if (
+              candidate.provider === "amazon-bedrock" &&
+              accountUsesAwsBedrockSigV4(selected)
+            ) {
+              const upstreamUrlForSigning = `${upstreamBaseUrl}${upstreamPath}`;
+              upstreamHeaders = signAwsBedrockHeadersForAccount(selected, {
+                method: "POST",
+                url: upstreamUrlForSigning,
+                headers: nativeRequest.headers,
+                body: JSON.stringify(nativeRequest.body),
+              });
+            }
             nativeResponseProvider = candidate.provider;
           } else if (candidate.provider === "gitlab") {
             const gitLabKind = gitLabProviderKindForModel(payloadToUpstream?.model);

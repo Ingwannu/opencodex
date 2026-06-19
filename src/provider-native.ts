@@ -1,4 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { Account } from "./types.js";
 import {
   amazonBedrockBaseUrlFromOptions,
@@ -13,6 +16,18 @@ export type NativeProviderId =
   | "vertex"
   | "vertex-anthropic";
 export type NativeProviderResponseShape = "chat.completions" | "responses";
+
+export const AWS_BEDROCK_SIGV4_PLACEHOLDER = "__opencodex_aws_sigv4__";
+
+export type AwsBedrockCredentials = {
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken?: string;
+};
+
+export type ResolvedAwsBedrockCredentials = AwsBedrockCredentials & {
+  region: string;
+};
 
 type NativeProviderRequest = {
   path: string;
@@ -495,6 +510,254 @@ function stringFromKeys(
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return undefined;
+}
+
+function firstStringFromUnknown(
+  source: unknown,
+  keys: string[],
+): string | undefined {
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    return undefined;
+  }
+  return stringFromKeys(source as Record<string, unknown>, keys);
+}
+
+function awsBedrockRegionFromUrl(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  try {
+    const host = new URL(value).hostname;
+    const match = /^bedrock-runtime[.-]([a-z0-9-]+)\.amazonaws\.com(?:\.cn)?$/i.exec(host);
+    return match?.[1];
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function awsBedrockRegion(
+  options: unknown,
+  env: Record<string, string | undefined>,
+): string | undefined {
+  return (
+    firstStringFromUnknown(options, ["region", "awsRegion", "aws_region"]) ??
+    env.AWS_REGION ??
+    env.AWS_DEFAULT_REGION ??
+    awsBedrockRegionFromUrl(
+      firstStringFromUnknown(options, [
+        "baseURL",
+        "baseUrl",
+        "base_url",
+        "url",
+        "endpoint",
+      ]),
+    )
+  )?.trim();
+}
+
+function awsBedrockProfile(
+  options: unknown,
+  env: Record<string, string | undefined>,
+): string {
+  return (
+    firstStringFromUnknown(options, ["profile", "awsProfile", "aws_profile"]) ??
+    env.AWS_PROFILE ??
+    env.AWS_DEFAULT_PROFILE ??
+    "default"
+  ).trim();
+}
+
+export function parseAwsCredentialsFile(
+  source: string,
+  profile = "default",
+): AwsBedrockCredentials | undefined {
+  const target = profile.trim() || "default";
+  const sections = new Map<string, Record<string, string>>();
+  let current: Record<string, string> | undefined;
+
+  for (const rawLine of source.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#") || line.startsWith(";")) continue;
+    const sectionMatch = /^\[([^\]]+)\]$/.exec(line);
+    if (sectionMatch) {
+      const sectionName = (sectionMatch[1] ?? "")
+        .trim()
+        .replace(/^profile\s+/i, "");
+      current = {};
+      sections.set(sectionName, current);
+      continue;
+    }
+    if (!current) continue;
+    const separator = line.indexOf("=");
+    if (separator < 0) continue;
+    const key = line.slice(0, separator).trim();
+    const value = line.slice(separator + 1).trim();
+    current[key] = value;
+  }
+
+  const section = sections.get(target);
+  if (!section) return undefined;
+  const accessKeyId = section.aws_access_key_id;
+  const secretAccessKey = section.aws_secret_access_key;
+  if (!accessKeyId || !secretAccessKey) return undefined;
+  return {
+    accessKeyId,
+    secretAccessKey,
+    ...(section.aws_session_token
+      ? { sessionToken: section.aws_session_token }
+      : {}),
+  };
+}
+
+function awsSharedCredentialsFile(
+  options: unknown,
+  env: Record<string, string | undefined>,
+): string {
+  return (
+    firstStringFromUnknown(options, [
+      "credentialsFile",
+      "credentials_file",
+      "sharedCredentialsFile",
+      "shared_credentials_file",
+    ]) ??
+    env.AWS_SHARED_CREDENTIALS_FILE ??
+    join(homedir(), ".aws", "credentials")
+  );
+}
+
+export function resolveAwsBedrockCredentials(
+  options: unknown = {},
+  env: Record<string, string | undefined> = process.env,
+): ResolvedAwsBedrockCredentials | undefined {
+  const region = awsBedrockRegion(options, env);
+  if (!region) return undefined;
+
+  if (env.AWS_ACCESS_KEY_ID?.trim() && env.AWS_SECRET_ACCESS_KEY?.trim()) {
+    return {
+      accessKeyId: env.AWS_ACCESS_KEY_ID.trim(),
+      secretAccessKey: env.AWS_SECRET_ACCESS_KEY.trim(),
+      ...(env.AWS_SESSION_TOKEN?.trim()
+        ? { sessionToken: env.AWS_SESSION_TOKEN.trim() }
+        : {}),
+      region,
+    };
+  }
+
+  try {
+    const profile = awsBedrockProfile(options, env);
+    const parsed = parseAwsCredentialsFile(
+      readFileSync(awsSharedCredentialsFile(options, env), "utf8"),
+      profile,
+    );
+    if (!parsed) return undefined;
+    return { ...parsed, region };
+  } catch {
+    return undefined;
+  }
+}
+
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function hmac(key: Buffer | string, value: string): Buffer {
+  return createHmac("sha256", key).update(value, "utf8").digest();
+}
+
+function hmacHex(key: Buffer | string, value: string): string {
+  return createHmac("sha256", key).update(value, "utf8").digest("hex");
+}
+
+function awsDateParts(now: Date): { shortDate: string; longDate: string } {
+  const iso = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
+  return {
+    shortDate: iso.slice(0, 8),
+    longDate: iso,
+  };
+}
+
+function awsUriEncode(value: string): string {
+  return encodeURIComponent(value).replace(/[!'()*]/g, (char) =>
+    `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+function canonicalQuery(searchParams: URLSearchParams): string {
+  return [...searchParams.entries()]
+    .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
+      leftKey === rightKey
+        ? leftValue.localeCompare(rightValue)
+        : leftKey.localeCompare(rightKey),
+    )
+    .map(([key, value]) => `${awsUriEncode(key)}=${awsUriEncode(value)}`)
+    .join("&");
+}
+
+function canonicalHeaderValue(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+export function buildAwsSigV4Headers(input: {
+  method: string;
+  url: string;
+  headers?: Record<string, string | undefined>;
+  body?: string;
+  credentials: ResolvedAwsBedrockCredentials;
+  service?: string;
+  now?: Date;
+}): Record<string, string> {
+  const url = new URL(input.url);
+  const now = input.now ?? new Date();
+  const { shortDate, longDate } = awsDateParts(now);
+  const body = input.body ?? "";
+  const payloadHash = sha256Hex(body);
+  const service = input.service ?? "bedrock";
+
+  const headers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(input.headers ?? {})) {
+    if (value === undefined) continue;
+    const normalizedKey = key.toLowerCase();
+    if (normalizedKey === "authorization") continue;
+    headers[normalizedKey] = canonicalHeaderValue(value);
+  }
+  headers.host = url.host;
+  headers["x-amz-content-sha256"] = payloadHash;
+  headers["x-amz-date"] = longDate;
+  if (input.credentials.sessionToken) {
+    headers["x-amz-security-token"] = input.credentials.sessionToken;
+  }
+
+  const signedHeaderKeys = Object.keys(headers).sort();
+  const canonicalHeaders = signedHeaderKeys
+    .map((key) => `${key}:${headers[key]}`)
+    .join("\n");
+  const signedHeaders = signedHeaderKeys.join(";");
+  const canonicalRequest = [
+    input.method.toUpperCase(),
+    url.pathname || "/",
+    canonicalQuery(url.searchParams),
+    `${canonicalHeaders}\n`,
+    signedHeaders,
+    payloadHash,
+  ].join("\n");
+  const credentialScope = `${shortDate}/${input.credentials.region}/${service}/aws4_request`;
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    longDate,
+    credentialScope,
+    sha256Hex(canonicalRequest),
+  ].join("\n");
+  const dateKey = hmac(`AWS4${input.credentials.secretAccessKey}`, shortDate);
+  const regionKey = hmac(dateKey, input.credentials.region);
+  const serviceKey = hmac(regionKey, service);
+  const signingKey = hmac(serviceKey, "aws4_request");
+  const signature = hmacHex(signingKey, stringToSign);
+
+  const out = { ...headers };
+  delete out.host;
+  out.authorization =
+    `AWS4-HMAC-SHA256 Credential=${input.credentials.accessKeyId}/${credentialScope}, ` +
+    `SignedHeaders=${signedHeaders}, Signature=${signature}`;
+  return out;
 }
 
 function parseJsonObject(value: string): Record<string, unknown> | undefined {

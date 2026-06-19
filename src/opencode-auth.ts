@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Account } from "./types.js";
 import {
+  amazonBedrockBaseUrlFromOptions,
   cloudflareAiGatewayBaseUrlFromOptions,
   normalizeBaseUrl,
   normalizeOpenAiCompatibleBaseUrl,
@@ -9,6 +10,10 @@ import {
   sanitizeProviderId,
   type ProviderRegistryEntry,
 } from "./provider-registry.js";
+import {
+  AWS_BEDROCK_SIGV4_PLACEHOLDER,
+  resolveAwsBedrockCredentials,
+} from "./provider-native.js";
 
 type OpenCodeAuthImportOptions = {
   providerConfig?: Map<string, ProviderRegistryEntry>;
@@ -133,6 +138,53 @@ function findSecretInProviderConfig(value: unknown): string | undefined {
   );
 }
 
+function envSecretForProvider(
+  providerId: string,
+  registry: ProviderRegistryEntry,
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  if (
+    (providerId === "amazon-bedrock" ||
+      registry.providerAdapter === "amazon-bedrock") &&
+    env.AWS_BEARER_TOKEN_BEDROCK?.trim()
+  ) {
+    return normalizeSecret(env.AWS_BEARER_TOKEN_BEDROCK);
+  }
+  return undefined;
+}
+
+function credentialChainTokenForProvider(
+  providerId: string,
+  registry: ProviderRegistryEntry,
+): string | undefined {
+  if (
+    providerId === "amazon-bedrock" ||
+    registry.providerAdapter === "amazon-bedrock"
+  ) {
+    return resolveAwsBedrockCredentials(registry.providerOptions)
+      ? AWS_BEDROCK_SIGV4_PLACEHOLDER
+      : undefined;
+  }
+  return undefined;
+}
+
+function baseUrlForRegistry(
+  registry: ProviderRegistryEntry,
+  detectedBaseUrl?: string,
+): string | undefined {
+  if (registry.providerAdapter === "openai-compatible") {
+    return normalizeOpenAiCompatibleBaseUrl(detectedBaseUrl || registry.baseUrl);
+  }
+  if (registry.providerAdapter === "amazon-bedrock") {
+    return normalizeBaseUrl(
+      detectedBaseUrl ||
+        registry.baseUrl ||
+        amazonBedrockBaseUrlFromOptions(registry.providerOptions),
+    );
+  }
+  return normalizeBaseUrl(detectedBaseUrl || registry.baseUrl);
+}
+
 function findBaseUrlInObject(value: unknown, seen = new Set<object>()): string | undefined {
   if (!value || typeof value !== "object") return undefined;
   if (seen.has(value)) return undefined;
@@ -179,9 +231,6 @@ export async function accountsFromOpenCodeAuthPayload(
   for (const [name, body] of entriesFromAuthPayload(payload)) {
     const providerKey = sanitizeProviderId(name);
     seenProviderIds.add(providerKey);
-    const token = findSecretInObject(body) ?? options.providerConfigSecrets?.get(providerKey);
-    if (!token) continue;
-
     const detectedBaseUrl = findBaseUrlInObject(body);
     const configEntry = options.providerConfig?.get(providerKey);
     const registry =
@@ -189,13 +238,16 @@ export async function accountsFromOpenCodeAuthPayload(
       (await resolveProviderRegistryEntry(name, {
         baseUrl: detectedBaseUrl,
       }));
+    const token =
+      findSecretInObject(body) ??
+      options.providerConfigSecrets?.get(providerKey) ??
+      envSecretForProvider(providerKey, registry) ??
+      credentialChainTokenForProvider(providerKey, registry);
+    if (!token) continue;
     const providerId = sanitizeProviderId(registry.providerId || name);
     const id = `${providerId}-${sanitizeProviderId(name) || randomUUID().slice(0, 8)}`;
     const runtimeSupported = registry.runtimeSupported;
-    const baseUrl =
-      registry.providerAdapter === "openai-compatible"
-        ? normalizeOpenAiCompatibleBaseUrl(detectedBaseUrl || registry.baseUrl)
-        : normalizeBaseUrl(detectedBaseUrl || registry.baseUrl);
+    const baseUrl = baseUrlForRegistry(registry, detectedBaseUrl);
 
     accounts.push({
       id,
@@ -233,10 +285,48 @@ export async function accountsFromOpenCodeAuthPayload(
     const providerId = sanitizeProviderId(registry.providerId || providerKey);
     const id = `${providerId}-${providerKey || randomUUID().slice(0, 8)}`;
     const runtimeSupported = registry.runtimeSupported;
-    const baseUrl =
-      registry.providerAdapter === "openai-compatible"
-        ? normalizeOpenAiCompatibleBaseUrl(registry.baseUrl)
-        : normalizeBaseUrl(registry.baseUrl);
+    const baseUrl = baseUrlForRegistry(registry);
+
+    accounts.push({
+      id,
+      provider: registry.provider,
+      providerId,
+      providerAdapter: registry.providerAdapter,
+      providerLabel: registry.label,
+      providerNpm: registry.providerNpm,
+      providerSource: "opencode",
+      providerDoc: registry.providerDoc,
+      providerAuthEnv: registry.tokenEnv,
+      providerOptions: registry.providerOptions,
+      providerModels: registry.models,
+      upstreamMode: registry.upstreamMode,
+      compatibilityMode: registry.compatibilityMode,
+      openAiPathPrefix: registry.openAiPathPrefix,
+      email: id,
+      accessToken: token,
+      baseUrl,
+      enabled: runtimeSupported,
+      priority: 0,
+      state: runtimeSupported
+        ? undefined
+        : {
+            lastError: `${registry.providerAdapter} adapter not implemented yet`,
+          },
+    });
+  }
+
+  for (const [providerKey, registry] of options.providerConfig ?? []) {
+    if (seenProviderIds.has(providerKey)) continue;
+    if (options.providerConfigSecrets?.has(providerKey)) continue;
+
+    const providerId = sanitizeProviderId(registry.providerId || providerKey);
+    const token =
+      envSecretForProvider(providerId, registry) ??
+      credentialChainTokenForProvider(providerId, registry);
+    if (!token) continue;
+    const id = `${providerId}-${providerKey || randomUUID().slice(0, 8)}`;
+    const runtimeSupported = registry.runtimeSupported;
+    const baseUrl = baseUrlForRegistry(registry);
 
     accounts.push({
       id,

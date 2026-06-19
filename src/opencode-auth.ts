@@ -1,11 +1,20 @@
 import { randomUUID } from "node:crypto";
-import { NO_AUTH_ACCESS_TOKEN, type Account } from "./types.js";
+import {
+  NO_AUTH_ACCESS_TOKEN,
+  type Account,
+  type OpenAiPathPrefix,
+  type ProviderAdapter,
+  type RouteProviderId,
+  type UpstreamMode,
+} from "./types.js";
 import {
   amazonBedrockBaseUrlFromOptions,
   cloudflareAiGatewayBaseUrlFromOptions,
   cloudflareWorkersAiBaseUrlFromOptions,
+  isRuntimeSupportedProvider,
   normalizeBaseUrl,
   normalizeOpenAiCompatibleBaseUrl,
+  providerAdapterFromNpm,
   providerRegistryEntryFromMetadata,
   resolveProviderRegistryEntry,
   sanitizeProviderId,
@@ -240,6 +249,202 @@ function baseUrlForRegistry(
   return normalizeBaseUrl(detectedBaseUrl || registry.baseUrl);
 }
 
+type ModelProviderOverride = {
+  adapter: RouteProviderId;
+  providerNpm?: string;
+  baseUrl?: string;
+  upstreamMode?: UpstreamMode;
+  compatibilityMode?: "responses" | "chat-completions-bridge";
+  openAiPathPrefix?: OpenAiPathPrefix;
+  models: Record<string, unknown>;
+};
+
+function providerOverrideObject(
+  metadata: unknown,
+): Record<string, unknown> | undefined {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return undefined;
+  }
+  const provider = (metadata as Record<string, unknown>).provider;
+  if (!provider || typeof provider !== "object" || Array.isArray(provider)) {
+    return undefined;
+  }
+  return provider as Record<string, unknown>;
+}
+
+function firstProviderOverrideString(
+  source: Record<string, unknown>,
+  keys: string[],
+): string | undefined {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function stripNativeVersionSuffix(
+  adapter: RouteProviderId,
+  baseUrl: string | undefined,
+): string | undefined {
+  if (!baseUrl) return undefined;
+  if (adapter === "anthropic") return baseUrl.replace(/\/v1$/i, "");
+  if (adapter === "google") return baseUrl.replace(/\/v1(?:beta)?$/i, "");
+  if (adapter === "cohere") return baseUrl.replace(/\/v2$/i, "");
+  return baseUrl;
+}
+
+function vertexEndpointHostForRegistry(
+  registry: ProviderRegistryEntry,
+): string | undefined {
+  if (process.env.GOOGLE_VERTEX_ENDPOINT?.trim()) {
+    return process.env.GOOGLE_VERTEX_ENDPOINT.trim();
+  }
+  if (!registry.baseUrl) return undefined;
+  try {
+    return new URL(registry.baseUrl).host;
+  } catch {
+    return undefined;
+  }
+}
+
+function apiWithDerivedProviderEnv(
+  api: string | undefined,
+  registry: ProviderRegistryEntry,
+): string | undefined {
+  if (!api) return undefined;
+  if (
+    !api.includes("GOOGLE_VERTEX_ENDPOINT") ||
+    process.env.GOOGLE_VERTEX_ENDPOINT?.trim()
+  ) {
+    return api;
+  }
+  const endpoint = vertexEndpointHostForRegistry(registry);
+  if (!endpoint) return api;
+  return api
+    .replace(/\$\{GOOGLE_VERTEX_ENDPOINT\}/g, endpoint)
+    .replace(/\{env:GOOGLE_VERTEX_ENDPOINT\}/g, endpoint);
+}
+
+function modelOverrideBaseUrl(
+  adapter: RouteProviderId,
+  api: string | undefined,
+  registry: ProviderRegistryEntry,
+): string | undefined {
+  const resolvedApi = apiWithDerivedProviderEnv(api, registry);
+  if (adapter === "openai-compatible") {
+    return normalizeOpenAiCompatibleBaseUrl(resolvedApi ?? registry.baseUrl);
+  }
+  return stripNativeVersionSuffix(
+    adapter,
+    normalizeBaseUrl(resolvedApi ?? registry.baseUrl),
+  );
+}
+
+function modelProviderOverrideForMetadata(
+  registry: ProviderRegistryEntry,
+  modelId: string,
+  metadata: unknown,
+): ModelProviderOverride | undefined {
+  const provider = providerOverrideObject(metadata);
+  if (!provider) return undefined;
+
+  const npm = firstProviderOverrideString(provider, ["npm", "package"]);
+  const adapter = providerAdapterFromNpm(modelId, npm);
+  if (!isRuntimeSupportedProvider(adapter)) return undefined;
+
+  const api = firstProviderOverrideString(provider, [
+    "api",
+    "baseURL",
+    "baseUrl",
+    "base_url",
+    "url",
+    "endpoint",
+  ]);
+  const baseUrl = modelOverrideBaseUrl(adapter, api, registry);
+  if (adapter === "openai-compatible" && !baseUrl) return undefined;
+
+  return {
+    adapter,
+    providerNpm: npm,
+    baseUrl,
+    upstreamMode: adapter === "openai-compatible" ? "chat/completions" : undefined,
+    compatibilityMode:
+      adapter === "openai-compatible" ? "chat-completions-bridge" : undefined,
+    models: { [modelId]: metadata },
+  };
+}
+
+function baseProviderModelsForRegistry(
+  registry: ProviderRegistryEntry,
+): Record<string, unknown> | undefined {
+  if (!registry.models || typeof registry.models !== "object") return undefined;
+  const out: Record<string, unknown> = {};
+  for (const [modelId, metadata] of Object.entries(registry.models)) {
+    if (providerOverrideObject(metadata)) continue;
+    out[modelId] = metadata;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function modelProviderOverrideAccountsForRegistry(
+  baseAccount: Account,
+  registry: ProviderRegistryEntry,
+  token: string,
+): Account[] {
+  if (!registry.models || typeof registry.models !== "object") return [];
+
+  const groups = new Map<string, ModelProviderOverride>();
+  for (const [modelId, metadata] of Object.entries(registry.models)) {
+    const override = modelProviderOverrideForMetadata(registry, modelId, metadata);
+    if (!override) continue;
+    const key = JSON.stringify({
+      adapter: override.adapter,
+      providerNpm: override.providerNpm,
+      baseUrl: override.baseUrl,
+      upstreamMode: override.upstreamMode,
+      compatibilityMode: override.compatibilityMode,
+      openAiPathPrefix: override.openAiPathPrefix,
+    });
+    const existing = groups.get(key);
+    if (existing) {
+      existing.models[modelId] = metadata;
+    } else {
+      groups.set(key, override);
+    }
+  }
+
+  return Array.from(groups.values()).map((override) => {
+    const suffix =
+      sanitizeProviderId(`${override.adapter}-${override.baseUrl ?? "default"}`) ||
+      override.adapter;
+    const enabled =
+      isRuntimeSupportedProvider(override.adapter) &&
+      (override.adapter !== "openai-compatible" || Boolean(override.baseUrl));
+    return {
+      ...baseAccount,
+      id: `${baseAccount.id}-${suffix}`,
+      provider: override.adapter,
+      providerAdapter: override.adapter as ProviderAdapter,
+      providerLabel: `${baseAccount.providerLabel ?? registry.label} (${override.adapter})`,
+      providerNpm: override.providerNpm ?? baseAccount.providerNpm,
+      providerModels: override.models,
+      upstreamMode: override.upstreamMode,
+      compatibilityMode: override.compatibilityMode,
+      openAiPathPrefix: override.openAiPathPrefix,
+      email: `${baseAccount.email ?? baseAccount.id}-${suffix}`,
+      accessToken: token,
+      baseUrl: override.baseUrl,
+      enabled,
+      state: enabled
+        ? undefined
+        : {
+            lastError: `${override.adapter} adapter not implemented yet`,
+          },
+    };
+  });
+}
+
 function findBaseUrlInObject(value: unknown, seen = new Set<object>()): string | undefined {
   if (!value || typeof value !== "object") return undefined;
   if (seen.has(value)) return undefined;
@@ -305,7 +510,7 @@ export async function accountsFromOpenCodeAuthPayload(
     const runtimeSupported = registry.runtimeSupported;
     const baseUrl = baseUrlForRegistry(registry, detectedBaseUrl);
 
-    accounts.push({
+    const account: Account = {
       id,
       provider: registry.provider,
       providerId,
@@ -317,7 +522,7 @@ export async function accountsFromOpenCodeAuthPayload(
       providerAuthEnv: registry.tokenEnv,
       providerAuthType: registry.authType,
       providerOptions: registry.providerOptions,
-      providerModels: registry.models,
+      providerModels: baseProviderModelsForRegistry(registry),
       upstreamMode: registry.upstreamMode,
       compatibilityMode: registry.compatibilityMode,
       openAiPathPrefix: registry.openAiPathPrefix,
@@ -331,7 +536,11 @@ export async function accountsFromOpenCodeAuthPayload(
         : {
             lastError: `${registry.providerAdapter} adapter not implemented yet`,
       },
-    });
+    };
+    accounts.push(
+      ...modelProviderOverrideAccountsForRegistry(account, registry, token),
+      account,
+    );
   }
 
   for (const [providerKey, token] of options.providerConfigSecrets ?? []) {
@@ -344,7 +553,7 @@ export async function accountsFromOpenCodeAuthPayload(
     const runtimeSupported = registry.runtimeSupported;
     const baseUrl = baseUrlForRegistry(registry);
 
-    accounts.push({
+    const account: Account = {
       id,
       provider: registry.provider,
       providerId,
@@ -356,7 +565,7 @@ export async function accountsFromOpenCodeAuthPayload(
       providerAuthEnv: registry.tokenEnv,
       providerAuthType: registry.authType,
       providerOptions: registry.providerOptions,
-      providerModels: registry.models,
+      providerModels: baseProviderModelsForRegistry(registry),
       upstreamMode: registry.upstreamMode,
       compatibilityMode: registry.compatibilityMode,
       openAiPathPrefix: registry.openAiPathPrefix,
@@ -370,7 +579,11 @@ export async function accountsFromOpenCodeAuthPayload(
         : {
             lastError: `${registry.providerAdapter} adapter not implemented yet`,
           },
-    });
+    };
+    accounts.push(
+      ...modelProviderOverrideAccountsForRegistry(account, registry, token),
+      account,
+    );
   }
 
   for (const [providerKey, registry] of options.providerConfig ?? []) {
@@ -387,7 +600,7 @@ export async function accountsFromOpenCodeAuthPayload(
     const runtimeSupported = registry.runtimeSupported;
     const baseUrl = baseUrlForRegistry(registry);
 
-    accounts.push({
+    const account: Account = {
       id,
       provider: registry.provider,
       providerId,
@@ -399,7 +612,7 @@ export async function accountsFromOpenCodeAuthPayload(
       providerAuthEnv: registry.tokenEnv,
       providerAuthType: registry.authType,
       providerOptions: registry.providerOptions,
-      providerModels: registry.models,
+      providerModels: baseProviderModelsForRegistry(registry),
       upstreamMode: registry.upstreamMode,
       compatibilityMode: registry.compatibilityMode,
       openAiPathPrefix: registry.openAiPathPrefix,
@@ -413,7 +626,11 @@ export async function accountsFromOpenCodeAuthPayload(
         : {
             lastError: `${registry.providerAdapter} adapter not implemented yet`,
           },
-    });
+    };
+    accounts.push(
+      ...modelProviderOverrideAccountsForRegistry(account, registry, token),
+      account,
+    );
   }
 
   return accounts;

@@ -1121,6 +1121,33 @@ function builtinMap(): Map<string, ProviderRegistryEntry> {
   return new Map(BUILTIN_PROVIDERS.map((entry) => [entry.id, entry]));
 }
 
+function mergeBuiltinWithModelsDevEntry(
+  builtin: ProviderRegistryEntry,
+  modelsDev: ProviderRegistryEntry | undefined,
+): ProviderRegistryEntry {
+  if (!modelsDev) return builtin;
+  const models = modelsDev.models ?? builtin.models;
+  const tokenEnv = Array.from(
+    new Set([...(builtin.tokenEnv ?? []), ...(modelsDev.tokenEnv ?? [])]),
+  );
+  return {
+    ...modelsDev,
+    ...builtin,
+    providerDoc: builtin.providerDoc ?? modelsDev.providerDoc,
+    providerNpm: builtin.providerNpm ?? modelsDev.providerNpm,
+    baseUrl: builtin.baseUrl ?? modelsDev.baseUrl,
+    openAiPathPrefix: builtin.openAiPathPrefix ?? modelsDev.openAiPathPrefix,
+    upstreamMode: builtin.upstreamMode ?? modelsDev.upstreamMode,
+    compatibilityMode: builtin.compatibilityMode ?? modelsDev.compatibilityMode,
+    providerOptions: builtin.providerOptions ?? modelsDev.providerOptions,
+    tokenEnv,
+    runtimeSupported: builtin.runtimeSupported || modelsDev.runtimeSupported,
+    models,
+    modelsCount: models ? Object.keys(models).length : undefined,
+    providerSource: "builtin",
+  };
+}
+
 async function fetchModelsDevProviders(): Promise<Map<string, ProviderRegistryEntry>> {
   if (modelsDevCache && Date.now() - modelsDevCache.at < 10 * 60_000) {
     return new Map(modelsDevCache.entries);
@@ -1157,7 +1184,7 @@ async function fetchModelsDevProviders(): Promise<Map<string, ProviderRegistryEn
 export async function listProviderRegistry(): Promise<ProviderRegistryEntry[]> {
   const merged = await fetchModelsDevProviders();
   for (const [id, entry] of builtinMap()) {
-    merged.set(id, entry);
+    merged.set(id, mergeBuiltinWithModelsDevEntry(entry, merged.get(id)));
   }
   return Array.from(merged.values()).sort((a, b) =>
     a.label.localeCompare(b.label),
@@ -1175,7 +1202,10 @@ export async function resolveProviderRegistryEntry(
     : undefined;
   const builtins = builtinMap();
   const modelsDev = await fetchModelsDevProviders();
-  const found = builtins.get(canonicalId) || modelsDev.get(canonicalId);
+  const builtin = builtins.get(canonicalId);
+  const found = builtin
+    ? mergeBuiltinWithModelsDevEntry(builtin, modelsDev.get(canonicalId))
+    : modelsDev.get(canonicalId);
 
   if (found) {
     return {

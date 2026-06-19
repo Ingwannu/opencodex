@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -991,6 +992,52 @@ test("OpenAI-compatible SDK providers are runtime-routable through the bridge", 
   assert.ok(perplexity.models?.["sonar-pro"]);
 });
 
+test("built-in registry entries preserve Models.dev model metadata", () => {
+  const api = `data:application/json,${encodeURIComponent(JSON.stringify({
+    anthropic: {
+      id: "anthropic",
+      name: "Anthropic from Models.dev",
+      npm: "@ai-sdk/anthropic",
+      env: ["ANTHROPIC_API_KEY"],
+      models: {
+        "claude-test": {
+          id: "claude-test",
+          name: "Claude Test",
+          limit: { context: 200000, output: 64000 },
+        },
+      },
+    },
+  }))}`;
+  const output = execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `const { resolveProviderRegistryEntry } = await import("./dist/provider-registry.js");
+const entry = await resolveProviderRegistryEntry("anthropic");
+console.log(JSON.stringify({
+  providerAdapter: entry.providerAdapter,
+  baseUrl: entry.baseUrl,
+  providerSource: entry.providerSource,
+  models: Object.keys(entry.models ?? {}),
+  modelsCount: entry.modelsCount
+}));`,
+    ],
+    {
+      cwd: process.cwd(),
+      env: { ...process.env, MODELS_DEV_API_URL: api },
+      encoding: "utf8",
+    },
+  );
+  const entry = JSON.parse(output);
+
+  assert.equal(entry.providerAdapter, "anthropic");
+  assert.equal(entry.baseUrl, "https://api.anthropic.com");
+  assert.equal(entry.providerSource, "builtin");
+  assert.deepEqual(entry.models, ["claude-test"]);
+  assert.equal(entry.modelsCount, 1);
+});
+
 test("Ollama is available as an auth-free local OpenAI-compatible provider", async () => {
   const entry = await resolveProviderRegistryEntry("ollama");
 
@@ -1225,6 +1272,133 @@ test("Azure registry metadata stays OpenAI-compatible when resource env is missi
   assert.equal(entry.compatibilityMode, "responses");
   assert.deepEqual(entry.tokenEnv, ["AZURE_RESOURCE_NAME", "AZURE_API_KEY"]);
   assert.ok(entry.models?.["gpt-5.1-prod"]);
+});
+
+test("OpenCode auth import splits model-level provider overrides into virtual accounts", async () => {
+  const previous = {
+    AZURE_COGNITIVE_SERVICES_RESOURCE_NAME:
+      process.env.AZURE_COGNITIVE_SERVICES_RESOURCE_NAME,
+    AZURE_COGNITIVE_SERVICES_API_KEY:
+      process.env.AZURE_COGNITIVE_SERVICES_API_KEY,
+  };
+  process.env.AZURE_COGNITIVE_SERVICES_RESOURCE_NAME = "azc-resource";
+  process.env.AZURE_COGNITIVE_SERVICES_API_KEY = "azc-key";
+  try {
+    const registry = providerRegistryEntryFromMetadata(
+      "azure-cognitive-services",
+      {
+        id: "azure-cognitive-services",
+        name: "Azure Cognitive Services",
+        npm: "@ai-sdk/azure",
+        env: [
+          "AZURE_COGNITIVE_SERVICES_RESOURCE_NAME",
+          "AZURE_COGNITIVE_SERVICES_API_KEY",
+        ],
+        models: {
+          "gpt-5.1-prod": { id: "gpt-5.1-prod", name: "GPT 5.1" },
+          "claude-sonnet-4-5": {
+            id: "claude-sonnet-4-5",
+            name: "Claude Sonnet 4.5",
+            provider: {
+              npm: "@ai-sdk/anthropic",
+              api: "https://${AZURE_COGNITIVE_SERVICES_RESOURCE_NAME}.services.ai.azure.com/anthropic/v1",
+            },
+          },
+        },
+      },
+    );
+
+    const accounts = await accountsFromOpenCodeAuthPayload(
+      { "azure-cognitive-services": {} },
+      { providerConfig: new Map([["azure-cognitive-services", registry]]) },
+    );
+    const parent = accounts.find(
+      (account) =>
+        account.providerId === "azure-cognitive-services" &&
+        account.providerAdapter === "openai-compatible",
+    );
+    const anthropic = accounts.find(
+      (account) =>
+        account.providerId === "azure-cognitive-services" &&
+        account.providerAdapter === "anthropic",
+    );
+
+    assert.equal(parent?.baseUrl, "https://azc-resource.openai.azure.com/openai");
+    assert.equal(parent?.accessToken, "azc-key");
+    assert.equal(parent?.enabled, true);
+    assert.ok(parent?.providerModels?.["gpt-5.1-prod"]);
+    assert.equal(parent?.providerModels?.["claude-sonnet-4-5"], undefined);
+
+    assert.equal(anthropic?.provider, "anthropic");
+    assert.equal(anthropic?.baseUrl, "https://azc-resource.services.ai.azure.com/anthropic");
+    assert.equal(anthropic?.accessToken, "azc-key");
+    assert.equal(anthropic?.enabled, true);
+    assert.ok(anthropic?.providerModels?.["claude-sonnet-4-5"]);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test("OpenCode auth import derives Google Vertex endpoint for MaaS model overrides", async () => {
+  const previous = {
+    GOOGLE_VERTEX_PROJECT: process.env.GOOGLE_VERTEX_PROJECT,
+    GOOGLE_VERTEX_LOCATION: process.env.GOOGLE_VERTEX_LOCATION,
+    GOOGLE_VERTEX_ENDPOINT: process.env.GOOGLE_VERTEX_ENDPOINT,
+    GOOGLE_VERTEX_ACCESS_TOKEN: process.env.GOOGLE_VERTEX_ACCESS_TOKEN,
+  };
+  process.env.GOOGLE_VERTEX_PROJECT = "vertex-project";
+  process.env.GOOGLE_VERTEX_LOCATION = "us-central1";
+  process.env.GOOGLE_VERTEX_ACCESS_TOKEN = "vertex-token";
+  delete process.env.GOOGLE_VERTEX_ENDPOINT;
+  try {
+    const registry = providerRegistryEntryFromMetadata("google-vertex", {
+      id: "google-vertex",
+      name: "Vertex",
+      npm: "@ai-sdk/google-vertex",
+      env: [
+        "GOOGLE_VERTEX_PROJECT",
+        "GOOGLE_VERTEX_LOCATION",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+      ],
+      models: {
+        "moonshotai/kimi-k2-thinking-maas": {
+          id: "moonshotai/kimi-k2-thinking-maas",
+          name: "Kimi K2 Thinking MaaS",
+          provider: {
+            npm: "@ai-sdk/openai-compatible",
+            api: "https://${GOOGLE_VERTEX_ENDPOINT}/v1/projects/${GOOGLE_VERTEX_PROJECT}/locations/${GOOGLE_VERTEX_LOCATION}/endpoints/openapi",
+          },
+        },
+      },
+    });
+
+    const accounts = await accountsFromOpenCodeAuthPayload(
+      { "google-vertex": {} },
+      { providerConfig: new Map([["google-vertex", registry]]) },
+    );
+    const maas = accounts.find(
+      (account) =>
+        account.providerId === "google-vertex" &&
+        account.providerAdapter === "openai-compatible",
+    );
+
+    assert.equal(maas?.provider, "openai-compatible");
+    assert.equal(
+      maas?.baseUrl,
+      "https://us-central1-aiplatform.googleapis.com/v1/projects/vertex-project/locations/us-central1/endpoints/openapi",
+    );
+    assert.equal(maas?.accessToken, "vertex-token");
+    assert.equal(maas?.enabled, true);
+    assert.ok(maas?.providerModels?.["moonshotai/kimi-k2-thinking-maas"]);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 test("Snowflake Cortex provider metadata expands account env templates and token env aliases", () => {

@@ -3,6 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type {
   Account,
+  AccountState,
   ModelAlias,
   OAuthFlowState,
   OAuthStateFile,
@@ -27,6 +28,24 @@ async function writeJsonAtomic(filePath: string, data: unknown): Promise<void> {
   const tmp = `${filePath}.tmp-${randomUUID()}`;
   await fs.writeFile(tmp, JSON.stringify(data, null, 2));
   await fs.rename(tmp, filePath);
+}
+
+function hasOwn(object: object, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}
+
+function mergeAccountState(
+  existing: AccountState | undefined,
+  patch: Partial<Account>,
+): AccountState | undefined {
+  if (!hasOwn(patch, "state")) return existing;
+  if (patch.state === undefined) return undefined;
+
+  const merged: AccountState = { ...existing, ...patch.state };
+  for (const key of Object.keys(merged) as Array<keyof AccountState>) {
+    if (merged[key] === undefined) delete merged[key];
+  }
+  return Object.keys(merged).length ? merged : undefined;
 }
 
 export async function cleanupOrphanedTmpFiles(dataDir: string): Promise<void> {
@@ -145,12 +164,13 @@ export class AccountStore {
     const idx = this.inMemoryAccounts.findIndex((a) => a.id === id);
     if (idx === -1) return null;
     const existing = this.inMemoryAccounts[idx];
-    const updated = {
+    const updated: Account = {
       ...existing,
       ...patch,
-      state: { ...existing.state, ...patch.state },
+      state: mergeAccountState(existing.state, patch),
       usage: patch.usage ?? existing.usage,
     };
+    if (updated.state === undefined) delete updated.state;
     this.markAccountModified(id, updated);
     return updated;
   }

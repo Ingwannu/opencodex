@@ -105,6 +105,37 @@ function normalizeProviderAuthType(value: unknown): ProviderAuthType | undefined
   return undefined;
 }
 
+function patchUpdatesRoutingInputs(patch: Record<string, unknown>): boolean {
+  return (
+    "accessToken" in patch ||
+    "refreshToken" in patch ||
+    "baseUrl" in patch ||
+    "provider" in patch ||
+    "providerId" in patch ||
+    "providerAdapter" in patch ||
+    "providerAuthType" in patch ||
+    "providerOptions" in patch ||
+    "upstreamMode" in patch ||
+    "compatibilityMode" in patch ||
+    "openAiPathPrefix" in patch ||
+    patch.enabled === true
+  );
+}
+
+function shouldClearRuntimeStateAfterPatch(
+  existing: Account,
+  next: Account,
+  patch: Record<string, unknown>,
+): boolean {
+  if (!existing.state || !next.enabled || !patchUpdatesRoutingInputs(patch)) {
+    return false;
+  }
+
+  const provider = normalizeProvider(next);
+  if (!isRuntimeRoutableProvider(provider)) return false;
+  return provider !== "openai-compatible" || Boolean(next.baseUrl);
+}
+
 function parseQueryNumber(v: unknown): number | undefined {
   if (typeof v === "number" && Number.isFinite(v)) return v;
   if (typeof v === "string") {
@@ -813,6 +844,9 @@ export function createAdminRouter(options: AdminRoutesOptions) {
     }
     if (body.enabled && !isRuntimeRoutableProvider(normalizeProvider(next))) {
       return res.status(400).json({ error: "provider adapter is not routable yet" });
+    }
+    if (shouldClearRuntimeStateAfterPatch(existing, next, body)) {
+      body.state = undefined;
     }
     const updated = await store.patchAccount(req.params.id, body);
     if (!updated) return res.status(404).json({ error: "not found" });

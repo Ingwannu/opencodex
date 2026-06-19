@@ -162,6 +162,7 @@ type ExposedModel = {
     supported_tool_types: string[];
     is_alias?: boolean;
     alias_targets?: string[];
+    upstream_model_id?: string;
   };
 };
 
@@ -230,6 +231,11 @@ function modelObject(
       : typeof upstreamObject.reasoning === "boolean"
         ? upstreamObject.reasoning
       : inferSupportsReasoning(id);
+  const upstreamModelId =
+    typeof upstreamObject.upstream_model_id === "string" &&
+    upstreamObject.upstream_model_id.trim()
+      ? upstreamObject.upstream_model_id.trim()
+      : undefined;
 
   return {
     id,
@@ -243,6 +249,7 @@ function modelObject(
       supports_reasoning: supportsReasoning,
       supports_tools: supportsTools,
       supported_tool_types: supportedToolTypes,
+      ...(upstreamModelId ? { upstream_model_id: upstreamModelId } : {}),
     },
   };
 }
@@ -368,13 +375,51 @@ function configuredModelsForAccount(
       continue;
     }
     const metadata = value as Record<string, unknown>;
-    const id =
+    const upstreamId =
       typeof metadata.id === "string" && metadata.id.trim()
         ? metadata.id.trim()
-        : key;
-    if (id) out.push({ id, metadata: { ...metadata, id } });
+        : undefined;
+    if (key) {
+      out.push({
+        id: key,
+        metadata: {
+          ...metadata,
+          id: key,
+          ...(upstreamId && upstreamId !== key
+            ? { upstream_model_id: upstreamId }
+            : {}),
+        },
+      });
+    }
   }
   return out;
+}
+
+function configuredUpstreamModelIdForAccount(
+  account: Account,
+  model: string | undefined,
+): string | undefined {
+  const key = normalizeModelLookupKey(model);
+  if (!key) return undefined;
+  const source = account.providerModels;
+  if (!source || typeof source !== "object") return undefined;
+
+  for (const [modelKey, value] of Object.entries(source)) {
+    if (normalizeModelLookupKey(modelKey) !== key) continue;
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    const metadata = value as Record<string, unknown>;
+    const upstreamId =
+      typeof metadata.id === "string" && metadata.id.trim()
+        ? metadata.id.trim()
+        : undefined;
+    return upstreamId && normalizeModelLookupKey(upstreamId) !== key
+      ? upstreamId
+      : undefined;
+  }
+
+  return undefined;
 }
 
 function mergeConfiguredAccountModels(
@@ -1746,6 +1791,13 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
         }
         if (candidate.resolvedModel && candidate.resolvedModel !== candidate.requestedModel)
           payloadToUpstream.model = candidate.resolvedModel;
+        const configuredUpstreamModelId = configuredUpstreamModelIdForAccount(
+          selected,
+          candidate.resolvedModel ?? requestModel,
+        );
+        if (configuredUpstreamModelId) {
+          payloadToUpstream.model = configuredUpstreamModelId;
+        }
         if (candidate.provider === "openai" && selected.chatgptAccountId) {
           defaultChatGptReasoningEffort(payloadToUpstream, upstreamMode);
         }

@@ -665,6 +665,88 @@ test("proxy exposes configured OpenCode models when upstream model listing is un
   }
 });
 
+test("proxy exposes configured model keys while routing metadata ids upstream", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "no model listing" }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/chat/completions") {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl-configured-upstream",
+          object: "chat.completion",
+          created: 1,
+          model: "provider-upstream-model",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Configured ID OK" },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "configured-id-smoke",
+          provider: "openai-compatible",
+          providerId: "configured-id",
+          providerAdapter: "openai-compatible",
+          accessToken: "configured-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          providerModels: {
+            "friendly-model": {
+              id: "provider-upstream-model",
+              name: "Friendly Model",
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const modelsRes = await fetch(`${baseUrl}/v1/models`);
+        const modelsJson = await modelsRes.json();
+        assert.equal(modelsRes.status, 200);
+        assert.ok(modelsJson.data.some((model) => model.id === "friendly-model"));
+        assert.equal(
+          modelsJson.data.some((model) => model.id === "provider-upstream-model"),
+          false,
+        );
+
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "friendly-model",
+            messages: [{ role: "user", content: "Hello" }],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+        assert.equal(json.choices[0].message.content, "Configured ID OK");
+        assert.equal(capturedRequest.model, "provider-upstream-model");
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy routes Perplexity Sonar compatibility without a /v1 prefix", async () => {
   let capturedRequest;
   const upstream = http.createServer(async (req, res) => {

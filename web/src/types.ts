@@ -114,6 +114,7 @@ export type ExposedModel = {
     provider_candidates?: string[];
     is_alias?: boolean;
     alias_targets?: string[];
+    upstream_model_id?: string;
   };
 };
 

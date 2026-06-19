@@ -1041,6 +1041,62 @@ const ANTHROPIC_SDK_PROVIDER_DEFAULTS: Record<
   },
 };
 
+const RESOURCE_TEMPLATED_PROVIDER_DEFAULTS: Record<string, ModelsDevProvider> = {
+  azure: {
+    id: "azure",
+    name: "Azure",
+    npm: "@ai-sdk/azure",
+    env: ["AZURE_RESOURCE_NAME", "AZURE_API_KEY"],
+  },
+  "azure-cognitive-services": {
+    id: "azure-cognitive-services",
+    name: "Azure Cognitive Services",
+    npm: "@ai-sdk/azure",
+    env: [
+      "AZURE_COGNITIVE_SERVICES_RESOURCE_NAME",
+      "AZURE_COGNITIVE_SERVICES_API_KEY",
+    ],
+  },
+  "cloudflare-ai-gateway": {
+    id: "cloudflare-ai-gateway",
+    name: "Cloudflare AI Gateway",
+    npm: "ai-gateway-provider",
+    env: [
+      "CLOUDFLARE_API_TOKEN",
+      "CLOUDFLARE_ACCOUNT_ID",
+      "CLOUDFLARE_GATEWAY_ID",
+    ],
+  },
+  "cloudflare-workers-ai": {
+    id: "cloudflare-workers-ai",
+    name: "Cloudflare Workers AI",
+    npm: "@ai-sdk/openai-compatible",
+    api: "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1",
+    env: ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_KEY"],
+  },
+  databricks: {
+    id: "databricks",
+    name: "Databricks",
+    npm: "@ai-sdk/openai-compatible",
+    api: "https://${DATABRICKS_HOST}/ai-gateway/mlflow/v1",
+    env: ["DATABRICKS_HOST", "DATABRICKS_TOKEN"],
+  },
+  neon: {
+    id: "neon",
+    name: "Neon",
+    npm: "@ai-sdk/openai-compatible",
+    api: "${NEON_AI_GATEWAY_BASE_URL}/ai-gateway/mlflow/v1",
+    env: ["NEON_AI_GATEWAY_BASE_URL", "NEON_AI_GATEWAY_TOKEN"],
+  },
+  "snowflake-cortex": {
+    id: "snowflake-cortex",
+    name: "Snowflake Cortex",
+    npm: "@ai-sdk/openai-compatible",
+    api: "https://${SNOWFLAKE_ACCOUNT}.snowflakecomputing.com/api/v2/cortex/v1",
+    env: ["SNOWFLAKE_ACCOUNT", "SNOWFLAKE_CORTEX_PAT"],
+  },
+};
+
 const OPENAI_COMPATIBLE_SDK_PACKAGE_DEFAULTS: Record<
   string,
   OpenAiCompatibleProviderDefault
@@ -2024,12 +2080,22 @@ function fallbackAnthropicRegistryEntry(
   );
 }
 
+function fallbackResourceTemplatedRegistryEntry(
+  providerId: string,
+): ProviderRegistryEntry | undefined {
+  const id = sanitizeProviderId(providerId);
+  const source = RESOURCE_TEMPLATED_PROVIDER_DEFAULTS[id];
+  if (!source) return undefined;
+  return providerRegistryEntryFromMetadata(id, source, "builtin");
+}
+
 function fallbackSdkRegistryEntry(
   providerId: string,
 ): ProviderRegistryEntry | undefined {
   return (
     fallbackOpenAiCompatibleRegistryEntry(providerId) ??
-    fallbackAnthropicRegistryEntry(providerId)
+    fallbackAnthropicRegistryEntry(providerId) ??
+    fallbackResourceTemplatedRegistryEntry(providerId)
   );
 }
 
@@ -2108,6 +2174,11 @@ export async function listProviderRegistry(): Promise<ProviderRegistryEntry[]> {
     if (fallback) merged.set(id, fallback);
   }
   for (const id of Object.keys(ANTHROPIC_SDK_PROVIDER_DEFAULTS)) {
+    if (merged.has(id)) continue;
+    const fallback = fallbackSdkRegistryEntry(id);
+    if (fallback) merged.set(id, fallback);
+  }
+  for (const id of Object.keys(RESOURCE_TEMPLATED_PROVIDER_DEFAULTS)) {
     if (merged.has(id)) continue;
     const fallback = fallbackSdkRegistryEntry(id);
     if (fallback) merged.set(id, fallback);

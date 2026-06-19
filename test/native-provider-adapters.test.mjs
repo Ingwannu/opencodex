@@ -1569,6 +1569,64 @@ console.log(JSON.stringify(out));`,
   }
 });
 
+test("OpenCode directory resource-templated providers resolve from env offline", () => {
+  const expected = {
+    azure: "https://az-offline.openai.azure.com/openai",
+    "azure-cognitive-services":
+      "https://azc-offline.cognitiveservices.azure.com",
+    "cloudflare-ai-gateway":
+      "https://gateway.ai.cloudflare.com/v1/cf-workers/cf-gateway/openai",
+    "cloudflare-workers-ai":
+      "https://api.cloudflare.com/client/v4/accounts/cf-workers/ai",
+    databricks: "https://dbc.example.com/ai-gateway/mlflow",
+    neon: "https://neon.example/ai-gateway/mlflow",
+    "snowflake-cortex":
+      "https://snowflake-acct.snowflakecomputing.com/api/v2/cortex",
+  };
+  const output = execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `const { resolveProviderRegistryEntry } = await import("./dist/provider-registry.js");
+const expected = ${JSON.stringify(expected)};
+const out = {};
+for (const providerId of Object.keys(expected)) {
+  const entry = await resolveProviderRegistryEntry(providerId);
+  out[providerId] = {
+    providerAdapter: entry.providerAdapter,
+    runtimeSupported: entry.runtimeSupported,
+    baseUrl: entry.baseUrl,
+  };
+}
+console.log(JSON.stringify(out));`,
+    ],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MODELS_DEV_API_URL: "data:application/json,{}",
+        AZURE_RESOURCE_NAME: "az-offline",
+        AZURE_COGNITIVE_SERVICES_RESOURCE_NAME: "azc-offline",
+        CLOUDFLARE_ACCOUNT_ID: "cf-workers",
+        CLOUDFLARE_GATEWAY_ID: "cf-gateway",
+        CLOUDFLARE_API_TOKEN: "cf-gateway-token",
+        DATABRICKS_HOST: "https://dbc.example.com",
+        NEON_AI_GATEWAY_BASE_URL: "https://neon.example",
+        SNOWFLAKE_ACCOUNT: "snowflake-acct",
+      },
+      encoding: "utf8",
+    },
+  );
+  const entries = JSON.parse(output);
+
+  for (const [providerId, baseUrl] of Object.entries(expected)) {
+    assert.equal(entries[providerId]?.providerAdapter, "openai-compatible", providerId);
+    assert.equal(entries[providerId]?.runtimeSupported, true, providerId);
+    assert.equal(entries[providerId]?.baseUrl, baseUrl, providerId);
+  }
+});
+
 test("built-in registry entries preserve Models.dev model metadata", () => {
   const api = `data:application/json,${encodeURIComponent(JSON.stringify({
     anthropic: {

@@ -199,6 +199,11 @@ OpenCodex can route providers that map to the current runtime adapters:
   auth for a third-party agent direct-access token, then routing Claude models
   through GitLab's Anthropic AI Gateway proxy and GPT models through GitLab's
   OpenAI AI Gateway proxy
+- SAP AI Core Orchestration API by importing `AICORE_SERVICE_KEY` /
+  OpenCode SAP service key JSON, exchanging it with OAuth client credentials,
+  and calling `/v2/inference/deployments/{deploymentId}/v2/completion`;
+  `deploymentId`/`resourceGroup` can come from OpenCode provider options, and
+  deployment lookup falls back to the running orchestration deployment list
 - OpenCode provider `models` metadata for custom and Models.dev providers, so
   configured models remain visible even when the upstream does not expose an
   OpenAI-style model listing endpoint
@@ -206,11 +211,11 @@ OpenCodex can route providers that map to the current runtime adapters:
 Credentials for providers whose native API adapter is not implemented yet, such
 as Azure without resource routing metadata, Amazon Bedrock SigV4 access-key
 credentials without bearer-token support, Google Vertex ADC/service-account
-credential flows without a bearer token, SAP AI Core, Cloudflare AI Gateway
-without account/gateway routing metadata, and other provider-specific SDK
-adapters, are imported and shown as auth-only disabled accounts. They are
-preserved for management, but are not sent through the proxy until a native
-adapter or exact compatibility bridge is added.
+credential flows without a bearer token, Cloudflare AI Gateway without
+account/gateway routing metadata, and other provider-specific SDK adapters, are
+imported and shown as auth-only disabled accounts. They are preserved for
+management, but are not sent through the proxy until a native adapter or exact
+compatibility bridge is added.
 
 Default expected redirect URI:
 

@@ -19,16 +19,69 @@ function normalizeSecret(value: string): string {
   return value.trim().replace(/^Bearer\s+/i, "").trim();
 }
 
+function isSapServiceKeyObject(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const source = value as Record<string, unknown>;
+  const credentials =
+    source.credentials &&
+    typeof source.credentials === "object" &&
+    !Array.isArray(source.credentials)
+      ? (source.credentials as Record<string, unknown>)
+      : source;
+  const serviceUrls =
+    credentials.serviceurls &&
+    typeof credentials.serviceurls === "object" &&
+    !Array.isArray(credentials.serviceurls)
+      ? (credentials.serviceurls as Record<string, unknown>)
+      : {};
+  return Boolean(
+    typeof credentials.clientid === "string" &&
+      typeof credentials.clientsecret === "string" &&
+      (typeof credentials.url === "string" ||
+        typeof credentials.tokenurl === "string") &&
+      typeof serviceUrls.AI_API_URL === "string",
+  );
+}
+
+function secretStringFromValue(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return normalizeSecret(value);
+  if (isSapServiceKeyObject(value)) return JSON.stringify(value);
+  return undefined;
+}
+
+function sapServiceKeyBaseUrl(value: unknown): string | undefined {
+  if (!isSapServiceKeyObject(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  const credentials =
+    source.credentials &&
+    typeof source.credentials === "object" &&
+    !Array.isArray(source.credentials)
+      ? (source.credentials as Record<string, unknown>)
+      : source;
+  const serviceUrls = credentials.serviceurls as Record<string, unknown>;
+  const found = serviceUrls.AI_API_URL;
+  return typeof found === "string" && /^https?:\/\//.test(found.trim())
+    ? found.trim()
+    : undefined;
+}
+
 function findSecretInObject(value: unknown, seen = new Set<object>()): string | undefined {
   if (!value || typeof value !== "object") return undefined;
   if (seen.has(value)) return undefined;
   seen.add(value);
+
+  const wholeServiceKey = secretStringFromValue(value);
+  if (wholeServiceKey) return wholeServiceKey;
 
   const source = value as Record<string, unknown>;
   const directKeys = [
     "apiKey",
     "apikey",
     "api_key",
+    "serviceKey",
+    "service_key",
+    "aicoreServiceKey",
+    "aicore_service_key",
     "key",
     "token",
     "accessToken",
@@ -38,7 +91,8 @@ function findSecretInObject(value: unknown, seen = new Set<object>()): string | 
   ];
   for (const key of directKeys) {
     const found = source[key];
-    if (typeof found === "string" && found.trim()) return normalizeSecret(found);
+    const secret = secretStringFromValue(found);
+    if (secret) return secret;
   }
 
   for (const child of Object.values(source)) {
@@ -83,6 +137,9 @@ function findBaseUrlInObject(value: unknown, seen = new Set<object>()): string |
   if (!value || typeof value !== "object") return undefined;
   if (seen.has(value)) return undefined;
   seen.add(value);
+
+  const sapBaseUrl = sapServiceKeyBaseUrl(value);
+  if (sapBaseUrl) return sapBaseUrl;
 
   const source = value as Record<string, unknown>;
   for (const key of ["baseURL", "baseUrl", "base_url", "url", "endpoint"]) {
@@ -150,6 +207,7 @@ export async function accountsFromOpenCodeAuthPayload(
       providerSource: "opencode",
       providerDoc: registry.providerDoc,
       providerAuthEnv: registry.tokenEnv,
+      providerOptions: registry.providerOptions,
       providerModels: registry.models,
       upstreamMode: registry.upstreamMode,
       compatibilityMode: registry.compatibilityMode,
@@ -190,6 +248,7 @@ export async function accountsFromOpenCodeAuthPayload(
       providerSource: "opencode",
       providerDoc: registry.providerDoc,
       providerAuthEnv: registry.tokenEnv,
+      providerOptions: registry.providerOptions,
       providerModels: registry.models,
       upstreamMode: registry.upstreamMode,
       compatibilityMode: registry.compatibilityMode,

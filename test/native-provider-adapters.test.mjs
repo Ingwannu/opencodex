@@ -5,8 +5,12 @@ import {
   buildNativeProviderRequest,
   buildGitLabDirectAccessRequest,
   buildGitLabProviderRequest,
+  buildSapAiCoreProviderRequest,
+  buildSapAiCoreTokenRequest,
   convertNativeProviderResponse,
+  convertSapAiCoreResponse,
   nativeProviderModelsFromResponse,
+  parseSapAiCoreServiceKey,
 } from "../dist/provider-native.js";
 import {
   accountsFromOpenCodeAuthPayload,
@@ -427,7 +431,100 @@ test("Amazon Bedrock adapter converts chat payloads and responses", () => {
   assert.equal(converted.usage.total_tokens, 7);
 });
 
-test("OpenCode auth import enables native Anthropic, Google, Vertex, Vertex Anthropic, Cohere, and Bedrock adapters", async () => {
+test("SAP AI Core adapter builds service-key auth and orchestration requests", () => {
+  const serviceKey = parseSapAiCoreServiceKey(
+    JSON.stringify({
+      clientid: "sap-client",
+      clientsecret: "sap-secret",
+      url: "http://sap-auth.example",
+      serviceurls: {
+        AI_API_URL: "http://sap-ai.example/v2",
+      },
+    }),
+  );
+
+  const tokenRequest = buildSapAiCoreTokenRequest(serviceKey);
+  assert.equal(tokenRequest.url, "http://sap-auth.example/oauth/token");
+  assert.equal(
+    tokenRequest.headers.authorization,
+    `Basic ${Buffer.from("sap-client:sap-secret").toString("base64")}`,
+  );
+  assert.equal(tokenRequest.body, "grant_type=client_credentials");
+
+  const providerRequest = buildSapAiCoreProviderRequest(
+    serviceKey,
+    { accessToken: "sap-oauth-token" },
+    {
+      model: "anthropic--claude-4.5-sonnet",
+      messages: [
+        { role: "system", content: "Be concise." },
+        { role: "user", content: "Hello" },
+      ],
+      max_tokens: 64,
+      temperature: 0.2,
+    },
+    {
+      deploymentId: "orchestration-deployment",
+      resourceGroup: "rg-ai",
+    },
+  );
+
+  assert.equal(providerRequest.baseUrl, "http://sap-ai.example/v2");
+  assert.equal(
+    providerRequest.path,
+    "/inference/deployments/orchestration-deployment/v2/completion",
+  );
+  assert.equal(providerRequest.headers.authorization, "Bearer sap-oauth-token");
+  assert.equal(providerRequest.headers["ai-resource-group"], "rg-ai");
+  assert.equal(
+    providerRequest.body.config.modules.prompt_templating.model.name,
+    "anthropic--claude-4.5-sonnet",
+  );
+  assert.equal(
+    providerRequest.body.config.modules.prompt_templating.model.params.max_tokens,
+    64,
+  );
+  assert.equal(
+    providerRequest.body.config.modules.prompt_templating.model.params.temperature,
+    0.2,
+  );
+  assert.deepEqual(
+    providerRequest.body.config.modules.prompt_templating.prompt.template,
+    [
+      { role: "system", content: "Be concise." },
+      { role: "user", content: "Hello" },
+    ],
+  );
+
+  const converted = convertSapAiCoreResponse(
+    {
+      request_id: "sap-request-1",
+      final_result: {
+        id: "chatcmpl-sap",
+        object: "chat.completion",
+        created: 1,
+        model: "anthropic--claude-4.5-sonnet",
+        choices: [
+          {
+            index: 0,
+            message: { role: "assistant", content: "SAP OK" },
+            finish_reason: "stop",
+          },
+        ],
+        usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
+      },
+      intermediate_results: {},
+    },
+    "chat.completions",
+    "anthropic--claude-4.5-sonnet",
+  );
+
+  assert.equal(converted.object, "chat.completion");
+  assert.equal(converted.choices[0].message.content, "SAP OK");
+  assert.equal(converted.usage.total_tokens, 7);
+});
+
+test("OpenCode auth import enables native Anthropic, Google, Vertex, Vertex Anthropic, Cohere, Bedrock, and SAP adapters", async () => {
   const previousRegion = process.env.AWS_REGION;
   process.env.AWS_REGION = "us-east-1";
   const accounts = await accountsFromOpenCodeAuthPayload({
@@ -530,6 +627,58 @@ test("OpenCode auth import enables native Anthropic, Google, Vertex, Vertex Anth
     "https://bedrock-runtime.us-east-1.amazonaws.com",
   );
   assert.equal(byId.get("amazon-bedrock")?.enabled, true);
+
+  const sapPayload = parseOpenCodeConfigPayload(`{
+    "provider": {
+      "sap-ai-core": {
+        "npm": "@jerome-benoit/sap-ai-provider-v2",
+        "options": {
+          "deploymentId": "orchestration-deployment",
+          "resourceGroup": "rg-ai",
+          "apiKey": "{\\"clientid\\":\\"sap-client\\",\\"clientsecret\\":\\"sap-secret\\",\\"url\\":\\"http://sap-auth.example\\",\\"serviceurls\\":{\\"AI_API_URL\\":\\"http://sap-ai.example/v2\\"}}"
+        },
+        "models": {
+          "anthropic--claude-4.5-sonnet": { "name": "Claude via SAP" }
+        }
+      }
+    }
+  }`);
+  const sapAccounts = await accountsFromOpenCodeAuthPayload(
+    { "sap-ai-core": {} },
+    {
+      providerConfig: providerConfigFromOpenCodeConfigPayload(sapPayload),
+      providerConfigSecrets: providerSecretsFromOpenCodeConfigPayload(sapPayload),
+    },
+  );
+  const sap = sapAccounts.find((account) => account.providerId === "sap-ai-core");
+  assert.equal(sap?.provider, "sap-ai-core");
+  assert.equal(sap?.providerAdapter, "sap-ai-core");
+  assert.equal(sap?.enabled, true);
+  assert.deepEqual(sap?.providerAuthEnv, ["AICORE_SERVICE_KEY"]);
+  assert.equal(sap?.baseUrl, "http://sap-ai.example/v2");
+  assert.equal(sap?.providerOptions?.deploymentId, "orchestration-deployment");
+  assert.equal(sap?.providerOptions?.resourceGroup, "rg-ai");
+  assert.ok(sap?.providerModels?.["anthropic--claude-4.5-sonnet"]);
+
+  const sapServiceKeyAccounts = await accountsFromOpenCodeAuthPayload({
+    "sap-ai-core": {
+      serviceKey: {
+        clientid: "sap-client",
+        clientsecret: "sap-secret",
+        url: "http://sap-auth.example",
+        serviceurls: {
+          AI_API_URL: "http://sap-ai.example/v2",
+        },
+      },
+    },
+  });
+  assert.equal(sapServiceKeyAccounts[0]?.providerAdapter, "sap-ai-core");
+  assert.equal(sapServiceKeyAccounts[0]?.enabled, true);
+  assert.equal(sapServiceKeyAccounts[0]?.baseUrl, "http://sap-ai.example/v2");
+  assert.equal(
+    JSON.parse(sapServiceKeyAccounts[0]?.accessToken ?? "{}").serviceurls.AI_API_URL,
+    "http://sap-ai.example/v2",
+  );
 });
 
 test("OpenAI-compatible SDK providers are runtime-routable through the bridge", async () => {

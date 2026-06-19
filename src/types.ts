@@ -9,7 +9,8 @@ export type RouteProviderId =
   | "amazon-bedrock"
   | "vertex"
   | "vertex-anthropic"
-  | "gitlab";
+  | "gitlab"
+  | "sap-ai-core";
 export type ProviderAdapter =
   | RouteProviderId
   | "azure"
@@ -58,6 +59,7 @@ export type Account = {
   providerSource?: "builtin" | "models.dev" | "opencode" | "manual";
   providerDoc?: string;
   providerAuthEnv?: string[];
+  providerOptions?: Record<string, unknown>;
   providerModels?: Record<string, unknown>;
   upstreamMode?: UpstreamMode;
   compatibilityMode?: CompatibilityMode;

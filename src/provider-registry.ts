@@ -25,6 +25,7 @@ export type ProviderRegistryEntry = {
   openAiPathPrefix?: OpenAiPathPrefix;
   upstreamMode?: UpstreamMode;
   compatibilityMode?: CompatibilityMode;
+  providerOptions?: Record<string, unknown>;
   tokenEnv: string[];
   authType: "oauth" | "api-key";
   runtimeSupported: boolean;
@@ -186,6 +187,19 @@ const BUILTIN_PROVIDERS: ProviderRegistryEntry[] = [
     providerDoc: "https://docs.cohere.com/docs/models",
     baseUrl: "https://api.cohere.com",
     tokenEnv: ["COHERE_API_KEY"],
+    authType: "api-key",
+    runtimeSupported: true,
+  },
+  {
+    id: "sap-ai-core",
+    providerId: "sap-ai-core",
+    label: "SAP AI Core",
+    provider: "sap-ai-core",
+    providerAdapter: "sap-ai-core",
+    providerNpm: "@jerome-benoit/sap-ai-provider-v2",
+    providerSource: "builtin",
+    providerDoc: "https://help.sap.com/docs/sap-ai-core",
+    tokenEnv: ["AICORE_SERVICE_KEY"],
     authType: "api-key",
     runtimeSupported: true,
   },
@@ -382,6 +396,105 @@ export function vertexBaseUrlFromOptions(
   return `${endpoint}/v1/projects/${encodeURIComponent(project.trim())}/locations/${encodeURIComponent(trimmedLocation)}`;
 }
 
+function serviceKeyObjectFromUnknown(
+  value: unknown,
+): Record<string, unknown> | undefined {
+  if (!value) return undefined;
+  if (typeof value === "string" && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return undefined;
+}
+
+function sapAiCoreBaseUrlFromServiceKey(
+  serviceKey: Record<string, unknown> | undefined,
+): string | undefined {
+  if (!serviceKey) return undefined;
+  const credentials =
+    serviceKey.credentials &&
+    typeof serviceKey.credentials === "object" &&
+    !Array.isArray(serviceKey.credentials)
+      ? (serviceKey.credentials as Record<string, unknown>)
+      : serviceKey;
+  const serviceUrls =
+    credentials.serviceurls &&
+    typeof credentials.serviceurls === "object" &&
+    !Array.isArray(credentials.serviceurls)
+      ? (credentials.serviceurls as Record<string, unknown>)
+      : {};
+  const found =
+    firstStringValue(serviceUrls, [
+      "AI_API_URL",
+      "AI_API_URL_V2",
+      "ai_api_url",
+      "apiUrl",
+    ]) ??
+    firstStringValue(credentials, ["aiApiUrl", "ai_api_url", "apiUrl"]);
+  return found && /^https?:\/\//.test(found) ? found : undefined;
+}
+
+export function sapAiCoreBaseUrlFromOptions(
+  options: Record<string, unknown> | undefined = {},
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const explicit = firstStringValue(options, [
+    "baseURL",
+    "baseUrl",
+    "base_url",
+    "endpoint",
+    "apiUrl",
+    "AI_API_URL",
+  ]);
+  if (explicit && /^https?:\/\//.test(explicit)) return explicit;
+
+  for (const key of [
+    "serviceKey",
+    "service_key",
+    "aicoreServiceKey",
+    "aicore_service_key",
+    "apiKey",
+    "api_key",
+  ]) {
+    const fromOption = sapAiCoreBaseUrlFromServiceKey(
+      serviceKeyObjectFromUnknown(options[key]),
+    );
+    if (fromOption) return fromOption;
+  }
+
+  return sapAiCoreBaseUrlFromServiceKey(
+    serviceKeyObjectFromUnknown(env.AICORE_SERVICE_KEY),
+  );
+}
+
+function sapAiCoreProviderOptionsFromSource(
+  source: ModelsDevProvider,
+): Record<string, unknown> | undefined {
+  const options = source.options ?? {};
+  const out: Record<string, unknown> = {};
+  for (const key of [
+    "deploymentId",
+    "deployment_id",
+    "resourceGroup",
+    "resource_group",
+    "modelVersion",
+    "model_version",
+  ]) {
+    const value = options[key];
+    if (typeof value === "string" && value.trim()) out[key] = value.trim();
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 let modelsDevCache:
   | { at: number; entries: Map<string, ProviderRegistryEntry> }
   | undefined;
@@ -439,6 +552,13 @@ export function providerAdapterFromNpm(
   if (npm === "gitlab-ai-provider" || npm === "@gitlab/gitlab-ai-provider") {
     return "gitlab";
   }
+  if (
+    id === "sap-ai-core" ||
+    npm.includes("sap-ai-provider") ||
+    npm.includes("@sap-ai-sdk")
+  ) {
+    return "sap-ai-core";
+  }
   if (npm.includes("google-vertex")) return "unsupported";
   return "unsupported";
 }
@@ -455,7 +575,8 @@ export function isRuntimeSupportedProvider(adapter: ProviderAdapter): adapter is
     adapter === "amazon-bedrock" ||
     adapter === "vertex" ||
     adapter === "vertex-anthropic" ||
-    adapter === "gitlab"
+    adapter === "gitlab" ||
+    adapter === "sap-ai-core"
   );
 }
 
@@ -474,6 +595,9 @@ function tokenEnvForProvider(
     adapter === "vertex-anthropic"
   ) {
     return ["GOOGLE_VERTEX_ACCESS_TOKEN", "GOOGLE_ACCESS_TOKEN"];
+  }
+  if (providerId === "sap-ai-core" || adapter === "sap-ai-core") {
+    return ["AICORE_SERVICE_KEY"];
   }
   return Array.isArray(env)
     ? env.filter((value): value is string => typeof value === "string")
@@ -507,6 +631,8 @@ export function providerRegistryEntryFromMetadata(
     id === "google-vertex" || id === "google-vertex-anthropic"
       ? vertexBaseUrlFromOptions(source.options)
       : undefined;
+  const sapBaseUrl =
+    id === "sap-ai-core" ? sapAiCoreBaseUrlFromOptions(source.options) : undefined;
   const openAiCompatibleBaseUrl =
     source.api ??
     openAiCompatibleDefault?.baseUrl ??
@@ -519,7 +645,8 @@ export function providerRegistryEntryFromMetadata(
       : providerAdapterFromNpm(id, source.npm);
   const runtimeSupported =
     isRuntimeSupportedProvider(adapter) &&
-    ((adapter !== "vertex" && adapter !== "vertex-anthropic") || Boolean(vertexBaseUrl));
+    ((adapter !== "vertex" && adapter !== "vertex-anthropic") ||
+      Boolean(vertexBaseUrl));
   const baseUrl =
     adapter === "openai-compatible"
       ? normalizeOpenAiCompatibleBaseUrl(openAiCompatibleBaseUrl)
@@ -534,9 +661,11 @@ export function providerRegistryEntryFromMetadata(
                   : adapter === "amazon-bedrock"
                     ? bedrockBaseUrl
                     : adapter === "vertex" || adapter === "vertex-anthropic"
-                      ? vertexBaseUrl
+                    ? vertexBaseUrl
                     : adapter === "gitlab"
                       ? "https://gitlab.com"
+                      : adapter === "sap-ai-core"
+                        ? sapBaseUrl
                     : undefined),
         );
 
@@ -564,6 +693,10 @@ export function providerRegistryEntryFromMetadata(
           : (openAiCompatibleDefault?.compatibilityMode ??
           "chat-completions-bridge")
         )
+        : undefined,
+    providerOptions:
+      adapter === "sap-ai-core"
+        ? sapAiCoreProviderOptionsFromSource(source)
         : undefined,
     tokenEnv: tokenEnvForProvider(id, adapter, source.env),
     authType: "api-key",

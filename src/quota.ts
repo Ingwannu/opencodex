@@ -37,6 +37,7 @@ export function normalizeProvider(
   if (provider === "vertex") return "vertex";
   if (provider === "vertex-anthropic") return "vertex-anthropic";
   if (provider === "gitlab") return "gitlab";
+  if (provider === "sap-ai-core") return "sap-ai-core";
   if (provider === "unsupported") return "unsupported";
   return "openai";
 }
@@ -55,7 +56,8 @@ export function isRuntimeRoutableProvider(
     provider === "amazon-bedrock" ||
     provider === "vertex" ||
     provider === "vertex-anthropic" ||
-    provider === "gitlab"
+    provider === "gitlab" ||
+    provider === "sap-ai-core"
   );
 }
 

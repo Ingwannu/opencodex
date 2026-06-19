@@ -185,6 +185,17 @@ const authProviderPresets = {
     tokenEnv: ["COHERE_API_KEY"],
     runtimeSupported: true,
   },
+  "sap-ai-core": {
+    label: "SAP AI Core",
+    provider: "sap-ai-core",
+    providerId: "sap-ai-core",
+    providerAdapter: "sap-ai-core",
+    providerNpm: "@jerome-benoit/sap-ai-provider-v2",
+    providerSource: "builtin",
+    providerDoc: "https://help.sap.com/docs/sap-ai-core",
+    tokenEnv: ["AICORE_SERVICE_KEY"],
+    runtimeSupported: true,
+  },
   "openai-compatible": {
     label: "Generic OpenAI-compatible endpoint",
     provider: "openai-compatible",
@@ -308,6 +319,54 @@ function vertexBaseUrlFromOptions(options = {}, env = process.env) {
   return `${endpoint}/v1/projects/${encodeURIComponent(project.trim())}/locations/${encodeURIComponent(trimmedLocation)}`;
 }
 
+function serviceKeyObjectFromUnknown(value) {
+  if (!value) return undefined;
+  if (typeof value === "string" && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  return undefined;
+}
+
+function sapAiCoreBaseUrlFromServiceKey(serviceKey) {
+  if (!serviceKey) return undefined;
+  const credentials = serviceKey.credentials && typeof serviceKey.credentials === "object" && !Array.isArray(serviceKey.credentials)
+    ? serviceKey.credentials
+    : serviceKey;
+  const serviceUrls = credentials.serviceurls && typeof credentials.serviceurls === "object" && !Array.isArray(credentials.serviceurls)
+    ? credentials.serviceurls
+    : {};
+  const found =
+    firstStringValue(serviceUrls, ["AI_API_URL", "AI_API_URL_V2", "ai_api_url", "apiUrl"]) ||
+    firstStringValue(credentials, ["aiApiUrl", "ai_api_url", "apiUrl"]);
+  return found && /^https?:\/\//.test(found) ? found : undefined;
+}
+
+function sapAiCoreBaseUrlFromOptions(options = {}, env = process.env) {
+  const explicit = firstStringValue(options, ["baseURL", "baseUrl", "base_url", "endpoint", "apiUrl", "AI_API_URL"]);
+  if (explicit && /^https?:\/\//.test(explicit)) return explicit;
+  for (const key of ["serviceKey", "service_key", "aicoreServiceKey", "aicore_service_key", "apiKey", "api_key"]) {
+    const fromOption = sapAiCoreBaseUrlFromServiceKey(serviceKeyObjectFromUnknown(options[key]));
+    if (fromOption) return fromOption;
+  }
+  return sapAiCoreBaseUrlFromServiceKey(serviceKeyObjectFromUnknown(env.AICORE_SERVICE_KEY));
+}
+
+function sapAiCoreProviderOptionsFromSource(source) {
+  const options = source?.options || {};
+  const out = {};
+  for (const key of ["deploymentId", "deployment_id", "resourceGroup", "resource_group", "modelVersion", "model_version"]) {
+    const value = options[key];
+    if (typeof value === "string" && value.trim()) out[key] = value.trim();
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 function providerAdapterFromNpm(providerId, npmPackage) {
   const id = sanitizeProviderId(providerId);
   const npm = String(npmPackage || "").trim().toLowerCase();
@@ -327,12 +386,13 @@ function providerAdapterFromNpm(providerId, npmPackage) {
   if (npm === "@ai-sdk/google-vertex/anthropic") return "vertex-anthropic";
   if (npm === "@ai-sdk/google-vertex") return "vertex";
   if (npm === "gitlab-ai-provider" || npm === "@gitlab/gitlab-ai-provider") return "gitlab";
+  if (id === "sap-ai-core" || npm.includes("sap-ai-provider") || npm.includes("@sap-ai-sdk")) return "sap-ai-core";
   if (npm.includes("google-vertex")) return "unsupported";
   return "unsupported";
 }
 
 function isRuntimeSupportedAdapter(adapter) {
-  return adapter === "openai" || adapter === "openai-compatible" || adapter === "mistral" || adapter === "zai" || adapter === "anthropic" || adapter === "google" || adapter === "cohere" || adapter === "amazon-bedrock" || adapter === "vertex" || adapter === "vertex-anthropic" || adapter === "gitlab";
+  return adapter === "openai" || adapter === "openai-compatible" || adapter === "mistral" || adapter === "zai" || adapter === "anthropic" || adapter === "google" || adapter === "cohere" || adapter === "amazon-bedrock" || adapter === "vertex" || adapter === "vertex-anthropic" || adapter === "gitlab" || adapter === "sap-ai-core";
 }
 
 function providerForAdapter(providerId, adapter) {
@@ -350,6 +410,9 @@ function tokenEnvForProvider(providerId, adapter, env) {
     adapter === "vertex-anthropic"
   ) {
     return ["GOOGLE_VERTEX_ACCESS_TOKEN", "GOOGLE_ACCESS_TOKEN"];
+  }
+  if (providerId === "sap-ai-core" || adapter === "sap-ai-core") {
+    return ["AICORE_SERVICE_KEY"];
   }
   return Array.isArray(env) ? env.filter((value) => typeof value === "string") : [];
 }
@@ -370,6 +433,7 @@ function modelsDevProviderToPreset(providerId, source) {
     id === "google-vertex" || id === "google-vertex-anthropic"
       ? vertexBaseUrlFromOptions(source?.options)
       : undefined;
+  const sapBaseUrl = id === "sap-ai-core" ? sapAiCoreBaseUrlFromOptions(source?.options) : undefined;
   const openAiCompatibleBaseUrl =
     source?.api || openAiCompatibleDefault?.baseUrl || cloudflareAiGatewayBaseUrl || azureOpenAiBaseUrl;
   const adapter =
@@ -382,7 +446,7 @@ function modelsDevProviderToPreset(providerId, source) {
     ((adapter !== "vertex" && adapter !== "vertex-anthropic") || Boolean(vertexBaseUrl));
   const baseUrl = adapter === "openai-compatible"
     ? normalizeOpenAiCompatibleBaseUrl(openAiCompatibleBaseUrl)
-    : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : adapter === "cohere" ? "https://api.cohere.com" : adapter === "amazon-bedrock" ? bedrockBaseUrl : adapter === "vertex" || adapter === "vertex-anthropic" ? vertexBaseUrl : adapter === "gitlab" ? "https://gitlab.com" : undefined));
+    : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : adapter === "cohere" ? "https://api.cohere.com" : adapter === "amazon-bedrock" ? bedrockBaseUrl : adapter === "vertex" || adapter === "vertex-anthropic" ? vertexBaseUrl : adapter === "gitlab" ? "https://gitlab.com" : adapter === "sap-ai-core" ? sapBaseUrl : undefined));
   return {
     label: source?.name || id,
     provider: providerForAdapter(id, adapter),
@@ -395,6 +459,7 @@ function modelsDevProviderToPreset(providerId, source) {
     openAiPathPrefix: openAiCompatibleDefault?.openAiPathPrefix,
     upstreamMode: adapter === "openai-compatible" ? (azureOpenAiProviderIds.has(id) ? "responses" : (openAiCompatibleDefault?.upstreamMode || "chat/completions")) : undefined,
     compatibilityMode: adapter === "openai-compatible" ? (azureOpenAiProviderIds.has(id) ? "responses" : (openAiCompatibleDefault?.compatibilityMode || "chat-completions-bridge")) : undefined,
+    providerOptions: adapter === "sap-ai-core" ? sapAiCoreProviderOptionsFromSource(source) : undefined,
     tokenEnv: tokenEnvForProvider(id, adapter, source?.env),
     models: source?.models && typeof source.models === "object" ? source.models : undefined,
     runtimeSupported,
@@ -1155,6 +1220,7 @@ async function authLogin(providerName, opts = {}) {
     providerSource: preset.providerSource || "manual",
     providerDoc: preset.providerDoc,
     providerAuthEnv: preset.tokenEnv,
+    providerOptions: preset.providerOptions,
     providerModels: preset.models,
     upstreamMode,
     compatibilityMode,
@@ -1200,15 +1266,41 @@ function normalizeSecret(value) {
   return String(value || "").trim().replace(/^Bearer\s+/i, "").trim();
 }
 
+function isSapServiceKeyObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const credentials = value.credentials && typeof value.credentials === "object" && !Array.isArray(value.credentials)
+    ? value.credentials
+    : value;
+  const serviceUrls = credentials.serviceurls && typeof credentials.serviceurls === "object" && !Array.isArray(credentials.serviceurls)
+    ? credentials.serviceurls
+    : {};
+  return Boolean(
+    typeof credentials.clientid === "string" &&
+      typeof credentials.clientsecret === "string" &&
+      (typeof credentials.url === "string" || typeof credentials.tokenurl === "string") &&
+      typeof serviceUrls.AI_API_URL === "string",
+  );
+}
+
+function secretStringFromValue(value) {
+  if (typeof value === "string" && value.trim()) return normalizeSecret(value);
+  if (isSapServiceKeyObject(value)) return JSON.stringify(value);
+  return undefined;
+}
+
 function findSecretInObject(value, seen = new Set()) {
   if (!value || typeof value !== "object") return undefined;
   if (seen.has(value)) return undefined;
   seen.add(value);
 
-  const directKeys = ["apiKey", "apikey", "api_key", "key", "token", "accessToken", "access_token", "bearer", "value"];
+  const wholeServiceKey = secretStringFromValue(value);
+  if (wholeServiceKey) return wholeServiceKey;
+
+  const directKeys = ["apiKey", "apikey", "api_key", "serviceKey", "service_key", "aicoreServiceKey", "aicore_service_key", "key", "token", "accessToken", "access_token", "bearer", "value"];
   for (const key of directKeys) {
     const found = value[key];
-    if (typeof found === "string" && found.trim()) return normalizeSecret(found);
+    const secret = secretStringFromValue(found);
+    if (secret) return secret;
   }
 
   for (const child of Object.values(value)) {
@@ -1245,6 +1337,9 @@ function findBaseUrlInObject(value, seen = new Set()) {
   if (!value || typeof value !== "object") return undefined;
   if (seen.has(value)) return undefined;
   seen.add(value);
+
+  const sapBaseUrl = sapAiCoreBaseUrlFromServiceKey(value);
+  if (sapBaseUrl) return sapBaseUrl;
 
   for (const key of ["baseURL", "baseUrl", "base_url", "url", "endpoint"]) {
     const found = value[key];
@@ -1294,6 +1389,8 @@ function providerConfigFromOpenCodeConfigPayload(payload) {
               ? options.base_url
               : sanitizeProviderId(providerId) === "cloudflare-ai-gateway"
                 ? cloudflareAiGatewayBaseUrlFromOptions(options)
+                : sanitizeProviderId(providerId) === "sap-ai-core"
+                  ? sapAiCoreBaseUrlFromOptions(options)
                 : undefined,
       env: Array.isArray(raw.env)
         ? raw.env.filter((value) => typeof value === "string")
@@ -1412,6 +1509,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         providerSource: "opencode",
         providerDoc: preset.providerDoc,
         providerAuthEnv: preset.tokenEnv,
+        providerOptions: preset.providerOptions,
         providerModels: preset.models,
         upstreamMode: preset.upstreamMode,
         compatibilityMode: preset.compatibilityMode,
@@ -1452,6 +1550,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         providerSource: "opencode",
         providerDoc: preset.providerDoc,
         providerAuthEnv: preset.tokenEnv,
+        providerOptions: preset.providerOptions,
         providerModels: preset.models,
         upstreamMode: preset.upstreamMode,
         compatibilityMode: preset.compatibilityMode,

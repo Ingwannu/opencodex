@@ -1136,3 +1136,141 @@ test("proxy exchanges GitLab token and routes Duo Claude through AI Gateway", as
     await closeServer(upstream);
   }
 });
+
+test("proxy exchanges SAP AI Core service key and routes orchestration chat completions", async () => {
+  let capturedTokenBody = "";
+  let capturedTokenAuthorization;
+  let capturedCompletionRequest;
+  let capturedCompletionAuthorization;
+  let capturedCompletionResourceGroup;
+
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "POST" && req.url === "/oauth/token") {
+      capturedTokenAuthorization = req.headers.authorization;
+      req.setEncoding("utf8");
+      req.on("data", (chunk) => {
+        capturedTokenBody += chunk;
+      });
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({
+            access_token: "sap-oauth-smoke-token",
+            token_type: "bearer",
+            expires_in: 3600,
+          }),
+        );
+      });
+      return;
+    }
+
+    if (
+      req.method === "POST" &&
+      req.url === "/v2/inference/deployments/orchestration-deployment/v2/completion"
+    ) {
+      capturedCompletionRequest = await readJson(req);
+      capturedCompletionAuthorization = req.headers.authorization;
+      capturedCompletionResourceGroup = req.headers["ai-resource-group"];
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          request_id: "sap-smoke-request",
+          final_result: {
+            id: "chatcmpl-sap-smoke",
+            object: "chat.completion",
+            created: 1,
+            model: "anthropic--claude-4.5-sonnet",
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: "SAP AI Core OK" },
+                finish_reason: "stop",
+              },
+            ],
+            usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 },
+          },
+          intermediate_results: {},
+        }),
+      );
+      return;
+    }
+
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+  const serviceKey = JSON.stringify({
+    clientid: "sap-client",
+    clientsecret: "sap-secret",
+    url: `http://127.0.0.1:${upstreamPort}`,
+    serviceurls: {
+      AI_API_URL: `http://127.0.0.1:${upstreamPort}/v2`,
+    },
+  });
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "sap-ai-core-smoke",
+          provider: "sap-ai-core",
+          providerId: "sap-ai-core",
+          providerAdapter: "sap-ai-core",
+          accessToken: serviceKey,
+          providerOptions: {
+            deploymentId: "orchestration-deployment",
+            resourceGroup: "rg-ai",
+          },
+          providerModels: {
+            "anthropic--claude-4.5-sonnet": {
+              id: "anthropic--claude-4.5-sonnet",
+              name: "Claude via SAP",
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "anthropic--claude-4.5-sonnet",
+            messages: [
+              { role: "system", content: "Be concise." },
+              { role: "user", content: "Hello" },
+            ],
+            max_tokens: 64,
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.choices[0].message.content, "SAP AI Core OK");
+        assert.equal(
+          capturedTokenAuthorization,
+          `Basic ${Buffer.from("sap-client:sap-secret").toString("base64")}`,
+        );
+        assert.equal(capturedTokenBody, "grant_type=client_credentials");
+        assert.equal(capturedCompletionAuthorization, "Bearer sap-oauth-smoke-token");
+        assert.equal(capturedCompletionResourceGroup, "rg-ai");
+        assert.equal(
+          capturedCompletionRequest.config.modules.prompt_templating.model.name,
+          "anthropic--claude-4.5-sonnet",
+        );
+        assert.equal(
+          capturedCompletionRequest.config.modules.prompt_templating.model.params.max_tokens,
+          64,
+        );
+        assert.equal(
+          capturedCompletionRequest.config.modules.prompt_templating.prompt.template[0].content,
+          "Be concise.",
+        );
+        assert.equal(
+          capturedCompletionRequest.config.modules.prompt_templating.prompt.template[1].content,
+          "Hello",
+        );
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});

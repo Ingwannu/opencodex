@@ -91,6 +91,7 @@ function normalizeProviderAdapter(value: unknown): ProviderAdapter | undefined {
   if (value === "vertex") return "vertex";
   if (value === "vertex-anthropic") return "vertex-anthropic";
   if (value === "gitlab") return "gitlab";
+  if (value === "sap-ai-core") return "sap-ai-core";
   if (value === "unsupported") return "unsupported";
   return undefined;
 }
@@ -745,6 +746,12 @@ export function createAdminRouter(options: AdminRoutesOptions) {
       providerAuthEnv: Array.isArray(body.providerAuthEnv)
         ? body.providerAuthEnv.filter((value: unknown): value is string => typeof value === "string")
         : undefined,
+      providerOptions:
+        body.providerOptions &&
+        typeof body.providerOptions === "object" &&
+        !Array.isArray(body.providerOptions)
+          ? body.providerOptions
+          : undefined,
       upstreamMode,
       compatibilityMode,
       email: body.email,

@@ -33,6 +33,27 @@ type GitLabProviderRequest = NativeProviderRequest & {
   kind: GitLabProviderKind;
 };
 
+export type SapAiCoreServiceKey = {
+  clientId: string;
+  clientSecret: string;
+  tokenUrl: string;
+  apiBaseUrl: string;
+};
+
+type SapAiCoreRequestOptions = {
+  deploymentId?: unknown;
+  deployment_id?: unknown;
+  resourceGroup?: unknown;
+  resource_group?: unknown;
+  modelVersion?: unknown;
+  model_version?: unknown;
+  providerModels?: Record<string, unknown>;
+};
+
+type SapAiCoreProviderRequest = NativeProviderRequest & {
+  baseUrl: string;
+};
+
 type NativeModelMetadata = {
   id: string;
   context_window: number | null;
@@ -455,6 +476,321 @@ function buildGitLabOpenAiPayload(
   return body;
 }
 
+function nestedObject(
+  source: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> | undefined {
+  const value = source[key];
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function stringFromKeys(
+  source: Record<string, unknown>,
+  keys: string[],
+): string | undefined {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function parseJsonObject(value: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {}
+  return undefined;
+}
+
+function normalizeSapAiCoreBaseUrl(value: string): string {
+  const trimmed = value.trim().replace(/\/+$/, "");
+  const parsed = new URL(trimmed);
+  if (parsed.pathname === "" || parsed.pathname === "/") {
+    return `${trimmed}/v2`;
+  }
+  return trimmed;
+}
+
+function normalizeSapTokenUrl(value: string): string {
+  const trimmed = value.trim().replace(/\/+$/, "");
+  return /\/oauth\/token$/i.test(trimmed) ? trimmed : `${trimmed}/oauth/token`;
+}
+
+function sapCredentialsObject(value: unknown): Record<string, unknown> {
+  const root =
+    typeof value === "string"
+      ? parseJsonObject(value)
+      : value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : undefined;
+  if (!root) throw new Error("SAP AI Core service key must be a JSON object");
+  return nestedObject(root, "credentials") ?? root;
+}
+
+export function parseSapAiCoreServiceKey(value: unknown): SapAiCoreServiceKey {
+  const credentials = sapCredentialsObject(value);
+  const serviceUrls = nestedObject(credentials, "serviceurls") ?? {};
+
+  const clientId = stringFromKeys(credentials, ["clientid", "clientId"]);
+  const clientSecret = stringFromKeys(credentials, [
+    "clientsecret",
+    "clientSecret",
+  ]);
+  const tokenUrl = stringFromKeys(credentials, [
+    "tokenurl",
+    "tokenUrl",
+    "uaaUrl",
+    "url",
+  ]);
+  const apiBaseUrl =
+    stringFromKeys(serviceUrls, [
+      "AI_API_URL",
+      "AI_API_URL_V2",
+      "ai_api_url",
+      "apiUrl",
+    ]) ??
+    stringFromKeys(credentials, ["aiApiUrl", "ai_api_url", "apiUrl"]);
+
+  if (!clientId || !clientSecret || !tokenUrl || !apiBaseUrl) {
+    throw new Error(
+      "SAP AI Core service key requires clientid, clientsecret, url/tokenurl, and serviceurls.AI_API_URL",
+    );
+  }
+
+  return {
+    clientId,
+    clientSecret,
+    tokenUrl: normalizeSapTokenUrl(tokenUrl),
+    apiBaseUrl: normalizeSapAiCoreBaseUrl(apiBaseUrl),
+  };
+}
+
+export function buildSapAiCoreTokenRequest(
+  serviceKey: SapAiCoreServiceKey,
+): {
+  url: string;
+  headers: Record<string, string>;
+  body: string;
+} {
+  return {
+    url: serviceKey.tokenUrl,
+    headers: {
+      accept: "application/json",
+      "content-type": "application/x-www-form-urlencoded",
+      authorization: `Basic ${Buffer.from(
+        `${serviceKey.clientId}:${serviceKey.clientSecret}`,
+      ).toString("base64")}`,
+    },
+    body: "grant_type=client_credentials",
+  };
+}
+
+function sapOptionString(
+  options: SapAiCoreRequestOptions | undefined,
+  keys: string[],
+): string | undefined {
+  if (!options) return undefined;
+  for (const key of keys) {
+    const value = options[key as keyof SapAiCoreRequestOptions];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function sapModelMetadata(
+  options: SapAiCoreRequestOptions | undefined,
+  model: string,
+): Record<string, unknown> | undefined {
+  const models = options?.providerModels;
+  const value = models?.[model];
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function sapDeploymentId(
+  payload: Record<string, unknown>,
+  options: SapAiCoreRequestOptions | undefined,
+): string | undefined {
+  const model = String(payload.model ?? "").trim();
+  const metadata = model ? sapModelMetadata(options, model) : undefined;
+  return (
+    sapOptionString(options, ["deploymentId", "deployment_id"]) ??
+    (metadata
+      ? stringFromKeys(metadata, ["deploymentId", "deployment_id"])
+      : undefined)
+  );
+}
+
+export function sapAiCoreResourceGroup(
+  options: SapAiCoreRequestOptions | undefined,
+): string {
+  return sapOptionString(options, ["resourceGroup", "resource_group"]) ?? "default";
+}
+
+function sapModelVersion(
+  payload: Record<string, unknown>,
+  options: SapAiCoreRequestOptions | undefined,
+): string | undefined {
+  const model = String(payload.model ?? "").trim();
+  const metadata = model ? sapModelMetadata(options, model) : undefined;
+  return (
+    sapOptionString(options, ["modelVersion", "model_version"]) ??
+    (metadata ? stringFromKeys(metadata, ["modelVersion", "model_version"]) : undefined)
+  );
+}
+
+function sapMessages(payload: Record<string, unknown>): Array<Record<string, unknown>> {
+  const messages = Array.isArray(payload.messages)
+    ? (payload.messages as Array<Record<string, unknown>>)
+    : [];
+  return messages.length
+    ? messages.map((message) => ({
+        role:
+          message.role === "assistant" ||
+          message.role === "system" ||
+          message.role === "tool"
+            ? message.role
+            : "user",
+        content: textFromContent(message.content) || " ",
+      }))
+    : [{ role: "user", content: " " }];
+}
+
+function sapModelParams(payload: Record<string, unknown>): Record<string, unknown> {
+  const params: Record<string, unknown> = {};
+  const maxTokens = optionalOutputLimit(payload);
+  if (maxTokens !== undefined) params.max_tokens = maxTokens;
+  if (typeof payload.temperature === "number") params.temperature = payload.temperature;
+  if (typeof payload.top_p === "number") params.top_p = payload.top_p;
+  if (typeof payload.frequency_penalty === "number") {
+    params.frequency_penalty = payload.frequency_penalty;
+  }
+  if (typeof payload.presence_penalty === "number") {
+    params.presence_penalty = payload.presence_penalty;
+  }
+  if (Array.isArray(payload.stop)) params.stop = payload.stop;
+  return params;
+}
+
+function sapTools(payload: Record<string, unknown>) {
+  if (!Array.isArray(payload.tools)) return undefined;
+  const tools = payload.tools
+    .map((tool: any) => {
+      const fn = tool?.function ?? tool;
+      if (!fn?.name) return null;
+      return {
+        type: "function",
+        function: {
+          name: fn.name,
+          description: fn.description,
+          parameters: fn.parameters ?? fn.input_schema ?? { type: "object" },
+        },
+      };
+    })
+    .filter(Boolean);
+  return tools.length ? tools : undefined;
+}
+
+export function buildSapAiCoreProviderRequest(
+  serviceKey: SapAiCoreServiceKey,
+  account: Pick<Account, "accessToken">,
+  payload: Record<string, unknown>,
+  options: SapAiCoreRequestOptions = {},
+): SapAiCoreProviderRequest {
+  const deploymentId = sapDeploymentId(payload, options);
+  if (!deploymentId) {
+    throw new Error("SAP AI Core deploymentId is required");
+  }
+
+  const resourceGroup = sapAiCoreResourceGroup(options);
+  const modelName = String(payload.model ?? "").trim() || "unknown";
+  const model: Record<string, unknown> = {
+    name: modelName,
+  };
+  const params = sapModelParams(payload);
+  if (Object.keys(params).length) model.params = params;
+  const version = sapModelVersion(payload, options);
+  if (version) model.version = version;
+
+  const prompt: Record<string, unknown> = {
+    template: sapMessages(payload),
+  };
+  const tools = sapTools(payload);
+  if (tools) prompt.tools = tools;
+  if (payload.response_format) prompt.response_format = payload.response_format;
+
+  return {
+    baseUrl: serviceKey.apiBaseUrl,
+    path: `/inference/deployments/${encodeURIComponent(deploymentId)}/v2/completion`,
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+      authorization: `Bearer ${account.accessToken}`,
+      "ai-resource-group": resourceGroup,
+      "ai-client-type": "OpenCodex",
+    },
+    body: {
+      config: {
+        modules: {
+          prompt_templating: {
+            model,
+            prompt,
+          },
+        },
+      },
+    },
+  };
+}
+
+export function buildSapAiCoreDeploymentResolutionRequest(
+  serviceKey: SapAiCoreServiceKey,
+  account: Pick<Account, "accessToken">,
+  options: SapAiCoreRequestOptions = {},
+): SapAiCoreProviderRequest {
+  const resourceGroup = sapAiCoreResourceGroup(options);
+  return {
+    baseUrl: serviceKey.apiBaseUrl,
+    path: "/lm/deployments?scenarioId=orchestration&status=RUNNING",
+    headers: {
+      accept: "application/json",
+      authorization: `Bearer ${account.accessToken}`,
+      "ai-resource-group": resourceGroup,
+      "ai-client-type": "OpenCodex",
+    },
+    body: {},
+  };
+}
+
+function sapDeploymentModelName(deployment: Record<string, unknown>): string | undefined {
+  const details = nestedObject(deployment, "details");
+  const resources = details ? nestedObject(details, "resources") : undefined;
+  const backendDetails = resources ? nestedObject(resources, "backendDetails") : undefined;
+  const model = backendDetails ? nestedObject(backendDetails, "model") : undefined;
+  return model ? stringFromKeys(model, ["name", "modelName"]) : undefined;
+}
+
+export function resolveSapAiCoreDeploymentIdFromResponse(
+  body: Record<string, unknown>,
+  payload: Record<string, unknown>,
+): string | undefined {
+  const resources = Array.isArray(body.resources)
+    ? (body.resources as Array<Record<string, unknown>>)
+    : [];
+  if (!resources.length) return undefined;
+  const requestedModel = String(payload.model ?? "").trim();
+  const matching = requestedModel
+    ? resources.find((entry) => sapDeploymentModelName(entry) === requestedModel)
+    : undefined;
+  const selected = matching ?? resources[0];
+  return stringFromKeys(selected, ["id", "deploymentId", "deployment_id"]);
+}
+
 export function buildGitLabDirectAccessRequest(
   account: Pick<Account, "accessToken">,
 ): NativeProviderRequest {
@@ -810,6 +1146,73 @@ function responseObject(
     ],
     usage: responseUsageFromChatUsage(usage),
   };
+}
+
+function usageFromChatCompletion(usage: unknown) {
+  const u = usage && typeof usage === "object" ? (usage as Record<string, unknown>) : {};
+  const prompt = Number(u.prompt_tokens ?? u.input_tokens ?? 0) || 0;
+  const completion = Number(u.completion_tokens ?? u.output_tokens ?? 0) || 0;
+  const total = Number(u.total_tokens ?? prompt + completion) || prompt + completion;
+  return {
+    prompt_tokens: prompt,
+    completion_tokens: completion,
+    total_tokens: total,
+  };
+}
+
+function sapResponseText(finalResult: Record<string, unknown>): string {
+  const choices = Array.isArray(finalResult.choices)
+    ? (finalResult.choices as Array<Record<string, any>>)
+    : [];
+  const message =
+    choices[0]?.message && typeof choices[0].message === "object"
+      ? (choices[0].message as Record<string, unknown>)
+      : {};
+  return textFromContent(message.content);
+}
+
+function sapFinishReason(finalResult: Record<string, unknown>): string {
+  const choices = Array.isArray(finalResult.choices)
+    ? (finalResult.choices as Array<Record<string, any>>)
+    : [];
+  const reason = choices[0]?.finish_reason;
+  return typeof reason === "string" && reason ? reason : "stop";
+}
+
+export function convertSapAiCoreResponse(
+  body: Record<string, unknown>,
+  shape: NativeProviderResponseShape,
+  fallbackModel = "unknown",
+) {
+  const finalResult =
+    body.final_result && typeof body.final_result === "object"
+      ? (body.final_result as Record<string, unknown>)
+      : body;
+  const model = String(finalResult.model ?? fallbackModel);
+  const usage = usageFromChatCompletion(finalResult.usage);
+
+  if (shape === "responses") {
+    return responseObject(model, sapResponseText(finalResult), usage);
+  }
+
+  if (Array.isArray(finalResult.choices)) {
+    return {
+      id:
+        typeof finalResult.id === "string" && finalResult.id
+          ? finalResult.id
+          : `chatcmpl_${randomUUID().replace(/-/g, "").slice(0, 24)}`,
+      object: "chat.completion",
+      created:
+        typeof finalResult.created === "number"
+          ? finalResult.created
+          : Math.floor(Date.now() / 1000),
+      model,
+      choices: finalResult.choices,
+      usage,
+    };
+  }
+
+  return chatCompletion(model, sapResponseText(finalResult), sapFinishReason(finalResult), usage);
 }
 
 export function convertNativeProviderResponse(

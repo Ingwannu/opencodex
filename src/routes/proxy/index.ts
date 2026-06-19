@@ -72,13 +72,19 @@ import {
 import {
   buildGitLabDirectAccessRequest,
   buildGitLabProviderRequest,
+  buildSapAiCoreDeploymentResolutionRequest,
+  buildSapAiCoreProviderRequest,
+  buildSapAiCoreTokenRequest,
   buildNativeProviderModelsRequest,
   buildNativeProviderRequest,
   convertNativeProviderResponse,
+  convertSapAiCoreResponse,
   gitLabProviderKindForModel,
   isNativeProvider,
   nativeProviderDefaultBaseUrl,
   nativeProviderModelsFromResponse,
+  parseSapAiCoreServiceKey,
+  resolveSapAiCoreDeploymentIdFromResponse,
 } from "../../provider-native.js";
 import type { NativeProviderId } from "../../provider-native.js";
 
@@ -360,6 +366,9 @@ function accountBaseUrl(
   if (provider === "gitlab") {
     return trimTrailingSlash(String(account.baseUrl ?? "https://gitlab.com"));
   }
+  if (provider === "sap-ai-core") {
+    return trimTrailingSlash(String(account.baseUrl ?? ""));
+  }
   if (!isRuntimeRoutableProvider(provider)) return "";
   return openaiBaseUrl;
 }
@@ -384,7 +393,8 @@ function resolveUpstreamMode(
     provider === "amazon-bedrock" ||
     provider === "vertex" ||
     provider === "vertex-anthropic" ||
-    provider === "gitlab"
+    provider === "gitlab" ||
+    provider === "sap-ai-core"
   ) {
     return "chat/completions";
   }
@@ -635,7 +645,7 @@ async function discoverModels(
       if (!isRuntimeRoutableProvider(normalizedProvider)) continue;
       const provider = normalizedProvider;
       mergeConfiguredAccountModels(byId, account, provider);
-      if (provider === "gitlab") continue;
+      if (provider === "gitlab" || provider === "sap-ai-core") continue;
       try {
         const headers: Record<string, string> = {
           authorization: `Bearer ${account.accessToken}`,
@@ -1543,7 +1553,8 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
         if (
           shouldSendChatCompletions &&
           (candidate.provider === "openai-compatible" ||
-            isNativeProvider(candidate.provider))
+            isNativeProvider(candidate.provider) ||
+            candidate.provider === "sap-ai-core")
         ) {
           payloadToUpstream = sanitizeGenericChatCompletionsPayload(
             payloadToUpstream,
@@ -1657,6 +1668,9 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
           let upstreamHeaders = headers;
           let upstreamBody = payloadToUpstream;
           let nativeResponseProvider: NativeProviderId | undefined;
+          let nativeResponseConverter:
+            | ((body: Record<string, unknown>) => Record<string, unknown>)
+            | undefined;
 
           if (candidate.provider === "mistral") {
             upstreamBaseUrl = mistralBaseUrl;
@@ -1733,6 +1747,89 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
             if (gitLabRequest.kind === "anthropic") {
               nativeResponseProvider = "anthropic";
             }
+          } else if (candidate.provider === "sap-ai-core") {
+            let sapPayload = payloadToUpstream;
+            if (!shouldSendChatCompletions) {
+              sapPayload = responsesToChatCompletionsPayload(sapPayload);
+            }
+            const serviceKey = parseSapAiCoreServiceKey(selected.accessToken);
+            const tokenRequest = buildSapAiCoreTokenRequest(serviceKey);
+            const tokenResponse = await fetchCodexWithRetry(tokenRequest.url, {
+              method: "POST",
+              headers: tokenRequest.headers,
+              body: tokenRequest.body,
+            });
+            const tokenText = await tokenResponse.text();
+            if (!tokenResponse.ok) {
+              throw new Error(
+                `sap-ai-core token ${tokenResponse.status}: ${tokenText.slice(0, 200)}`,
+              );
+            }
+            const tokenJson = JSON.parse(tokenText) as { access_token?: unknown };
+            if (
+              typeof tokenJson.access_token !== "string" ||
+              !tokenJson.access_token.trim()
+            ) {
+              throw new Error("sap-ai-core token response did not include access_token");
+            }
+            const sapAccount = { accessToken: tokenJson.access_token.trim() };
+            let sapOptions: Record<string, unknown> & {
+              providerModels?: Record<string, unknown>;
+            } = {
+              ...(selected.providerOptions ?? {}),
+              providerModels: selected.providerModels,
+            };
+            if (
+              !sapOptions.deploymentId &&
+              !sapOptions.deployment_id
+            ) {
+              const deploymentRequest = buildSapAiCoreDeploymentResolutionRequest(
+                serviceKey,
+                sapAccount,
+                sapOptions,
+              );
+              const deploymentResponse = await fetchCodexWithRetry(
+                `${deploymentRequest.baseUrl}${deploymentRequest.path}`,
+                {
+                  method: "GET",
+                  headers: deploymentRequest.headers,
+                },
+              );
+              const deploymentText = await deploymentResponse.text();
+              if (!deploymentResponse.ok) {
+                throw new Error(
+                  `sap-ai-core deployments ${deploymentResponse.status}: ${deploymentText.slice(0, 200)}`,
+                );
+              }
+              const deploymentJson = JSON.parse(deploymentText) as Record<
+                string,
+                unknown
+              >;
+              const deploymentId = resolveSapAiCoreDeploymentIdFromResponse(
+                deploymentJson,
+                sapPayload,
+              );
+              if (!deploymentId) {
+                throw new Error("sap-ai-core could not resolve orchestration deployment");
+              }
+              sapOptions = { ...sapOptions, deploymentId };
+            }
+            const sapRequest = buildSapAiCoreProviderRequest(
+              serviceKey,
+              sapAccount,
+              sapPayload,
+              sapOptions,
+            );
+            upstreamBaseUrl = sapRequest.baseUrl;
+            upstreamPath = sapRequest.path;
+            upstreamHeaders = sapRequest.headers;
+            upstreamBody = sapRequest.body;
+            nativeResponseConverter = (parsed) =>
+              convertSapAiCoreResponse(
+                parsed,
+                shouldReturnChatCompletions ? "chat.completions" : "responses",
+                req.body?.model ?? sapPayload?.model ?? "unknown",
+              );
           } else if (candidate.provider === "openai-compatible") {
             upstreamPath = shouldSendChatCompletions
               ? "/v1/chat/completions"
@@ -1767,7 +1864,7 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
           const contentType = upstream.headers.get("content-type") ?? "";
           const isStream = contentType.includes("text/event-stream");
 
-          if (nativeResponseProvider) {
+          if (nativeResponseProvider || nativeResponseConverter) {
             let text = await upstream.text();
             const upstreamEmptyBody = !text;
             if (!text) {
@@ -1826,12 +1923,14 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
               continue;
             }
 
-            const converted = convertNativeProviderResponse(
-              nativeResponseProvider,
-              parsed,
-              shouldReturnChatCompletions ? "chat.completions" : "responses",
-              req.body?.model ?? payloadToUpstream?.model ?? "unknown",
-            );
+            const converted = nativeResponseConverter
+              ? nativeResponseConverter(parsed)
+              : convertNativeProviderResponse(
+                  nativeResponseProvider!,
+                  parsed,
+                  shouldReturnChatCompletions ? "chat.completions" : "responses",
+                  req.body?.model ?? payloadToUpstream?.model ?? "unknown",
+                );
             const hasOutput = shouldReturnChatCompletions
               ? chatCompletionHasAssistantOutput(converted)
               : responseHasAssistantOutput(converted);

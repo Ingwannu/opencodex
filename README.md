@@ -72,7 +72,9 @@ OpenCodex acts as an OpenAI-compatible gateway that lets you route requests acro
 - **Provider registry** from Models.dev with OpenCode-style provider IDs
 - **OpenCode auth import** from `~/.local/share/opencode/auth.json`, including
   custom provider endpoint metadata and provider-level `options.apiKey` /
-  `headers.Authorization` secrets from `opencode.json` / `opencode.jsonc`
+  `headers.Authorization` secrets from `opencode.json` / `opencode.jsonc`,
+  plus auth-free local OpenAI-compatible providers configured only in
+  `opencode.json` / `opencode.jsonc`
 - **Manual OpenAI-compatible connections** with custom `baseUrl` + API key
 - **Persistent account storage** across container restarts
 - **Request tracing v2** (retention capped at 1000, server pagination, tokens/model/error/latency stats, optional full payload)
@@ -198,6 +200,11 @@ OpenCodex can route providers that map to the current runtime adapters:
   Perplexity Sonar, Vercel AI Gateway, v0, Venice, AIHubMix, Merge Gateway, and
   Cloudflare AI Gateway when `CLOUDFLARE_ACCOUNT_ID` and
   `CLOUDFLARE_GATEWAY_ID` or equivalent OpenCode provider options are available
+- Auth-free local OpenAI-compatible providers, including built-in OpenCode-style
+  entries for Ollama (`http://127.0.0.1:11434/v1`), LM Studio
+  (`http://127.0.0.1:1234/v1`), and llama.cpp
+  (`http://127.0.0.1:8080/v1`); the proxy omits the `Authorization` header for
+  these accounts
 - Snowflake Cortex through its OpenAI-compatible Cortex REST endpoint at
   `/api/v2/cortex/v1`, with `${SNOWFLAKE_ACCOUNT}` endpoint templates expanded
   from env and auth imported from `SNOWFLAKE_CORTEX_TOKEN` or
@@ -221,15 +228,15 @@ OpenCodex can route providers that map to the current runtime adapters:
   `{env:ENV_NAME}` placeholders; unresolved endpoint templates are kept
   auth-only instead of being routed to a literal placeholder host
 
-Credentials for providers whose native API adapter is not implemented yet, such
-as Azure without resource routing metadata, Google Vertex ADC variants that
-require metadata-server, workload identity federation, or external_account
-credential sources, Cloudflare AI Gateway without account/gateway routing
-metadata, Bedrock credential flows that require AWS SDK providers such as
-SSO/IRSA/instance metadata, and other provider-specific SDK adapters, are
-imported and shown as auth-only disabled accounts. They are preserved for
-management, but are not sent through the proxy until a native adapter or exact
-compatibility bridge is added.
+Credentials for providers whose endpoint/auth prerequisites are unresolved, such
+as Azure without resource routing metadata, Cloudflare AI Gateway without
+account/gateway routing metadata, Google Vertex without project/location/auth,
+Snowflake without account/token env, Bedrock credential flows that require AWS
+SDK providers such as SSO/IRSA/instance metadata, and other provider-specific
+SDK adapters not yet mapped to a native REST bridge, are imported and shown as
+auth-only disabled accounts. They are preserved for management, but are not sent
+through the proxy until the endpoint/auth metadata resolves or an exact native
+adapter/compatibility bridge is added.
 
 Default expected redirect URI:
 

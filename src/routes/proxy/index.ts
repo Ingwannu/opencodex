@@ -21,6 +21,7 @@ import type {
   RouteProviderId,
   UpstreamMode,
 } from "../../types.js";
+import { NO_AUTH_ACCESS_TOKEN } from "../../types.js";
 import {
   accountUsable,
   chooseAccountForProvider,
@@ -298,9 +299,14 @@ function normalizeSnowflakeCortexChatPayload(payload: any): any {
 
 function applyOpenAiCompatibleAuthHeaders(
   headers: Record<string, string>,
-  account: Pick<Account, "accessToken" | "providerId">,
+  account: Pick<Account, "accessToken" | "providerId" | "providerAuthType">,
 ): Record<string, string> {
-  if (isCloudflareAiGatewayAccount(account)) {
+  if (
+    account.providerAuthType === "none" ||
+    account.accessToken === NO_AUTH_ACCESS_TOKEN
+  ) {
+    delete headers.authorization;
+  } else if (isCloudflareAiGatewayAccount(account)) {
     delete headers.authorization;
     headers["cf-aig-authorization"] = `Bearer ${account.accessToken}`;
   } else if (isAzureOpenAiAccount(account)) {

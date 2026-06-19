@@ -71,6 +71,25 @@ test("describeProviderAuth exposes OpenCode metadata needed for the add-account 
   });
 });
 
+test("describeProviderAuth labels auth-free local providers", () => {
+  const provider: ProviderRegistryEntry = {
+    id: "ollama",
+    providerId: "ollama",
+    label: "Ollama (local)",
+    provider: "openai-compatible",
+    providerAdapter: "openai-compatible",
+    providerSource: "builtin",
+    baseUrl: "http://127.0.0.1:11434",
+    upstreamMode: "chat/completions",
+    compatibilityMode: "chat-completions-bridge",
+    tokenEnv: [],
+    authType: "none",
+    runtimeSupported: true,
+  };
+
+  assert.equal(describeProviderAuth(provider)?.authLabel, "No auth");
+});
+
 test("formatProviderEndpoint distinguishes missing and configured endpoints", () => {
   assert.equal(formatProviderEndpoint(undefined), "Endpoint not configured");
   assert.equal(

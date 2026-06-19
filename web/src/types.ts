@@ -8,6 +8,7 @@ export type Account = {
   providerSource?: "builtin" | "models.dev" | "opencode" | "manual";
   providerDoc?: string;
   providerAuthEnv?: string[];
+  providerAuthType?: "oauth" | "api-key" | "none";
   upstreamMode?: "responses" | "chat/completions";
   compatibilityMode?: "auto" | "responses" | "chat-completions-bridge";
   email?: string;
@@ -128,7 +129,7 @@ export type ProviderRegistryEntry = {
   upstreamMode?: "responses" | "chat/completions";
   compatibilityMode?: "auto" | "responses" | "chat-completions-bridge";
   tokenEnv: string[];
-  authType: "oauth" | "api-key";
+  authType: "oauth" | "api-key" | "none";
   runtimeSupported: boolean;
   modelsCount?: number;
 };

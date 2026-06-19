@@ -34,6 +34,8 @@ import {
   resolveProviderRegistryEntry,
 } from "../dist/provider-registry.js";
 
+const NO_AUTH_ACCESS_TOKEN = "__opencodex_no_auth__";
+
 function decodeJwtPart(token, index) {
   return JSON.parse(Buffer.from(token.split(".")[index], "base64url").toString("utf8"));
 }
@@ -987,6 +989,54 @@ test("OpenAI-compatible SDK providers are runtime-routable through the bridge", 
   const perplexity = await resolveProviderRegistryEntry("perplexity");
   assert.equal(perplexity.openAiPathPrefix, "none");
   assert.ok(perplexity.models?.["sonar-pro"]);
+});
+
+test("Ollama is available as an auth-free local OpenAI-compatible provider", async () => {
+  const entry = await resolveProviderRegistryEntry("ollama");
+
+  assert.equal(entry.provider, "openai-compatible");
+  assert.equal(entry.providerAdapter, "openai-compatible");
+  assert.equal(entry.baseUrl, "http://127.0.0.1:11434");
+  assert.equal(entry.authType, "none");
+  assert.deepEqual(entry.tokenEnv, []);
+  assert.equal(entry.runtimeSupported, true);
+  assert.equal(entry.upstreamMode, "chat/completions");
+  assert.equal(entry.compatibilityMode, "chat-completions-bridge");
+});
+
+test("OpenCode local provider config imports without auth.json credentials", async () => {
+  const providerConfig = providerConfigFromOpenCodeConfigPayload(
+    parseOpenCodeConfigPayload(`{
+      "provider": {
+        "ollama": {
+          "npm": "@ai-sdk/openai-compatible",
+          "name": "Ollama (local)",
+          "options": {
+            "baseURL": "http://127.0.0.1:11434/v1"
+          },
+          "models": {
+            "gpt-oss:20b": {
+              "name": "gpt-oss 20B"
+            }
+          }
+        }
+      }
+    }`),
+  );
+  const accounts = await accountsFromOpenCodeAuthPayload(
+    {},
+    { providerConfig },
+  );
+  const ollama = accounts.find((account) => account.providerId === "ollama");
+
+  assert.equal(ollama?.provider, "openai-compatible");
+  assert.equal(ollama?.providerAdapter, "openai-compatible");
+  assert.equal(ollama?.providerLabel, "Ollama (local)");
+  assert.equal(ollama?.baseUrl, "http://127.0.0.1:11434");
+  assert.equal(ollama?.accessToken, NO_AUTH_ACCESS_TOKEN);
+  assert.equal(ollama?.providerAuthType, "none");
+  assert.equal(ollama?.enabled, true);
+  assert.ok(ollama?.providerModels?.["gpt-oss:20b"]);
 });
 
 test("Cloudflare AI Gateway registry metadata stays OpenAI-compatible when endpoint env is missing", () => {

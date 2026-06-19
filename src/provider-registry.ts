@@ -2,6 +2,7 @@ import type {
   CompatibilityMode,
   OpenAiPathPrefix,
   ProviderAdapter,
+  ProviderAuthType,
   RouteProviderId,
   UpstreamMode,
 } from "./types.js";
@@ -27,7 +28,7 @@ export type ProviderRegistryEntry = {
   compatibilityMode?: CompatibilityMode;
   providerOptions?: Record<string, unknown>;
   tokenEnv: string[];
-  authType: "oauth" | "api-key";
+  authType: ProviderAuthType;
   runtimeSupported: boolean;
   models?: Record<string, unknown>;
   modelsCount?: number;
@@ -305,6 +306,54 @@ const BUILTIN_PROVIDERS: ProviderRegistryEntry[] = [
     authType: "api-key",
     runtimeSupported: true,
   },
+  {
+    id: "ollama",
+    providerId: "ollama",
+    label: "Ollama (local)",
+    provider: "openai-compatible",
+    providerAdapter: "openai-compatible",
+    providerNpm: "@ai-sdk/openai-compatible",
+    providerSource: "builtin",
+    providerDoc: "https://opencode.ai/docs/providers/",
+    baseUrl: "http://127.0.0.1:11434",
+    upstreamMode: "chat/completions",
+    compatibilityMode: "chat-completions-bridge",
+    tokenEnv: [],
+    authType: "none",
+    runtimeSupported: true,
+  },
+  {
+    id: "lmstudio",
+    providerId: "lmstudio",
+    label: "LM Studio (local)",
+    provider: "openai-compatible",
+    providerAdapter: "openai-compatible",
+    providerNpm: "@ai-sdk/openai-compatible",
+    providerSource: "builtin",
+    providerDoc: "https://opencode.ai/docs/providers/",
+    baseUrl: "http://127.0.0.1:1234",
+    upstreamMode: "chat/completions",
+    compatibilityMode: "chat-completions-bridge",
+    tokenEnv: [],
+    authType: "none",
+    runtimeSupported: true,
+  },
+  {
+    id: "llama.cpp",
+    providerId: "llama.cpp",
+    label: "llama.cpp (local)",
+    provider: "openai-compatible",
+    providerAdapter: "openai-compatible",
+    providerNpm: "@ai-sdk/openai-compatible",
+    providerSource: "builtin",
+    providerDoc: "https://opencode.ai/docs/providers/",
+    baseUrl: "http://127.0.0.1:8080",
+    upstreamMode: "chat/completions",
+    compatibilityMode: "chat-completions-bridge",
+    tokenEnv: [],
+    authType: "none",
+    runtimeSupported: true,
+  },
 ];
 
 const PROVIDER_ALIASES: Record<string, string> = {
@@ -358,6 +407,46 @@ function firstStringValue(
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return undefined;
+}
+
+function isLocalHttpBaseUrl(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    return (
+      parsed.protocol === "http:" &&
+      (parsed.hostname === "127.0.0.1" ||
+        parsed.hostname === "localhost" ||
+        parsed.hostname === "::1")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function sourceOptionsCarrySecret(options: Record<string, unknown> | undefined): boolean {
+  if (!options) return false;
+  for (const key of [
+    "apiKey",
+    "apikey",
+    "api_key",
+    "token",
+    "accessToken",
+    "access_token",
+    "bearer",
+  ]) {
+    if (typeof options[key] === "string" && options[key].trim()) return true;
+  }
+  const headers = options.headers;
+  if (!headers || typeof headers !== "object" || Array.isArray(headers)) {
+    return false;
+  }
+  return Object.entries(headers as Record<string, unknown>).some(
+    ([key, value]) =>
+      typeof value === "string" &&
+      value.trim().length > 0 &&
+      ["authorization", "x-api-key", "api-key"].includes(key.toLowerCase()),
+  );
 }
 
 function expandEnvTemplates(
@@ -907,6 +996,14 @@ export function providerRegistryEntryFromMetadata(
     (adapter !== "openai-compatible" ||
       openAiCompatibleBaseUrl === undefined ||
       Boolean(baseUrl));
+  const tokenEnv = tokenEnvForProvider(id, adapter, source.env);
+  const authType =
+    adapter === "openai-compatible" &&
+    isLocalHttpBaseUrl(baseUrl) &&
+    !sourceOptionsCarrySecret(source.options) &&
+    tokenEnv.length === 0
+      ? "none"
+      : "api-key";
 
   return {
     id,
@@ -941,8 +1038,8 @@ export function providerRegistryEntryFromMetadata(
         : adapter === "sap-ai-core"
           ? sapAiCoreProviderOptionsFromSource(source)
           : undefined,
-    tokenEnv: tokenEnvForProvider(id, adapter, source.env),
-    authType: "api-key",
+    tokenEnv,
+    authType,
     runtimeSupported,
     models:
       source.models && typeof source.models === "object"

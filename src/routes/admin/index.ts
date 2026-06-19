@@ -9,8 +9,10 @@ import type {
   CompatibilityMode,
   ModelAlias,
   ProviderAdapter,
+  ProviderAuthType,
   UpstreamMode,
 } from "../../types.js";
+import { NO_AUTH_ACCESS_TOKEN } from "../../types.js";
 import {
   normalizeProvider,
   refreshUsageIfNeeded,
@@ -93,6 +95,13 @@ function normalizeProviderAdapter(value: unknown): ProviderAdapter | undefined {
   if (value === "gitlab") return "gitlab";
   if (value === "sap-ai-core") return "sap-ai-core";
   if (value === "unsupported") return "unsupported";
+  return undefined;
+}
+
+function normalizeProviderAuthType(value: unknown): ProviderAuthType | undefined {
+  if (value === "oauth") return "oauth";
+  if (value === "api-key") return "api-key";
+  if (value === "none") return "none";
   return undefined;
 }
 
@@ -698,7 +707,8 @@ export function createAdminRouter(options: AdminRoutesOptions) {
 
   router.post("/accounts", async (req, res) => {
     const body = req.body ?? {};
-    if (!body.accessToken)
+    const providerAuthType = normalizeProviderAuthType(body.providerAuthType);
+    if (providerAuthType !== "none" && !body.accessToken)
       return res.status(400).json({ error: "accessToken required" });
     const provider =
       typeof body.provider === "string" && body.provider.trim()
@@ -746,6 +756,7 @@ export function createAdminRouter(options: AdminRoutesOptions) {
       providerAuthEnv: Array.isArray(body.providerAuthEnv)
         ? body.providerAuthEnv.filter((value: unknown): value is string => typeof value === "string")
         : undefined,
+      providerAuthType,
       providerOptions:
         body.providerOptions &&
         typeof body.providerOptions === "object" &&
@@ -755,7 +766,8 @@ export function createAdminRouter(options: AdminRoutesOptions) {
       upstreamMode,
       compatibilityMode,
       email: body.email,
-      accessToken: body.accessToken,
+      accessToken:
+        providerAuthType === "none" ? NO_AUTH_ACCESS_TOKEN : body.accessToken,
       refreshToken: body.refreshToken,
       expiresAt: body.expiresAt,
       chatgptAccountId: body.chatgptAccountId,

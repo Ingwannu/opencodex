@@ -22,6 +22,9 @@ export type CompatibilityMode =
   | "responses"
   | "chat-completions-bridge";
 export type OpenAiPathPrefix = "v1" | "none";
+export type ProviderAuthType = "oauth" | "api-key" | "none";
+
+export const NO_AUTH_ACCESS_TOKEN = "__opencodex_no_auth__";
 
 export type UsageWindow = {
   usedPercent?: number;
@@ -59,6 +62,7 @@ export type Account = {
   providerSource?: "builtin" | "models.dev" | "opencode" | "manual";
   providerDoc?: string;
   providerAuthEnv?: string[];
+  providerAuthType?: ProviderAuthType;
   providerOptions?: Record<string, unknown>;
   providerModels?: Record<string, unknown>;
   upstreamMode?: UpstreamMode;

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Account } from "./types.js";
+import { NO_AUTH_ACCESS_TOKEN, type Account } from "./types.js";
 import {
   amazonBedrockBaseUrlFromOptions,
   cloudflareAiGatewayBaseUrlFromOptions,
@@ -296,7 +296,8 @@ export async function accountsFromOpenCodeAuthPayload(
       findSecretInObject(body) ??
       options.providerConfigSecrets?.get(providerKey) ??
       envSecretForProvider(providerKey, registry) ??
-      credentialChainTokenForProvider(providerKey, registry);
+      credentialChainTokenForProvider(providerKey, registry) ??
+      (registry.authType === "none" ? NO_AUTH_ACCESS_TOKEN : undefined);
     if (!token) continue;
     const providerId = sanitizeProviderId(registry.providerId || name);
     const id = `${providerId}-${sanitizeProviderId(name) || randomUUID().slice(0, 8)}`;
@@ -313,6 +314,7 @@ export async function accountsFromOpenCodeAuthPayload(
       providerSource: "opencode",
       providerDoc: registry.providerDoc,
       providerAuthEnv: registry.tokenEnv,
+      providerAuthType: registry.authType,
       providerOptions: registry.providerOptions,
       providerModels: registry.models,
       upstreamMode: registry.upstreamMode,
@@ -351,6 +353,7 @@ export async function accountsFromOpenCodeAuthPayload(
       providerSource: "opencode",
       providerDoc: registry.providerDoc,
       providerAuthEnv: registry.tokenEnv,
+      providerAuthType: registry.authType,
       providerOptions: registry.providerOptions,
       providerModels: registry.models,
       upstreamMode: registry.upstreamMode,
@@ -376,7 +379,8 @@ export async function accountsFromOpenCodeAuthPayload(
     const providerId = sanitizeProviderId(registry.providerId || providerKey);
     const token =
       envSecretForProvider(providerId, registry) ??
-      credentialChainTokenForProvider(providerId, registry);
+      credentialChainTokenForProvider(providerId, registry) ??
+      (registry.authType === "none" ? NO_AUTH_ACCESS_TOKEN : undefined);
     if (!token) continue;
     const id = `${providerId}-${providerKey || randomUUID().slice(0, 8)}`;
     const runtimeSupported = registry.runtimeSupported;
@@ -392,6 +396,7 @@ export async function accountsFromOpenCodeAuthPayload(
       providerSource: "opencode",
       providerDoc: registry.providerDoc,
       providerAuthEnv: registry.tokenEnv,
+      providerAuthType: registry.authType,
       providerOptions: registry.providerOptions,
       providerModels: registry.models,
       upstreamMode: registry.upstreamMode,

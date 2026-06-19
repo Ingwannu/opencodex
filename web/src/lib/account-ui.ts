@@ -72,7 +72,12 @@ export function describeProviderAuth(
   return {
     statusLabel: provider.runtimeSupported ? "Runtime-ready" : "Auth-only",
     statusTone: provider.runtimeSupported ? "live" : "warn",
-    authLabel: provider.authType === "oauth" ? "OAuth" : "API key",
+    authLabel:
+      provider.authType === "oauth"
+        ? "OAuth"
+        : provider.authType === "none"
+          ? "No auth"
+          : "API key",
     envVars: Array.from(new Set(provider.tokenEnv)).filter(Boolean),
     adapterLabel: provider.providerAdapter || provider.provider,
     sourceLabel: provider.providerSource,

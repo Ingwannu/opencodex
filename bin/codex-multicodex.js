@@ -43,6 +43,7 @@ const WRAPPER_PATHS = {
 const SHIM_MARKER = "codex-multicodex managed shim v1";
 const AWS_BEDROCK_SIGV4_PLACEHOLDER = "__opencodex_aws_sigv4__";
 const GOOGLE_VERTEX_ADC_PLACEHOLDER = "__opencodex_google_vertex_adc__";
+const NO_AUTH_ACCESS_TOKEN = "__opencodex_no_auth__";
 const DEFAULT_PROXY_MODELS = [
   "gpt-5.5",
   "gpt-5.4",
@@ -292,6 +293,51 @@ const authProviderPresets = {
     tokenEnv: ["OPENAI_COMPATIBLE_API_KEY"],
     runtimeSupported: true,
   },
+  ollama: {
+    label: "Ollama (local)",
+    provider: "openai-compatible",
+    providerId: "ollama",
+    providerAdapter: "openai-compatible",
+    providerNpm: "@ai-sdk/openai-compatible",
+    providerSource: "builtin",
+    providerDoc: "https://opencode.ai/docs/providers/",
+    baseUrl: "http://127.0.0.1:11434",
+    upstreamMode: "chat/completions",
+    compatibilityMode: "chat-completions-bridge",
+    tokenEnv: [],
+    authType: "none",
+    runtimeSupported: true,
+  },
+  lmstudio: {
+    label: "LM Studio (local)",
+    provider: "openai-compatible",
+    providerId: "lmstudio",
+    providerAdapter: "openai-compatible",
+    providerNpm: "@ai-sdk/openai-compatible",
+    providerSource: "builtin",
+    providerDoc: "https://opencode.ai/docs/providers/",
+    baseUrl: "http://127.0.0.1:1234",
+    upstreamMode: "chat/completions",
+    compatibilityMode: "chat-completions-bridge",
+    tokenEnv: [],
+    authType: "none",
+    runtimeSupported: true,
+  },
+  "llama.cpp": {
+    label: "llama.cpp (local)",
+    provider: "openai-compatible",
+    providerId: "llama.cpp",
+    providerAdapter: "openai-compatible",
+    providerNpm: "@ai-sdk/openai-compatible",
+    providerSource: "builtin",
+    providerDoc: "https://opencode.ai/docs/providers/",
+    baseUrl: "http://127.0.0.1:8080",
+    upstreamMode: "chat/completions",
+    compatibilityMode: "chat-completions-bridge",
+    tokenEnv: [],
+    authType: "none",
+    runtimeSupported: true,
+  },
 };
 
 const authProviderAliases = {
@@ -366,6 +412,44 @@ function expandEnvTemplates(value, env = process.env) {
       return found;
     });
   return missing ? undefined : expanded;
+}
+
+function isLocalHttpBaseUrl(value) {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    return (
+      parsed.protocol === "http:" &&
+      (parsed.hostname === "127.0.0.1" ||
+        parsed.hostname === "localhost" ||
+        parsed.hostname === "::1")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function sourceOptionsCarrySecret(options) {
+  if (!options) return false;
+  for (const key of [
+    "apiKey",
+    "apikey",
+    "api_key",
+    "token",
+    "accessToken",
+    "access_token",
+    "bearer",
+  ]) {
+    if (typeof options[key] === "string" && options[key].trim()) return true;
+  }
+  const headers = options.headers;
+  if (!headers || typeof headers !== "object" || Array.isArray(headers)) return false;
+  return Object.entries(headers).some(
+    ([key, value]) =>
+      typeof value === "string" &&
+      value.trim().length > 0 &&
+      ["authorization", "x-api-key", "api-key"].includes(key.toLowerCase()),
+  );
 }
 
 function cloudflareAiGatewayBaseUrlFromOptions(options = {}, env = process.env) {
@@ -819,6 +903,14 @@ function modelsDevProviderToPreset(providerId, source) {
     (adapter !== "openai-compatible" ||
       openAiCompatibleBaseUrl === undefined ||
       Boolean(baseUrl));
+  const tokenEnv = tokenEnvForProvider(id, adapter, source?.env);
+  const authType =
+    adapter === "openai-compatible" &&
+    isLocalHttpBaseUrl(baseUrl) &&
+    !sourceOptionsCarrySecret(source?.options) &&
+    tokenEnv.length === 0
+      ? "none"
+      : "api-key";
   return {
     label: source?.name || id,
     provider: providerForAdapter(id, adapter),
@@ -838,7 +930,8 @@ function modelsDevProviderToPreset(providerId, source) {
       : adapter === "sap-ai-core"
         ? sapAiCoreProviderOptionsFromSource(source)
         : undefined,
-    tokenEnv: tokenEnvForProvider(id, adapter, source?.env),
+    tokenEnv,
+    authType,
     models: source?.models && typeof source.models === "object" ? source.models : undefined,
     runtimeSupported,
   };
@@ -1565,7 +1658,8 @@ async function authLogin(providerName, opts = {}) {
   let name;
   let preset;
   ({ name, preset } = await canonicalAuthProvider(providerName, opts));
-  const token = readToken(opts, preset);
+  const token =
+    preset.authType === "none" ? NO_AUTH_ACCESS_TOKEN : readToken(opts, preset);
   if (!token) throw new Error("Token is empty");
 
   const providerAdapter = optionValue(opts, "provider-adapter", "providerAdapter") || preset.providerAdapter || preset.provider;
@@ -1600,6 +1694,7 @@ async function authLogin(providerName, opts = {}) {
     providerSource: preset.providerSource || "manual",
     providerDoc: preset.providerDoc,
     providerAuthEnv: preset.tokenEnv,
+    providerAuthType: preset.authType,
     providerOptions: preset.providerOptions,
     providerModels: preset.models,
     upstreamMode,
@@ -1951,7 +2046,8 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
       findSecretInObject(body) ||
       providerConfig.secrets.get(providerKey) ||
       envSecretForProvider(providerKey, preset) ||
-      credentialChainTokenForProvider(providerKey, preset);
+      credentialChainTokenForProvider(providerKey, preset) ||
+      (preset.authType === "none" ? NO_AUTH_ACCESS_TOKEN : undefined);
     if (!token) continue;
 
     const providerAdapter = preset.providerAdapter || preset.provider;
@@ -1970,6 +2066,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         providerSource: "opencode",
         providerDoc: preset.providerDoc,
         providerAuthEnv: preset.tokenEnv,
+        providerAuthType: preset.authType,
         providerOptions: preset.providerOptions,
         providerModels: preset.models,
         upstreamMode: preset.upstreamMode,
@@ -2009,6 +2106,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         providerSource: "opencode",
         providerDoc: preset.providerDoc,
         providerAuthEnv: preset.tokenEnv,
+        providerAuthType: preset.authType,
         providerOptions: preset.providerOptions,
         providerModels: preset.models,
         upstreamMode: preset.upstreamMode,
@@ -2035,7 +2133,8 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
     const providerId = preset.providerId || providerKey;
     const token =
       envSecretForProvider(providerId, preset) ||
-      credentialChainTokenForProvider(providerId, preset);
+      credentialChainTokenForProvider(providerId, preset) ||
+      (preset.authType === "none" ? NO_AUTH_ACCESS_TOKEN : undefined);
     if (!token) continue;
     const baseUrl = baseUrlForPreset(preset);
     const runtimeSupported = preset.runtimeSupported !== false && isRuntimeSupportedAdapter(providerAdapter);
@@ -2051,6 +2150,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         providerSource: "opencode",
         providerDoc: preset.providerDoc,
         providerAuthEnv: preset.tokenEnv,
+        providerAuthType: preset.authType,
         providerOptions: preset.providerOptions,
         providerModels: preset.models,
         upstreamMode: preset.upstreamMode,

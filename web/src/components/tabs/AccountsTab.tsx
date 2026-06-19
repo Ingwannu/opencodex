@@ -38,6 +38,7 @@ type EditAccountState = {
   id: string;
   provider: AccountProvider;
   providerAdapter?: string;
+  providerAuthType?: "oauth" | "api-key" | "none";
   upstreamMode: "" | "responses" | "chat/completions";
   email: string;
   accessToken: string;
@@ -70,7 +71,11 @@ function isOpenAiCompatibleProvider(provider: AccountProvider, entry?: ProviderR
 }
 
 function isManualTokenProvider(provider: AccountProvider, entry?: ProviderRegistryEntry) {
-  return !isOAuthProvider(provider, entry);
+  return !isOAuthProvider(provider, entry) && entry?.authType !== "none";
+}
+
+function isAuthlessProvider(entry?: ProviderRegistryEntry) {
+  return entry?.authType === "none";
 }
 
 function isEditOAuthProvider(account: EditAccountState) {
@@ -78,6 +83,10 @@ function isEditOAuthProvider(account: EditAccountState) {
     account.providerAdapter === "openai" ||
     (!account.providerAdapter && isOAuthProvider(account.provider))
   );
+}
+
+function isEditAuthlessProvider(account: EditAccountState) {
+  return account.providerAuthType === "none";
 }
 
 function accountProviderId(account: Account) {
@@ -308,7 +317,8 @@ export function AccountsTab(props: Props) {
       return;
     }
 
-    if (!manualAccessToken.trim()) return;
+    const authless = isAuthlessProvider(selectedProvider);
+    if (!authless && !manualAccessToken.trim()) return;
     if (isOpenAiCompatibleProvider(provider, selectedProvider) && !manualBaseUrl.trim()) return;
     setIsSubmitting(true);
     try {
@@ -323,8 +333,9 @@ export function AccountsTab(props: Props) {
         providerSource: selectedProvider?.providerSource ?? "manual",
         providerDoc: selectedProvider?.providerDoc,
         providerAuthEnv: selectedProvider?.tokenEnv,
+        providerAuthType: selectedProvider?.authType,
         email: manualEmail.trim() || undefined,
-        accessToken: manualAccessToken.trim(),
+        accessToken: authless ? undefined : manualAccessToken.trim(),
         refreshToken: manualRefreshToken.trim() || undefined,
         baseUrl:
           isOpenAiCompatibleProvider(provider, selectedProvider)
@@ -349,6 +360,7 @@ export function AccountsTab(props: Props) {
       id: account.id,
       provider: nextProvider,
       providerAdapter: account.providerAdapter ?? account.provider,
+      providerAuthType: account.providerAuthType,
       upstreamMode: account.upstreamMode ?? "",
       email: account.email ?? "",
       accessToken: account.accessToken ?? "",
@@ -405,7 +417,8 @@ export function AccountsTab(props: Props) {
       return;
     }
 
-    if (!editingAccount.accessToken.trim()) return;
+    const authless = isEditAuthlessProvider(editingAccount);
+    if (!authless && !editingAccount.accessToken.trim()) return;
     if (
       editingAccount.providerAdapter === "openai-compatible" &&
       !editingAccount.baseUrl.trim()
@@ -415,7 +428,7 @@ export function AccountsTab(props: Props) {
     try {
       await patch(editingAccount.id, {
         email: editingAccount.email.trim() || undefined,
-        accessToken: editingAccount.accessToken.trim(),
+        accessToken: authless ? undefined : editingAccount.accessToken.trim(),
         refreshToken: editingAccount.refreshToken.trim() || undefined,
         baseUrl:
           editingAccount.providerAdapter === "openai-compatible"
@@ -1009,7 +1022,12 @@ export function AccountsTab(props: Props) {
                   </option>
                 </select>
               </label>
-              {isManualTokenProvider(provider, selectedProvider) ? (
+              {isAuthlessProvider(selectedProvider) ? (
+                <div className="muted">
+                  This local provider does not require an API key. Requests are
+                  sent without an Authorization header.
+                </div>
+              ) : isManualTokenProvider(provider, selectedProvider) ? (
                 <>
                   <label>
                     API key
@@ -1059,7 +1077,8 @@ export function AccountsTab(props: Props) {
                   isSubmitting ||
                   (isOAuthProvider(provider, selectedProvider)
                     ? !manualEmail.trim()
-                    : !manualAccessToken.trim() ||
+                    : (!isAuthlessProvider(selectedProvider) &&
+                        !manualAccessToken.trim()) ||
                       (isOpenAiCompatibleProvider(provider, selectedProvider) &&
                         !manualBaseUrl.trim()))
                 }
@@ -1144,7 +1163,12 @@ export function AccountsTab(props: Props) {
                   </option>
                 </select>
               </label>
-              {!isEditOAuthProvider(editingAccount) ? (
+              {isEditAuthlessProvider(editingAccount) ? (
+                <div className="muted">
+                  This local provider does not require an API key. Requests are
+                  sent without an Authorization header.
+                </div>
+              ) : !isEditOAuthProvider(editingAccount) ? (
                 <>
                   <label>
                     API key
@@ -1218,7 +1242,8 @@ export function AccountsTab(props: Props) {
                   isSavingEdit ||
                   (isEditOAuthProvider(editingAccount)
                     ? !editingAccount.email.trim()
-                    : !editingAccount.accessToken.trim() ||
+                    : (!isEditAuthlessProvider(editingAccount) &&
+                        !editingAccount.accessToken.trim()) ||
                       (editingAccount.providerAdapter === "openai-compatible" &&
                         !editingAccount.baseUrl.trim()))
                 }

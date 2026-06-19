@@ -8,6 +8,7 @@ import path from "node:path";
 import test from "node:test";
 
 const root = path.resolve(import.meta.dirname, "..");
+const NO_AUTH_ACCESS_TOKEN = "__opencodex_no_auth__";
 
 function listen(server) {
   return new Promise((resolve, reject) => {
@@ -417,6 +418,80 @@ test("proxy preserves OpenAI-compatible base paths that already contain /v1", as
   } finally {
     await closeServer(upstream);
   }
+});
+
+test("proxy omits authorization for auth-free local OpenAI-compatible accounts", async () => {
+  let sawModels = false;
+  let sawChat = false;
+  const upstream = http.createServer(async (req, res) => {
+    assert.equal(req.headers.authorization, undefined);
+    if (req.method === "GET" && req.url === "/v1/models") {
+      sawModels = true;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "gpt-oss:20b" }] }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/chat/completions") {
+      sawChat = true;
+      await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl-ollama",
+          object: "chat.completion",
+          model: "gpt-oss:20b",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Ollama OK" },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "ollama-local",
+          provider: "openai-compatible",
+          providerId: "ollama",
+          providerAdapter: "openai-compatible",
+          providerAuthType: "none",
+          accessToken: NO_AUTH_ACCESS_TOKEN,
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const models = await fetch(`${baseUrl}/v1/models`);
+        assert.equal(models.status, 200);
+
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "gpt-oss:20b",
+            messages: [{ role: "user", content: "Hello" }],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.choices[0].message.content, "Ollama OK");
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+
+  assert.equal(sawModels, true);
+  assert.equal(sawChat, true);
 });
 
 test("proxy exposes configured OpenCode models when upstream model listing is unavailable", async () => {

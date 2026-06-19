@@ -5,7 +5,13 @@ import {
   vertexBaseUrlFromOptions,
 } from "./provider-registry.js";
 
-export type NativeProviderId = "anthropic" | "google" | "cohere" | "amazon-bedrock" | "vertex";
+export type NativeProviderId =
+  | "anthropic"
+  | "google"
+  | "cohere"
+  | "amazon-bedrock"
+  | "vertex"
+  | "vertex-anthropic";
 export type NativeProviderResponseShape = "chat.completions" | "responses";
 
 type NativeProviderRequest = {
@@ -29,7 +35,8 @@ export function isNativeProvider(provider: string): provider is NativeProviderId
     provider === "google" ||
     provider === "cohere" ||
     provider === "amazon-bedrock" ||
-    provider === "vertex"
+    provider === "vertex" ||
+    provider === "vertex-anthropic"
   );
 }
 
@@ -41,7 +48,7 @@ export function nativeProviderDefaultBaseUrl(
   if (provider === "amazon-bedrock") {
     return amazonBedrockBaseUrlFromOptions() ?? "https://bedrock-runtime.us-east-1.amazonaws.com";
   }
-  if (provider === "vertex") {
+  if (provider === "vertex" || provider === "vertex-anthropic") {
     return vertexBaseUrlFromOptions() ?? "https://aiplatform.googleapis.com";
   }
   return "https://generativelanguage.googleapis.com";
@@ -313,6 +320,19 @@ function vertexModelPath(model: string): string {
   return `/publishers/google/models/${encodeURIComponent(trimmed)}:generateContent`;
 }
 
+function vertexAnthropicModelPath(model: string): string {
+  const trimmed = model.trim();
+  const modelId = trimmed || "unknown";
+  return `/publishers/anthropic/models/${encodeURIComponent(modelId)}:rawPredict`;
+}
+
+function buildVertexAnthropicPayload(payload: Record<string, unknown>) {
+  const body = buildAnthropicPayload(payload);
+  delete body.model;
+  body.anthropic_version = "vertex-2023-10-16";
+  return body;
+}
+
 function buildCoherePayload(payload: Record<string, unknown>) {
   const messages = Array.isArray(payload.messages)
     ? (payload.messages as Array<Record<string, unknown>>)
@@ -444,6 +464,18 @@ export function buildNativeProviderRequest(
     };
   }
 
+  if (provider === "vertex-anthropic") {
+    return {
+      path: vertexAnthropicModelPath(String(payload.model ?? "")),
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        authorization: `Bearer ${account.accessToken}`,
+      },
+      body: buildVertexAnthropicPayload(payload),
+    };
+  }
+
   const model = encodeURIComponent(String(payload.model ?? ""));
   const key = encodeURIComponent(account.accessToken);
   return {
@@ -491,6 +523,15 @@ export function buildNativeProviderModelsRequest(
   if (provider === "vertex") {
     return {
       path: "/publishers/google/models",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${account.accessToken}`,
+      },
+    };
+  }
+  if (provider === "vertex-anthropic") {
+    return {
+      path: "/publishers/anthropic/models",
       headers: {
         accept: "application/json",
         authorization: `Bearer ${account.accessToken}`,
@@ -606,11 +647,11 @@ export function convertNativeProviderResponse(
   fallbackModel = "unknown",
 ) {
   const model =
-    provider === "anthropic"
+    provider === "anthropic" || provider === "vertex-anthropic"
       ? String(body.model ?? fallbackModel)
       : fallbackModel;
   const content =
-    provider === "anthropic"
+    provider === "anthropic" || provider === "vertex-anthropic"
       ? anthropicText(body)
       : provider === "cohere"
         ? cohereText(body)
@@ -618,7 +659,7 @@ export function convertNativeProviderResponse(
           ? bedrockText(body)
         : googleText(body);
   const finishReason =
-    provider === "anthropic"
+    provider === "anthropic" || provider === "vertex-anthropic"
       ? finishReasonFromAnthropic(body.stop_reason)
       : provider === "cohere"
         ? finishReasonFromCohere(body.finish_reason)
@@ -630,7 +671,7 @@ export function convertNativeProviderResponse(
             : undefined,
         );
   const usage =
-    provider === "anthropic"
+    provider === "anthropic" || provider === "vertex-anthropic"
       ? usageFromAnthropic(body.usage)
       : provider === "cohere"
         ? usageFromCohere(body.usage)
@@ -693,7 +734,7 @@ export function nativeProviderModelsFromResponse(
       .filter((entry) => entry.id);
   }
 
-  if (provider === "vertex") {
+  if (provider === "vertex" || provider === "vertex-anthropic") {
     const models = Array.isArray(body.publisherModels)
       ? body.publisherModels as Array<Record<string, unknown>>
       : Array.isArray(body.models)

@@ -177,6 +177,9 @@ OpenCodex can route providers that map to the current runtime adapters:
   `GOOGLE_VERTEX_PROJECT` / `GOOGLE_VERTEX_LOCATION` or equivalent OpenCode
   provider options are available, and a bearer access token is supplied through
   `GOOGLE_VERTEX_ACCESS_TOKEN`, `GOOGLE_ACCESS_TOKEN`, or provider config secret
+- Google Vertex Anthropic through the Vertex AI `rawPredict` REST API under
+  `publishers/anthropic` when Vertex project/location routing metadata and a
+  bearer access token are available
 - Cohere through the native v2 Chat API
 - Amazon Bedrock through the native Converse API when
   `AWS_BEARER_TOKEN_BEDROCK`/OpenCode API key credentials and either
@@ -198,7 +201,7 @@ OpenCodex can route providers that map to the current runtime adapters:
 
 Credentials for providers whose native API adapter is not implemented yet, such
 as Azure without resource routing metadata, Amazon Bedrock SigV4 access-key
-credentials without bearer-token support, Google Vertex Anthropic or Vertex ADC
+credentials without bearer-token support, Google Vertex ADC/service-account
 credential flows without a bearer token, GitLab, SAP AI Core, Cloudflare AI
 Gateway without account/gateway routing metadata, and other provider-specific
 SDK adapters, are imported and shown as auth-only disabled accounts. They are

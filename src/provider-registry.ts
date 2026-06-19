@@ -434,6 +434,7 @@ export function providerAdapterFromNpm(
   if (npm === "@ai-sdk/vercel") return "openai-compatible";
   if (npm === "@ai-sdk/azure") return "azure";
   if (npm === "@ai-sdk/amazon-bedrock") return "amazon-bedrock";
+  if (npm === "@ai-sdk/google-vertex/anthropic") return "vertex-anthropic";
   if (npm === "@ai-sdk/google-vertex") return "vertex";
   if (npm.includes("google-vertex")) return "unsupported";
   return "unsupported";
@@ -449,7 +450,8 @@ export function isRuntimeSupportedProvider(adapter: ProviderAdapter): adapter is
     adapter === "google" ||
     adapter === "cohere" ||
     adapter === "amazon-bedrock" ||
-    adapter === "vertex"
+    adapter === "vertex" ||
+    adapter === "vertex-anthropic"
   );
 }
 
@@ -461,7 +463,12 @@ function tokenEnvForProvider(
   if (providerId === "amazon-bedrock" || adapter === "amazon-bedrock") {
     return ["AWS_BEARER_TOKEN_BEDROCK"];
   }
-  if (providerId === "google-vertex" || adapter === "vertex") {
+  if (
+    providerId === "google-vertex" ||
+    providerId === "google-vertex-anthropic" ||
+    adapter === "vertex" ||
+    adapter === "vertex-anthropic"
+  ) {
     return ["GOOGLE_VERTEX_ACCESS_TOKEN", "GOOGLE_ACCESS_TOKEN"];
   }
   return Array.isArray(env)
@@ -493,7 +500,7 @@ export function providerRegistryEntryFromMetadata(
       ? amazonBedrockBaseUrlFromOptions(source.options)
       : undefined;
   const vertexBaseUrl =
-    id === "google-vertex"
+    id === "google-vertex" || id === "google-vertex-anthropic"
       ? vertexBaseUrlFromOptions(source.options)
       : undefined;
   const openAiCompatibleBaseUrl =
@@ -508,7 +515,7 @@ export function providerRegistryEntryFromMetadata(
       : providerAdapterFromNpm(id, source.npm);
   const runtimeSupported =
     isRuntimeSupportedProvider(adapter) &&
-    (adapter !== "vertex" || Boolean(vertexBaseUrl));
+    ((adapter !== "vertex" && adapter !== "vertex-anthropic") || Boolean(vertexBaseUrl));
   const baseUrl =
     adapter === "openai-compatible"
       ? normalizeOpenAiCompatibleBaseUrl(openAiCompatibleBaseUrl)
@@ -522,7 +529,7 @@ export function providerRegistryEntryFromMetadata(
                   ? "https://api.cohere.com"
                   : adapter === "amazon-bedrock"
                     ? bedrockBaseUrl
-                    : adapter === "vertex"
+                    : adapter === "vertex" || adapter === "vertex-anthropic"
                       ? vertexBaseUrl
                     : undefined),
         );

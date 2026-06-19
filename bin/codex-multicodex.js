@@ -324,13 +324,14 @@ function providerAdapterFromNpm(providerId, npmPackage) {
   if (npm === "@ai-sdk/vercel") return "openai-compatible";
   if (npm === "@ai-sdk/azure") return "azure";
   if (npm === "@ai-sdk/amazon-bedrock") return "amazon-bedrock";
+  if (npm === "@ai-sdk/google-vertex/anthropic") return "vertex-anthropic";
   if (npm === "@ai-sdk/google-vertex") return "vertex";
   if (npm.includes("google-vertex")) return "unsupported";
   return "unsupported";
 }
 
 function isRuntimeSupportedAdapter(adapter) {
-  return adapter === "openai" || adapter === "openai-compatible" || adapter === "mistral" || adapter === "zai" || adapter === "anthropic" || adapter === "google" || adapter === "cohere" || adapter === "amazon-bedrock" || adapter === "vertex";
+  return adapter === "openai" || adapter === "openai-compatible" || adapter === "mistral" || adapter === "zai" || adapter === "anthropic" || adapter === "google" || adapter === "cohere" || adapter === "amazon-bedrock" || adapter === "vertex" || adapter === "vertex-anthropic";
 }
 
 function providerForAdapter(providerId, adapter) {
@@ -341,7 +342,12 @@ function tokenEnvForProvider(providerId, adapter, env) {
   if (providerId === "amazon-bedrock" || adapter === "amazon-bedrock") {
     return ["AWS_BEARER_TOKEN_BEDROCK"];
   }
-  if (providerId === "google-vertex" || adapter === "vertex") {
+  if (
+    providerId === "google-vertex" ||
+    providerId === "google-vertex-anthropic" ||
+    adapter === "vertex" ||
+    adapter === "vertex-anthropic"
+  ) {
     return ["GOOGLE_VERTEX_ACCESS_TOKEN", "GOOGLE_ACCESS_TOKEN"];
   }
   return Array.isArray(env) ? env.filter((value) => typeof value === "string") : [];
@@ -360,7 +366,7 @@ function modelsDevProviderToPreset(providerId, source) {
       ? amazonBedrockBaseUrlFromOptions(source?.options)
       : undefined;
   const vertexBaseUrl =
-    id === "google-vertex"
+    id === "google-vertex" || id === "google-vertex-anthropic"
       ? vertexBaseUrlFromOptions(source?.options)
       : undefined;
   const openAiCompatibleBaseUrl =
@@ -372,10 +378,10 @@ function modelsDevProviderToPreset(providerId, source) {
       : providerAdapterFromNpm(id, source?.npm);
   const runtimeSupported =
     isRuntimeSupportedAdapter(adapter) &&
-    (adapter !== "vertex" || Boolean(vertexBaseUrl));
+    ((adapter !== "vertex" && adapter !== "vertex-anthropic") || Boolean(vertexBaseUrl));
   const baseUrl = adapter === "openai-compatible"
     ? normalizeOpenAiCompatibleBaseUrl(openAiCompatibleBaseUrl)
-    : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : adapter === "cohere" ? "https://api.cohere.com" : adapter === "amazon-bedrock" ? bedrockBaseUrl : adapter === "vertex" ? vertexBaseUrl : undefined));
+    : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : adapter === "cohere" ? "https://api.cohere.com" : adapter === "amazon-bedrock" ? bedrockBaseUrl : adapter === "vertex" || adapter === "vertex-anthropic" ? vertexBaseUrl : undefined));
   return {
     label: source?.name || id,
     provider: providerForAdapter(id, adapter),

@@ -200,6 +200,54 @@ test("Vertex adapter converts chat payloads and responses", () => {
   assert.equal(converted.usage.total_tokens, 9);
 });
 
+test("Vertex Anthropic adapter converts chat payloads and responses", () => {
+  const request = buildNativeProviderRequest(
+    "vertex-anthropic",
+    { accessToken: "vertex-ant-token" },
+    {
+      model: "claude-3-5-sonnet-v2@20241022",
+      messages: [
+        { role: "system", content: "Be concise." },
+        { role: "user", content: "Hello" },
+      ],
+      max_tokens: 64,
+      stream: true,
+    },
+    false,
+  );
+
+  assert.equal(
+    request.path,
+    "/publishers/anthropic/models/claude-3-5-sonnet-v2%4020241022:rawPredict",
+  );
+  assert.equal(request.headers.authorization, "Bearer vertex-ant-token");
+  assert.equal(request.body.anthropic_version, "vertex-2023-10-16");
+  assert.equal(request.body.model, undefined);
+  assert.equal(request.body.system, "Be concise.");
+  assert.equal(request.body.max_tokens, 64);
+  assert.equal(request.body.stream, false);
+  assert.deepEqual(request.body.messages, [
+    { role: "user", content: [{ type: "text", text: "Hello" }] },
+  ]);
+
+  const converted = convertNativeProviderResponse(
+    "vertex-anthropic",
+    {
+      id: "msg_vrtx_1",
+      role: "assistant",
+      content: [{ type: "text", text: "Hi Vertex Claude" }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 5, output_tokens: 2 },
+    },
+    "chat.completions",
+    "claude-3-5-sonnet-v2@20241022",
+  );
+
+  assert.equal(converted.object, "chat.completion");
+  assert.equal(converted.choices[0].message.content, "Hi Vertex Claude");
+  assert.equal(converted.usage.total_tokens, 7);
+});
+
 test("Cohere adapter converts chat payloads, responses, and model lists", () => {
   const request = buildNativeProviderRequest(
     "cohere",
@@ -320,7 +368,7 @@ test("Amazon Bedrock adapter converts chat payloads and responses", () => {
   assert.equal(converted.usage.total_tokens, 7);
 });
 
-test("OpenCode auth import enables native Anthropic, Google, Vertex, Cohere, and Bedrock adapters", async () => {
+test("OpenCode auth import enables native Anthropic, Google, Vertex, Vertex Anthropic, Cohere, and Bedrock adapters", async () => {
   const previousRegion = process.env.AWS_REGION;
   process.env.AWS_REGION = "us-east-1";
   const accounts = await accountsFromOpenCodeAuthPayload({
@@ -351,6 +399,17 @@ test("OpenCode auth import enables native Anthropic, Google, Vertex, Cohere, and
         "models": {
           "gemini-2.5-pro": { "name": "Gemini 2.5 Pro" }
         }
+      },
+      "google-vertex-anthropic": {
+        "npm": "@ai-sdk/google-vertex/anthropic",
+        "options": {
+          "project": "vertex-project",
+          "location": "us-east5",
+          "apiKey": "vertex-ant-token"
+        },
+        "models": {
+          "claude-3-5-sonnet-v2@20241022": { "name": "Claude 3.5 Sonnet v2" }
+        }
       }
     }
   }`);
@@ -375,6 +434,30 @@ test("OpenCode auth import enables native Anthropic, Google, Vertex, Cohere, and
     "GOOGLE_ACCESS_TOKEN",
   ]);
   assert.ok(vertex?.providerModels?.["gemini-2.5-pro"]);
+
+  const vertexAnthropicAccounts = await accountsFromOpenCodeAuthPayload(
+    { "google-vertex-anthropic": {} },
+    {
+      providerConfig: providerConfigFromOpenCodeConfigPayload(vertexPayload),
+      providerConfigSecrets: providerSecretsFromOpenCodeConfigPayload(vertexPayload),
+    },
+  );
+  const vertexAnthropic = vertexAnthropicAccounts.find(
+    (account) => account.providerId === "google-vertex-anthropic",
+  );
+  assert.equal(vertexAnthropic?.provider, "vertex-anthropic");
+  assert.equal(vertexAnthropic?.providerAdapter, "vertex-anthropic");
+  assert.equal(
+    vertexAnthropic?.baseUrl,
+    "https://us-east5-aiplatform.googleapis.com/v1/projects/vertex-project/locations/us-east5",
+  );
+  assert.equal(vertexAnthropic?.accessToken, "vertex-ant-token");
+  assert.equal(vertexAnthropic?.enabled, true);
+  assert.deepEqual(vertexAnthropic?.providerAuthEnv, [
+    "GOOGLE_VERTEX_ACCESS_TOKEN",
+    "GOOGLE_ACCESS_TOKEN",
+  ]);
+  assert.ok(vertexAnthropic?.providerModels?.["claude-3-5-sonnet-v2@20241022"]);
 
   assert.equal(byId.get("cohere")?.providerAdapter, "cohere");
   assert.equal(byId.get("cohere")?.baseUrl, "https://api.cohere.com");

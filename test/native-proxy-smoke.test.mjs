@@ -963,3 +963,77 @@ test("proxy routes Vertex chat completions through generateContent API", async (
     await closeServer(upstream);
   }
 });
+
+test("proxy routes Vertex Anthropic chat completions through rawPredict API", async () => {
+  let capturedRequest;
+  let capturedAuthorization;
+  const upstream = http.createServer(async (req, res) => {
+    if (
+      req.method === "POST" &&
+      req.url === "/v1/projects/test-project/locations/us-east5/publishers/anthropic/models/claude-3-5-sonnet-v2%4020241022:rawPredict"
+    ) {
+      capturedRequest = await readJson(req);
+      capturedAuthorization = req.headers.authorization;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "msg_vrtx_smoke",
+          role: "assistant",
+          content: [{ type: "text", text: "Vertex Claude OK" }],
+          stop_reason: "end_turn",
+          usage: { input_tokens: 5, output_tokens: 2 },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "vertex-anthropic-smoke",
+          provider: "vertex-anthropic",
+          providerId: "google-vertex-anthropic",
+          providerAdapter: "vertex-anthropic",
+          accessToken: "vertex-ant-smoke-token",
+          baseUrl: `http://127.0.0.1:${upstreamPort}/v1/projects/test-project/locations/us-east5`,
+          providerModels: {
+            "claude-3-5-sonnet-v2@20241022": {
+              id: "claude-3-5-sonnet-v2@20241022",
+              name: "Claude 3.5 Sonnet v2",
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "claude-3-5-sonnet-v2@20241022",
+            messages: [
+              { role: "system", content: "Be concise." },
+              { role: "user", content: "Hello" },
+            ],
+            max_tokens: 64,
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.choices[0].message.content, "Vertex Claude OK");
+        assert.equal(capturedAuthorization, "Bearer vertex-ant-smoke-token");
+        assert.equal(capturedRequest.anthropic_version, "vertex-2023-10-16");
+        assert.equal(capturedRequest.model, undefined);
+        assert.equal(capturedRequest.system, "Be concise.");
+        assert.equal(capturedRequest.messages[0].content[0].text, "Hello");
+        assert.equal(capturedRequest.max_tokens, 64);
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});

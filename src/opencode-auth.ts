@@ -158,8 +158,15 @@ function openCodeCredentialFields(value: unknown): OpenCodeCredentialFields {
       providerAuthType: "oauth",
     };
   }
-  if (source.type === "key") {
+  if (source.type === "key" || source.type === "api") {
     const accessToken = secretStringFromValue(source.key);
+    return {
+      ...(accessToken ? { accessToken } : {}),
+      providerAuthType: "api-key",
+    };
+  }
+  if (source.type === "wellknown") {
+    const accessToken = secretStringFromValue(source.token);
     return {
       ...(accessToken ? { accessToken } : {}),
       providerAuthType: "api-key",

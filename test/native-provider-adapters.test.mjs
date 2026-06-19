@@ -2206,6 +2206,41 @@ test("OpenCode config secrets create accounts without auth.json entries", async 
   assert.ok(byId.get("headergenie")?.providerModels?.["glm-5.2"]);
 });
 
+test("OpenCode auth import prefers WellKnown token over key", async () => {
+  const payload = parseOpenCodeConfigPayload(`{
+    "provider": {
+      "fhgenie": {
+        "npm": "@ai-sdk/openai-compatible",
+        "name": "FhGenie",
+        "options": {
+          "baseURL": "https://fhgenie.example/v1"
+        },
+        "models": {
+          "Kimi-K2-Thinking": { "name": "Kimi K2 Thinking" }
+        }
+      }
+    }
+  }`);
+  const providerConfig = providerConfigFromOpenCodeConfigPayload(payload);
+  const accounts = await accountsFromOpenCodeAuthPayload(
+    {
+      fhgenie: {
+        type: "wellknown",
+        key: "fhgenie",
+        token: "wellknown-secret-token",
+      },
+    },
+    { providerConfig },
+  );
+  const fhgenie = accounts.find((account) => account.providerId === "fhgenie");
+
+  assert.equal(fhgenie?.accessToken, "wellknown-secret-token");
+  assert.equal(fhgenie?.providerAuthType, "api-key");
+  assert.equal(fhgenie?.baseUrl, "https://fhgenie.example");
+  assert.equal(fhgenie?.enabled, true);
+  assert.ok(fhgenie?.providerModels?.["Kimi-K2-Thinking"]);
+});
+
 test("OpenCode config imports ordinary bundled OpenAI-compatible SDK packages", async () => {
   const payload = parseOpenCodeConfigPayload(`{
     "provider": {

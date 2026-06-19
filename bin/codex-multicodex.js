@@ -1900,8 +1900,15 @@ function openCodeCredentialFields(value) {
       providerAuthType: "oauth",
     };
   }
-  if (value.type === "key") {
+  if (value.type === "key" || value.type === "api") {
     const accessToken = secretStringFromValue(value.key);
+    return {
+      ...(accessToken ? { accessToken } : {}),
+      providerAuthType: "api-key",
+    };
+  }
+  if (value.type === "wellknown") {
+    const accessToken = secretStringFromValue(value.token);
     return {
       ...(accessToken ? { accessToken } : {}),
       providerAuthType: "api-key",

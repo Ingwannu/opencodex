@@ -737,6 +737,68 @@ test("imports OpenCode config provider secrets without auth.json entries", () =>
   assert.ok(byProviderId.get("headergenie")?.providerModels?.["glm-5.2"]);
 });
 
+test("imports OpenCode WellKnown auth tokens through the CLI", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-wellknown-auth-"));
+  const storePath = path.join(dir, "accounts.json");
+  const authPath = path.join(dir, "auth.json");
+  const configPath = path.join(dir, "opencode.jsonc");
+
+  fs.writeFileSync(
+    authPath,
+    JSON.stringify(
+      {
+        fhgenie: {
+          type: "wellknown",
+          key: "fhgenie",
+          token: "wellknown-secret-token",
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  fs.writeFileSync(
+    configPath,
+    `{
+      "provider": {
+        "fhgenie": {
+          "npm": "@ai-sdk/openai-compatible",
+          "name": "FhGenie",
+          "options": {
+            "baseURL": "https://fhgenie.example/v1"
+          },
+          "models": {
+            "Kimi-K2-Thinking": { "name": "Kimi K2 Thinking" }
+          }
+        }
+      }
+    }`,
+  );
+
+  execFileSync(
+    process.execPath,
+    [cli, "auth", "import-opencode", authPath, "--config", configPath],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        MULTICODEX_STORE_PATH: storePath,
+        MULTICODEX_DATA_DIR: dir,
+      },
+      encoding: "utf8",
+    },
+  );
+
+  const store = readStore(storePath);
+  const fhgenie = store.accounts.find((account) => account.providerId === "fhgenie");
+
+  assert.equal(fhgenie?.accessToken, "wellknown-secret-token");
+  assert.equal(fhgenie?.providerAuthType, "api-key");
+  assert.equal(fhgenie?.baseUrl, "https://fhgenie.example");
+  assert.equal(fhgenie?.enabled, true);
+  assert.ok(fhgenie?.providerModels?.["Kimi-K2-Thinking"]);
+});
+
 test("imports Cloudflare AI Gateway from OpenCode config and env variables", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-cloudflare-auth-"));
   const storePath = path.join(dir, "accounts.json");

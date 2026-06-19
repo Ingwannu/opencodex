@@ -3,6 +3,8 @@ web/node_modules
 dist
 web-dist
 .env
+.env*
+!.env.example
 web/*.tsbuildinfo
 data/accounts.json
 data/oauth-state.json

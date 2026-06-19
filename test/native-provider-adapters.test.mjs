@@ -208,12 +208,74 @@ test("Cohere adapter converts chat payloads, responses, and model lists", () => 
   ]);
 });
 
-test("OpenCode auth import enables native Anthropic, Google, and Cohere adapters", async () => {
+test("Amazon Bedrock adapter converts chat payloads and responses", () => {
+  const request = buildNativeProviderRequest(
+    "amazon-bedrock",
+    { accessToken: "bedrock-key" },
+    {
+      model: "anthropic.claude-3-haiku-20240307-v1:0",
+      messages: [
+        { role: "system", content: "Be concise." },
+        { role: "user", content: "Hello" },
+      ],
+      max_tokens: 64,
+      temperature: 0.2,
+      stream: true,
+    },
+    false,
+  );
+
+  assert.equal(
+    request.path,
+    "/model/anthropic.claude-3-haiku-20240307-v1%3A0/converse",
+  );
+  assert.equal(request.headers.authorization, "Bearer bedrock-key");
+  assert.deepEqual(request.body.system, [{ text: "Be concise." }]);
+  assert.deepEqual(request.body.messages, [
+    { role: "user", content: [{ text: "Hello" }] },
+  ]);
+  assert.deepEqual(request.body.inferenceConfig, {
+    maxTokens: 64,
+    temperature: 0.2,
+  });
+
+  const converted = convertNativeProviderResponse(
+    "amazon-bedrock",
+    {
+      output: {
+        message: {
+          role: "assistant",
+          content: [{ text: "Hi Bedrock" }],
+        },
+      },
+      stopReason: "end_turn",
+      usage: {
+        inputTokens: 5,
+        outputTokens: 2,
+        totalTokens: 7,
+      },
+    },
+    "chat.completions",
+    "anthropic.claude-3-haiku-20240307-v1:0",
+  );
+
+  assert.equal(converted.object, "chat.completion");
+  assert.equal(converted.choices[0].message.content, "Hi Bedrock");
+  assert.equal(converted.usage.total_tokens, 7);
+});
+
+test("OpenCode auth import enables native Anthropic, Google, Cohere, and Bedrock adapters", async () => {
+  const previousRegion = process.env.AWS_REGION;
+  process.env.AWS_REGION = "us-east-1";
   const accounts = await accountsFromOpenCodeAuthPayload({
     anthropic: { apiKey: "ant-key" },
     google: { apiKey: "gem-key" },
     cohere: { apiKey: "co-key" },
+    "amazon-bedrock": { apiKey: "bedrock-key" },
   });
+  if (previousRegion === undefined) delete process.env.AWS_REGION;
+  else process.env.AWS_REGION = previousRegion;
+
   const byId = new Map(accounts.map((account) => [account.providerId, account]));
 
   assert.equal(byId.get("anthropic")?.providerAdapter, "anthropic");
@@ -223,6 +285,15 @@ test("OpenCode auth import enables native Anthropic, Google, and Cohere adapters
   assert.equal(byId.get("cohere")?.providerAdapter, "cohere");
   assert.equal(byId.get("cohere")?.baseUrl, "https://api.cohere.com");
   assert.equal(byId.get("cohere")?.enabled, true);
+  assert.equal(byId.get("amazon-bedrock")?.providerAdapter, "amazon-bedrock");
+  assert.deepEqual(byId.get("amazon-bedrock")?.providerAuthEnv, [
+    "AWS_BEARER_TOKEN_BEDROCK",
+  ]);
+  assert.equal(
+    byId.get("amazon-bedrock")?.baseUrl,
+    "https://bedrock-runtime.us-east-1.amazonaws.com",
+  );
+  assert.equal(byId.get("amazon-bedrock")?.enabled, true);
 });
 
 test("OpenAI-compatible SDK providers are runtime-routable through the bridge", async () => {

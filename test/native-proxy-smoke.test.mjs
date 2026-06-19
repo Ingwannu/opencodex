@@ -790,3 +790,85 @@ test("proxy routes v0 through OpenAI-compatible chat completions", async () => {
     await closeServer(upstream);
   }
 });
+
+test("proxy routes Amazon Bedrock chat completions through Converse API", async () => {
+  let capturedRequest;
+  let capturedAuthorization;
+  const upstream = http.createServer(async (req, res) => {
+    if (
+      req.method === "POST" &&
+      req.url === "/model/anthropic.claude-3-haiku-20240307-v1%3A0/converse"
+    ) {
+      capturedRequest = await readJson(req);
+      capturedAuthorization = req.headers.authorization;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          output: {
+            message: {
+              role: "assistant",
+              content: [{ text: "Bedrock OK" }],
+            },
+          },
+          stopReason: "end_turn",
+          usage: {
+            inputTokens: 5,
+            outputTokens: 2,
+            totalTokens: 7,
+          },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "bedrock-smoke",
+          provider: "amazon-bedrock",
+          providerId: "amazon-bedrock",
+          providerAdapter: "amazon-bedrock",
+          accessToken: "bedrock-smoke-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          providerModels: {
+            "anthropic.claude-3-haiku-20240307-v1:0": {
+              id: "anthropic.claude-3-haiku-20240307-v1:0",
+              name: "Claude 3 Haiku",
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "anthropic.claude-3-haiku-20240307-v1:0",
+            messages: [
+              { role: "system", content: "Be concise." },
+              { role: "user", content: "Hello" },
+            ],
+            max_tokens: 64,
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200);
+        assert.equal(json.choices[0].message.content, "Bedrock OK");
+        assert.equal(capturedAuthorization, "Bearer bedrock-smoke-key");
+        assert.deepEqual(capturedRequest.system, [{ text: "Be concise." }]);
+        assert.equal(
+          capturedRequest.messages[0].content[0].text,
+          "Hello",
+        );
+        assert.equal(capturedRequest.inferenceConfig.maxTokens, 64);
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});

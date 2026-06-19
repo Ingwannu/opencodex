@@ -328,6 +328,27 @@ export function azureOpenAiBaseUrlFromOptions(
   return `https://${resourceName.trim()}.openai.azure.com/openai/v1`;
 }
 
+export function amazonBedrockBaseUrlFromOptions(
+  options: Record<string, unknown> | undefined = {},
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const explicit = firstStringValue(options, [
+    "baseURL",
+    "baseUrl",
+    "base_url",
+    "url",
+    "endpoint",
+  ]);
+  if (explicit && /^https?:\/\//.test(explicit)) return explicit;
+
+  const region =
+    firstStringValue(options, ["region", "awsRegion", "aws_region"]) ??
+    env.AWS_REGION ??
+    env.AWS_DEFAULT_REGION;
+  if (!region?.trim()) return undefined;
+  return `https://bedrock-runtime.${region.trim()}.amazonaws.com`;
+}
+
 let modelsDevCache:
   | { at: number; entries: Map<string, ProviderRegistryEntry> }
   | undefined;
@@ -392,8 +413,22 @@ export function isRuntimeSupportedProvider(adapter: ProviderAdapter): adapter is
     adapter === "zai" ||
     adapter === "anthropic" ||
     adapter === "google" ||
-    adapter === "cohere"
+    adapter === "cohere" ||
+    adapter === "amazon-bedrock"
   );
+}
+
+function tokenEnvForProvider(
+  providerId: string,
+  adapter: ProviderAdapter,
+  env: unknown,
+): string[] {
+  if (providerId === "amazon-bedrock" || adapter === "amazon-bedrock") {
+    return ["AWS_BEARER_TOKEN_BEDROCK"];
+  }
+  return Array.isArray(env)
+    ? env.filter((value): value is string => typeof value === "string")
+    : [];
 }
 
 function providerForAdapter(
@@ -415,6 +450,10 @@ export function providerRegistryEntryFromMetadata(
       ? cloudflareAiGatewayBaseUrlFromOptions(source.options)
       : undefined;
   const azureOpenAiBaseUrl = azureOpenAiBaseUrlFromOptions(id, source.options);
+  const bedrockBaseUrl =
+    id === "amazon-bedrock"
+      ? amazonBedrockBaseUrlFromOptions(source.options)
+      : undefined;
   const openAiCompatibleBaseUrl =
     source.api ??
     openAiCompatibleDefault?.baseUrl ??
@@ -437,7 +476,9 @@ export function providerRegistryEntryFromMetadata(
                 ? "https://generativelanguage.googleapis.com"
                 : adapter === "cohere"
                   ? "https://api.cohere.com"
-                : undefined),
+                  : adapter === "amazon-bedrock"
+                    ? bedrockBaseUrl
+                    : undefined),
         );
 
   return {
@@ -465,9 +506,7 @@ export function providerRegistryEntryFromMetadata(
           "chat-completions-bridge")
         )
         : undefined,
-    tokenEnv: Array.isArray(source.env)
-      ? source.env.filter((value): value is string => typeof value === "string")
-      : [],
+    tokenEnv: tokenEnvForProvider(id, adapter, source.env),
     authType: "api-key",
     runtimeSupported,
     models:

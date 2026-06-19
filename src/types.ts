@@ -5,11 +5,11 @@ export type RouteProviderId =
   | "zai"
   | "anthropic"
   | "google"
-  | "cohere";
+  | "cohere"
+  | "amazon-bedrock";
 export type ProviderAdapter =
   | RouteProviderId
   | "azure"
-  | "amazon-bedrock"
   | "vertex"
   | "unsupported";
 export type ProviderId = string;

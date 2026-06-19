@@ -280,6 +280,17 @@ function azureOpenAiBaseUrlFromOptions(providerId, options = {}, env = process.e
   return `https://${resourceName.trim()}.openai.azure.com/openai/v1`;
 }
 
+function amazonBedrockBaseUrlFromOptions(options = {}, env = process.env) {
+  const explicit = firstStringValue(options, ["baseURL", "baseUrl", "base_url", "url", "endpoint"]);
+  if (explicit && /^https?:\/\//.test(explicit)) return explicit;
+  const region =
+    firstStringValue(options, ["region", "awsRegion", "aws_region"]) ||
+    env.AWS_REGION ||
+    env.AWS_DEFAULT_REGION;
+  if (!region?.trim()) return undefined;
+  return `https://bedrock-runtime.${region.trim()}.amazonaws.com`;
+}
+
 function providerAdapterFromNpm(providerId, npmPackage) {
   const id = sanitizeProviderId(providerId);
   const npm = String(npmPackage || "").trim().toLowerCase();
@@ -301,11 +312,18 @@ function providerAdapterFromNpm(providerId, npmPackage) {
 }
 
 function isRuntimeSupportedAdapter(adapter) {
-  return adapter === "openai" || adapter === "openai-compatible" || adapter === "mistral" || adapter === "zai" || adapter === "anthropic" || adapter === "google" || adapter === "cohere";
+  return adapter === "openai" || adapter === "openai-compatible" || adapter === "mistral" || adapter === "zai" || adapter === "anthropic" || adapter === "google" || adapter === "cohere" || adapter === "amazon-bedrock";
 }
 
 function providerForAdapter(providerId, adapter) {
   return isRuntimeSupportedAdapter(adapter) ? adapter : sanitizeProviderId(providerId);
+}
+
+function tokenEnvForProvider(providerId, adapter, env) {
+  if (providerId === "amazon-bedrock" || adapter === "amazon-bedrock") {
+    return ["AWS_BEARER_TOKEN_BEDROCK"];
+  }
+  return Array.isArray(env) ? env.filter((value) => typeof value === "string") : [];
 }
 
 function modelsDevProviderToPreset(providerId, source) {
@@ -316,6 +334,10 @@ function modelsDevProviderToPreset(providerId, source) {
       ? cloudflareAiGatewayBaseUrlFromOptions(source?.options)
       : undefined;
   const azureOpenAiBaseUrl = azureOpenAiBaseUrlFromOptions(id, source?.options);
+  const bedrockBaseUrl =
+    id === "amazon-bedrock"
+      ? amazonBedrockBaseUrlFromOptions(source?.options)
+      : undefined;
   const openAiCompatibleBaseUrl =
     source?.api || openAiCompatibleDefault?.baseUrl || cloudflareAiGatewayBaseUrl || azureOpenAiBaseUrl;
   const adapter =
@@ -326,7 +348,7 @@ function modelsDevProviderToPreset(providerId, source) {
   const runtimeSupported = isRuntimeSupportedAdapter(adapter);
   const baseUrl = adapter === "openai-compatible"
     ? normalizeOpenAiCompatibleBaseUrl(openAiCompatibleBaseUrl)
-    : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : adapter === "cohere" ? "https://api.cohere.com" : undefined));
+    : normalizeBaseUrl(source?.api || (adapter === "anthropic" ? "https://api.anthropic.com" : adapter === "google" ? "https://generativelanguage.googleapis.com" : adapter === "cohere" ? "https://api.cohere.com" : adapter === "amazon-bedrock" ? bedrockBaseUrl : undefined));
   return {
     label: source?.name || id,
     provider: providerForAdapter(id, adapter),
@@ -339,7 +361,7 @@ function modelsDevProviderToPreset(providerId, source) {
     openAiPathPrefix: openAiCompatibleDefault?.openAiPathPrefix,
     upstreamMode: adapter === "openai-compatible" ? (azureOpenAiProviderIds.has(id) ? "responses" : (openAiCompatibleDefault?.upstreamMode || "chat/completions")) : undefined,
     compatibilityMode: adapter === "openai-compatible" ? (azureOpenAiProviderIds.has(id) ? "responses" : (openAiCompatibleDefault?.compatibilityMode || "chat-completions-bridge")) : undefined,
-    tokenEnv: Array.isArray(source?.env) ? source.env.filter((value) => typeof value === "string") : [],
+    tokenEnv: tokenEnvForProvider(id, adapter, source?.env),
     models: source?.models && typeof source.models === "object" ? source.models : undefined,
     runtimeSupported,
   };

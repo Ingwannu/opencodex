@@ -49,7 +49,8 @@ export function isRuntimeRoutableProvider(
     provider === "zai" ||
     provider === "anthropic" ||
     provider === "google" ||
-    provider === "cohere"
+    provider === "cohere" ||
+    provider === "amazon-bedrock"
   );
 }
 

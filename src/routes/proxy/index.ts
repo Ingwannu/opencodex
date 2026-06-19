@@ -341,7 +341,12 @@ function accountBaseUrl(
   }
   if (provider === "mistral") return mistralBaseUrl;
   if (provider === "zai") return zaiBaseUrl;
-  if (provider === "anthropic" || provider === "google" || provider === "cohere") {
+  if (
+    provider === "anthropic" ||
+    provider === "google" ||
+    provider === "cohere" ||
+    provider === "amazon-bedrock"
+  ) {
     return trimTrailingSlash(
       String(account.baseUrl ?? nativeProviderDefaultBaseUrl(provider)),
     );
@@ -363,7 +368,12 @@ function resolveUpstreamMode(
   if (isResponsesCompactPath) return "responses";
   if (account.upstreamMode) return account.upstreamMode;
   const provider = normalizeProvider(account);
-  if (provider === "anthropic" || provider === "google" || provider === "cohere") {
+  if (
+    provider === "anthropic" ||
+    provider === "google" ||
+    provider === "cohere" ||
+    provider === "amazon-bedrock"
+  ) {
     return "chat/completions";
   }
   if (provider === "openai-compatible") {

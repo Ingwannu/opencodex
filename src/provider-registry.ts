@@ -442,6 +442,43 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     tokenEnv: ["DASHSCOPE_API_KEY"],
   },
+  "alibaba-coding-plan": {
+    label: "Alibaba Coding Plan",
+    baseUrl: "https://coding-intl.dashscope.aliyuncs.com/v1",
+    tokenEnv: ["ALIBABA_CODING_PLAN_API_KEY"],
+  },
+  "alibaba-coding-plan-cn": {
+    label: "Alibaba Coding Plan (China)",
+    baseUrl: "https://coding.dashscope.aliyuncs.com/v1",
+    tokenEnv: ["ALIBABA_CODING_PLAN_API_KEY"],
+  },
+  "alibaba-token-plan": {
+    label: "Alibaba Token Plan",
+    baseUrl:
+      "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+    tokenEnv: ["ALIBABA_TOKEN_PLAN_API_KEY"],
+  },
+  "alibaba-token-plan-cn": {
+    label: "Alibaba Token Plan (China)",
+    baseUrl:
+      "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+    tokenEnv: ["ALIBABA_TOKEN_PLAN_API_KEY"],
+  },
+  baseten: {
+    label: "Baseten",
+    baseUrl: "https://inference.baseten.co/v1",
+    tokenEnv: ["BASETEN_API_KEY"],
+  },
+  chutes: {
+    label: "Chutes",
+    baseUrl: "https://llm.chutes.ai/v1",
+    tokenEnv: ["CHUTES_API_KEY"],
+  },
+  clarifai: {
+    label: "Clarifai",
+    baseUrl: "https://api.clarifai.com/v2/ext/openai/v1",
+    tokenEnv: ["CLARIFAI_PAT"],
+  },
   cortecs: {
     label: "Cortecs",
     baseUrl: "https://api.cortecs.ai/v1",
@@ -452,10 +489,25 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     baseUrl: "https://api.deepseek.com",
     tokenEnv: ["DEEPSEEK_API_KEY"],
   },
+  digitalocean: {
+    label: "DigitalOcean",
+    baseUrl: "https://inference.do-ai.run/v1",
+    tokenEnv: ["DIGITALOCEAN_ACCESS_TOKEN"],
+  },
   "fireworks-ai": {
     label: "Fireworks AI",
     baseUrl: "https://api.fireworks.ai/inference/v1/",
     tokenEnv: ["FIREWORKS_API_KEY"],
+  },
+  friendli: {
+    label: "Friendli",
+    baseUrl: "https://api.friendli.ai/serverless/v1",
+    tokenEnv: ["FRIENDLI_TOKEN"],
+  },
+  gmicloud: {
+    label: "GMI Cloud",
+    baseUrl: "https://api.gmi-serving.com/v1",
+    tokenEnv: ["GMICLOUD_API_KEY"],
   },
   "github-copilot": {
     label: "GitHub Copilot",
@@ -481,6 +533,16 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     label: "IO.NET",
     baseUrl: "https://api.intelligence.io.solutions/api/v1",
     tokenEnv: ["IOINTELLIGENCE_API_KEY"],
+  },
+  inception: {
+    label: "Inception",
+    baseUrl: "https://api.inceptionlabs.ai/v1/",
+    tokenEnv: ["INCEPTION_API_KEY"],
+  },
+  inference: {
+    label: "Inference",
+    baseUrl: "https://inference.net/v1",
+    tokenEnv: ["INFERENCE_API_KEY"],
   },
   llmgateway: {
     label: "LLM Gateway",
@@ -542,15 +604,40 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     baseUrl: "https://openrouter.ai/api/v1",
     tokenEnv: ["OPENROUTER_API_KEY"],
   },
+  "novita-ai": {
+    label: "NovitaAI",
+    baseUrl: "https://api.novita.ai/openai",
+    tokenEnv: ["NOVITA_API_KEY"],
+  },
   ovhcloud: {
     label: "OVHcloud AI Endpoints",
     baseUrl: "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
     tokenEnv: ["OVHCLOUD_API_KEY"],
   },
+  poe: {
+    label: "Poe",
+    baseUrl: "https://api.poe.com/v1",
+    tokenEnv: ["POE_API_KEY"],
+  },
+  poolside: {
+    label: "Poolside",
+    baseUrl: "https://inference.poolside.ai/v1",
+    tokenEnv: ["POOLSIDE_API_KEY"],
+  },
+  "qiniu-ai": {
+    label: "Qiniu",
+    baseUrl: "https://api.qnaigc.com/v1",
+    tokenEnv: ["QINIU_API_KEY"],
+  },
   requesty: {
     label: "Requesty",
     baseUrl: "https://router.requesty.ai/v1",
     tokenEnv: ["REQUESTY_API_KEY"],
+  },
+  sarvam: {
+    label: "Sarvam AI",
+    baseUrl: "https://api.sarvam.ai/v1",
+    tokenEnv: ["SARVAM_API_KEY"],
   },
   scaleway: {
     label: "Scaleway",
@@ -572,10 +659,25 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     baseUrl: "https://api.openai-compat.model-serving.eu01.onstackit.cloud/v1",
     tokenEnv: ["STACKIT_API_KEY"],
   },
+  "tencent-tokenhub": {
+    label: "Tencent TokenHub",
+    baseUrl: "https://tokenhub.tencentmaas.com/v1",
+    tokenEnv: ["TENCENT_TOKENHUB_API_KEY"],
+  },
   upstage: {
     label: "Upstage",
     baseUrl: "https://api.upstage.ai/v1/solar",
     tokenEnv: ["UPSTAGE_API_KEY"],
+  },
+  vultr: {
+    label: "Vultr",
+    baseUrl: "https://api.vultrinference.com/v1",
+    tokenEnv: ["VULTR_API_KEY"],
+  },
+  wandb: {
+    label: "Weights & Biases",
+    baseUrl: "https://api.inference.wandb.ai/v1",
+    tokenEnv: ["WANDB_API_KEY"],
   },
   xiaomi: {
     label: "Xiaomi",
@@ -605,6 +707,11 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
   "zhipuai-coding-plan": {
     label: "Zhipu AI Coding Plan",
     baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4",
+    tokenEnv: ["ZHIPU_API_KEY"],
+  },
+  "zai-coding-plan": {
+    label: "Z.AI Coding Plan",
+    baseUrl: "https://api.z.ai/api/coding/paas/v4",
     tokenEnv: ["ZHIPU_API_KEY"],
   },
   xai: { baseUrl: "https://api.x.ai" },

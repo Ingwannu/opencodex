@@ -1771,7 +1771,7 @@ function findSecretInObject(value, seen = new Set()) {
   const wholeServiceKey = secretStringFromValue(value);
   if (wholeServiceKey) return wholeServiceKey;
 
-  const directKeys = ["apiKey", "apikey", "api_key", "serviceKey", "service_key", "aicoreServiceKey", "aicore_service_key", "key", "token", "accessToken", "access_token", "bearer", "value"];
+  const directKeys = ["apiKey", "apikey", "api_key", "serviceKey", "service_key", "aicoreServiceKey", "aicore_service_key", "key", "token", "access", "accessToken", "access_token", "bearer", "value"];
   for (const key of directKeys) {
     const found = value[key];
     const secret = secretStringFromValue(found);
@@ -1784,6 +1784,72 @@ function findSecretInObject(value, seen = new Set()) {
   }
 
   return undefined;
+}
+
+function nonNegativeNumber(value) {
+  const number =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number(value.trim())
+        : NaN;
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+function openCodeCredentialFields(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  if (value.type === "oauth") {
+    const accessToken = secretStringFromValue(value.access);
+    const expiresAt = nonNegativeNumber(value.expires);
+    return {
+      ...(accessToken ? { accessToken } : {}),
+      ...(typeof value.refresh === "string" && value.refresh.trim() ? { refreshToken: value.refresh.trim() } : {}),
+      ...(expiresAt !== undefined ? { expiresAt } : {}),
+      providerAuthType: "oauth",
+    };
+  }
+  if (value.type === "key") {
+    const accessToken = secretStringFromValue(value.key);
+    return {
+      ...(accessToken ? { accessToken } : {}),
+      providerAuthType: "api-key",
+    };
+  }
+  return {};
+}
+
+function trimmedString(value) {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function storedCredentialEntry(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const name = trimmedString(value.integrationID) || trimmedString(value.integration_id);
+  if (!name) return undefined;
+  const body = value.value;
+  if (!body || typeof body !== "object" || Array.isArray(body)) return undefined;
+  const label = trimmedString(value.label);
+  const credentialId = trimmedString(value.id);
+  return {
+    name,
+    body,
+    ...(label ? { label } : {}),
+    ...(credentialId ? { credentialId } : {}),
+  };
+}
+
+function entriesFromOpenCodeAuthPayload(payload) {
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    return Object.entries(payload)
+      .filter(([key]) => key !== "$schema")
+      .map(([name, body]) => ({ name, body }));
+  }
+  if (Array.isArray(payload)) {
+    return payload.map((entry, index) => storedCredentialEntry(entry) || { name: String(index), body: entry });
+  }
+  return [];
 }
 
 function findSecretInHeaders(value) {
@@ -2022,16 +2088,12 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
   if (!fs.existsSync(filePath)) throw new Error(`OpenCode auth file not found: ${filePath}`);
   const payload = JSON.parse(fs.readFileSync(filePath, "utf8"));
   const providerConfig = readOpenCodeProviderConfig(opts);
-  const entries =
-    payload && typeof payload === "object" && !Array.isArray(payload)
-      ? Object.entries(payload)
-      : Array.isArray(payload)
-        ? payload.map((entry, index) => [String(index), entry])
-        : [];
+  const entries = entriesFromOpenCodeAuthPayload(payload);
   let imported = 0;
   const seenProviderIds = new Set();
 
-  for (const [name, body] of entries) {
+  for (const entry of entries) {
+    const { name, body } = entry;
     const providerKey = sanitizeProviderId(name);
     seenProviderIds.add(providerKey);
     const detectedBaseUrl = findBaseUrlInObject(body);
@@ -2042,7 +2104,9 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
           "base-url": detectedBaseUrl,
         });
     const { name: presetName, preset } = resolved;
+    const credential = openCodeCredentialFields(body);
     const token =
+      credential.accessToken ||
       findSecretInObject(body) ||
       providerConfig.secrets.get(providerKey) ||
       envSecretForProvider(providerKey, preset) ||
@@ -2054,7 +2118,8 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
     const baseUrl = baseUrlForPreset(preset, detectedBaseUrl);
     const providerId = preset.providerId || presetName;
     const runtimeSupported = preset.runtimeSupported !== false && isRuntimeSupportedAdapter(providerAdapter);
-    const id = `${sanitizeProviderId(providerId)}-${sanitizeProviderId(name) || randomUUID().slice(0, 8)}`;
+    const accountSuffix = sanitizeProviderId(entry.label || entry.credentialId || name) || randomUUID().slice(0, 8);
+    const id = `${sanitizeProviderId(providerId)}-${accountSuffix}`;
     upsertAccount(
       {
         id,
@@ -2066,7 +2131,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         providerSource: "opencode",
         providerDoc: preset.providerDoc,
         providerAuthEnv: preset.tokenEnv,
-        providerAuthType: preset.authType,
+        providerAuthType: credential.providerAuthType || preset.authType,
         providerOptions: preset.providerOptions,
         providerModels: preset.models,
         upstreamMode: preset.upstreamMode,
@@ -2074,6 +2139,8 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         openAiPathPrefix: preset.openAiPathPrefix,
         email: id,
         accessToken: token,
+        refreshToken: credential.refreshToken,
+        expiresAt: credential.expiresAt,
         baseUrl,
         enabled: runtimeSupported,
         priority: 0,

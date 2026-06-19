@@ -155,6 +155,79 @@ test("imports custom OpenCode provider metadata from opencode config", () => {
   assert.ok(haimaker?.providerModels?.["z-ai/glm-4.6"]);
 });
 
+test("imports OpenCode stored credential records through the CLI", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-stored-auth-"));
+  const storePath = path.join(dir, "accounts.json");
+  const authPath = path.join(dir, "auth.json");
+  const configPath = path.join(dir, "opencode.jsonc");
+
+  fs.writeFileSync(
+    authPath,
+    JSON.stringify(
+      [
+        {
+          id: "cred_work",
+          integrationID: "gitlab",
+          label: "Work",
+          value: {
+            type: "oauth",
+            methodID: "oauth",
+            access: "stored-oauth-access",
+            refresh: "stored-oauth-refresh",
+            expires: 9999999999999,
+          },
+        },
+      ],
+      null,
+      2,
+    ),
+  );
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify(
+      {
+        provider: {
+          gitlab: {
+            npm: "gitlab-ai-provider",
+            options: {
+              baseURL: "https://gitlab.com",
+            },
+            models: {
+              "duo-chat-sonnet-4-5": { name: "Duo Chat Sonnet 4.5" },
+            },
+          },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  execFileSync(
+    process.execPath,
+    [cli, "auth", "import-opencode", authPath, "--config", configPath],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        MULTICODEX_STORE_PATH: storePath,
+        MULTICODEX_DATA_DIR: dir,
+      },
+      encoding: "utf8",
+    },
+  );
+
+  const store = fs.existsSync(storePath) ? readStore(storePath) : { accounts: [] };
+  const gitlab = store.accounts.find((account) => account.providerId === "gitlab");
+
+  assert.equal(gitlab?.id, "gitlab-work");
+  assert.equal(gitlab?.accessToken, "stored-oauth-access");
+  assert.equal(gitlab?.refreshToken, "stored-oauth-refresh");
+  assert.equal(gitlab?.expiresAt, 9999999999999);
+  assert.equal(gitlab?.providerAuthType, "oauth");
+  assert.ok(gitlab?.providerModels?.["duo-chat-sonnet-4-5"]);
+});
+
 test("imports OpenCode config provider secrets without auth.json entries", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-config-secret-"));
   const storePath = path.join(dir, "accounts.json");

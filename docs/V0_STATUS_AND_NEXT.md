@@ -6,7 +6,9 @@ full OpenCode provider parity.
 ## v0.2.2 shipped surface
 
 - One Codex launcher/proxy surface for OpenAI, local, and OpenAI-compatible
-  providers.
+  providers, with `codex` as the safe default launcher, `codex-multi` as the
+  strict proxy launcher, `codex-oai` as the OpenAI-only launcher, and `codex-oss`
+  as the local OSS/Ollama launcher.
 - Web account management for adding, editing, enabling, disabling, deleting,
   and importing provider accounts.
 - OpenCode `auth.json`, current credential records, pasted auth/config content,
@@ -44,6 +46,8 @@ full OpenCode provider parity.
 - DigitalOcean cached router import fixtures for both CLI and web/admin import
   paths.
 - OpenCode model `options.topK` / `top_k` request-default fixture.
+- Launcher regression coverage that proves the default `codex` wrapper falls
+  back to the real Codex CLI when the MultiCodex proxy cannot start.
 
 ## Known gaps
 
@@ -59,6 +63,8 @@ full OpenCode provider parity.
   thinking flags/config, chat template args, and gateway caching hints.
 - The unscoped `opencodex` npm package name is blocked by npm's similarity
   policy, so the npm package is published as `@ingwannu/opencodex`.
+- Real npm publishing is currently blocked until npm auth is refreshed; the
+  latest published registry version observed locally is still `0.2.5`.
 
 ## Next update order
 

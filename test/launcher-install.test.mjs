@@ -126,3 +126,43 @@ exec "$REAL" "$@"
   assert.match(rewritten, new RegExp(`MULTICODEX_ROOT:-${root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.doesNotMatch(rewritten, new RegExp(staleRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
+
+test("default codex launcher falls back to the real Codex binary when proxy startup fails", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-launcher-fallback-"));
+  const home = path.join(dir, "home");
+  const binDir = path.join(home, ".local", "bin");
+  const fakeBin = path.join(dir, "real-bin");
+  const markerPath = path.join(dir, "fake-codex-calls.log");
+  const fakeCodex = path.join(fakeBin, "codex");
+  writeFakeCodex(fakeCodex, markerPath);
+
+  const env = {
+    ...process.env,
+    HOME: home,
+    CODEX_HOME: path.join(home, ".codex"),
+    CODEX_MULTICODEX_BIN_DIR: binDir,
+    MULTICODEX_PORT: String(20000 + Math.floor(Math.random() * 1000)),
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+  };
+
+  execFileSync(process.execPath, [cli, "install"], {
+    cwd: root,
+    env,
+    encoding: "utf8",
+  });
+
+  const output = execFileSync(path.join(binDir, "codex"), ["hello"], {
+    cwd: root,
+    env: {
+      ...env,
+      MULTICODEX_ROOT: path.join(dir, "missing-proxy-root"),
+      MULTICODEX_PORT: String(21000 + Math.floor(Math.random() * 1000)),
+      PATH: `${binDir}${path.delimiter}${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+    },
+    encoding: "utf8",
+  });
+
+  assert.match(output, /fake-codex hello/);
+  const calls = fs.readFileSync(markerPath, "utf8");
+  assert.match(calls, /hello/);
+});

@@ -2937,6 +2937,16 @@ ensure_multicodex() {
     return 0
   fi
 
+  if [[ ! -f "$ROOT/dist/server.js" ]]; then
+    echo "MultiCodex proxy server not found under $ROOT" >&2
+    return 1
+  fi
+
+  if ! command -v node >/dev/null 2>&1; then
+    echo "MultiCodex proxy requires node on PATH" >&2
+    return 1
+  fi
+
   export PORT
   export STORE_PATH="\${MULTICODEX_STORE_PATH:-$DATA_DIR/accounts.json}"
   export OAUTH_STATE_PATH="\${MULTICODEX_OAUTH_STATE_PATH:-$DATA_DIR/oauth-state.json}"
@@ -2946,9 +2956,9 @@ ensure_multicodex() {
 
   mkdir -p "$DATA_DIR"
   if command -v setsid >/dev/null 2>&1; then
-    (cd "$ROOT" && setsid -f node dist/server.js >>"$DATA_DIR/server.log" 2>&1)
+    (cd "$ROOT" && setsid -f node dist/server.js >>"$DATA_DIR/server.log" 2>&1) || return 1
   else
-    (cd "$ROOT" && nohup node dist/server.js >>"$DATA_DIR/server.log" 2>&1 &)
+    (cd "$ROOT" && nohup node dist/server.js >>"$DATA_DIR/server.log" 2>&1 &) || return 1
   fi
 
   for _ in {1..40}; do
@@ -3125,13 +3135,16 @@ for arg in "$@"; do
 done
 
 if [[ "$inject" == 1 ]]; then
-  ensure_multicodex
+  if ensure_multicodex; then
 
-  if [[ "$#" -eq 0 && -t 0 && -t 1 && "\${CODEX_MODEL_PICKER:-0}" == "1" ]]; then
-    exec "$REAL" --profile multicodex -m "$(pick_multicodex_model)"
+    if [[ "$#" -eq 0 && -t 0 && -t 1 && "\${CODEX_MODEL_PICKER:-0}" == "1" ]]; then
+      exec "$REAL" --profile multicodex -m "$(pick_multicodex_model)"
+    fi
+
+    exec "$REAL" --profile multicodex "$@"
   fi
 
-  exec "$REAL" --profile multicodex "$@"
+  echo "MultiCodex proxy unavailable; launching Codex without MultiCodex profile." >&2
 fi
 
 exec "$REAL" "$@"

@@ -20,8 +20,10 @@ opencodex doctor
 Installed commands:
 
 - `codex`: default launcher that injects the MultiCodex profile unless you pass
-  an explicit profile/provider/local mode.
-- `codex-multi`: always uses the MultiCodex proxy profile.
+  an explicit profile/provider/local mode. If the proxy cannot start, it prints
+  a warning and opens the real Codex CLI without the MultiCodex profile.
+- `codex-multi`: always uses the MultiCodex proxy profile and fails loudly when
+  the proxy cannot start.
 - `codex-oai`: uses the normal OpenAI Codex profile.
 - `codex-oss`: uses Codex `--oss` with Ollama by default.
 - `opencodex`: setup, auth, sync, update, uninstall, and doctor CLI.
@@ -40,6 +42,32 @@ Manage models, API keys, and auth in either surface:
   OpenCode auth/config.
 - CLI: use `opencodex auth providers`, `opencodex auth login ...`,
   `opencodex auth oauth-start`, and `opencodex auth import-opencode`.
+
+Typical account commands:
+
+```bash
+# See supported provider IDs, base URLs, and expected env names.
+opencodex auth providers
+
+# Add an API-key provider without storing the key in the account file.
+opencodex auth login deepseek --id deepseek --token-env DEEPSEEK_API_KEY
+
+# Add a custom OpenAI-compatible provider.
+opencodex auth login openai-compatible --id custom --base-url https://api.example.com/v1 --token-env CUSTOM_API_KEY
+
+# Add an auth-free local server such as Ollama.
+opencodex auth login openai-compatible --id ollama --base-url http://127.0.0.1:11434/v1 --token none
+
+# Start/complete OpenAI ChatGPT OAuth.
+opencodex auth oauth-start --email you@example.com
+opencodex auth oauth-complete --flow-id <flowId> --input <redirect-url-or-code>
+
+# Import OpenCode auth/config files.
+opencodex auth import-opencode ~/.local/share/opencode/auth.json --config ./opencode.jsonc
+
+# Refresh Codex /model catalogs after account changes.
+opencodex sync
+```
 
 If the real Codex binary is not in the default standalone location, OpenCodex
 auto-detects the existing `codex` on `PATH` during install. You can pin it with

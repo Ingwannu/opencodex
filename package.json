@@ -1,6 +1,6 @@
 {
   "name": "@ingwannu/opencodex",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "OpenCodex multi-provider proxy and launcher integration for OpenAI Codex CLI.",
   "type": "module",
   "homepage": "https://github.com/Ingwannu/opencodex#readme",

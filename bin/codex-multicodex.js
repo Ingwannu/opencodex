@@ -31,15 +31,17 @@ const FAST_SERVICE_TIER = "priority";
 const CODEX_FAST_CONFIG_TIER = "fast";
 const MANIFEST_PATH = path.join(MANAGED_DIR, "manifest.json");
 const BIN_DIR = process.env.CODEX_MULTICODEX_BIN_DIR || path.join(HOME, ".local", "bin");
-const WRAPPER_PATHS = {
-  codex: path.join(BIN_DIR, "codex"),
-  opencodex: path.join(BIN_DIR, "opencodex"),
-  "codex-multicodex": path.join(BIN_DIR, "codex-multicodex"),
-  "codex-multi": path.join(BIN_DIR, "codex-multi"),
-  "codex-oai": path.join(BIN_DIR, "codex-oai"),
-  "codex-oss": path.join(BIN_DIR, "codex-oss"),
-};
+const LAUNCHER_PLATFORM = process.env.CODEX_MULTICODEX_PLATFORM || process.platform;
+const IS_WINDOWS_LAUNCHER = LAUNCHER_PLATFORM === "win32";
+const WRAPPER_COMMANDS = ["codex", "opencodex", "codex-multicodex", "codex-multi", "codex-oai", "codex-oss"];
+const WRAPPER_PATHS = Object.fromEntries(
+  WRAPPER_COMMANDS.map((name) => [name, path.join(BIN_DIR, IS_WINDOWS_LAUNCHER ? `${name}.cmd` : name)]),
+);
+const LEGACY_WINDOWS_WRAPPER_PATHS = IS_WINDOWS_LAUNCHER
+  ? Object.fromEntries(WRAPPER_COMMANDS.map((name) => [name, path.join(BIN_DIR, name)]))
+  : {};
 const SHIM_MARKER = "codex-multicodex managed shim v1";
+const CMD_SHIM_MARKER = "__opencodex-launcher";
 
 function isExecutable(filePath) {
   try {
@@ -56,9 +58,12 @@ function pathEntries() {
 
 function findOnPath(command, exclude = new Set()) {
   for (const dir of pathEntries()) {
-    const candidate = path.resolve(dir, command);
-    if (exclude.has(candidate)) continue;
-    if (isExecutable(candidate)) return candidate;
+    const candidates = IS_WINDOWS_LAUNCHER ? [`${command}.cmd`, `${command}.exe`, command] : [command];
+    for (const entry of candidates) {
+      const candidate = path.resolve(dir, entry);
+      if (exclude.has(candidate)) continue;
+      if (isExecutable(candidate)) return candidate;
+    }
   }
   return undefined;
 }
@@ -74,7 +79,9 @@ function resolveCodexBin() {
 
   if (isExecutable(DEFAULT_CODEX_BIN)) return DEFAULT_CODEX_BIN;
 
-  const managedWrappers = new Set(Object.values(WRAPPER_PATHS).map((entry) => path.resolve(entry)));
+  const managedWrappers = new Set(
+    [...Object.values(WRAPPER_PATHS), ...Object.values(LEGACY_WINDOWS_WRAPPER_PATHS)].map((entry) => path.resolve(entry)),
+  );
   return findOnPath("codex", managedWrappers) || "codex";
 }
 
@@ -1581,6 +1588,10 @@ function shellDefault(value) {
   return String(value).replace(/(["\\$`])/g, "\\$1");
 }
 
+function cmdDefault(value) {
+  return String(value).replace(/"/g, '""');
+}
+
 async function canonicalAuthProvider(name, opts = {}) {
   const raw = String(name || "").trim().toLowerCase();
   const canonical = authProviderAliases[raw] || raw;
@@ -2954,6 +2965,8 @@ async function auth(argv) {
 }
 
 function launcherScript(command) {
+  if (IS_WINDOWS_LAUNCHER) return windowsLauncherScript(command);
+
   const root = shellDefault(ROOT);
   const real = shellDefault(resolveCodexBin());
   const dataDir = shellDefault(DATA_DIR);
@@ -3069,6 +3082,33 @@ ensure_multicodex() {
   echo "MultiCodex proxy did not start at \${BASE}" >&2
   return 1
 }
+
+has_profile_arg() {
+  local expect=""
+  for arg in "$@"; do
+    if [[ "$expect" == "profile" ]]; then
+      return 0
+    fi
+    case "$arg" in
+      --profile)
+        expect="profile"
+        ;;
+      --profile=*)
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
+
+should_bypass_profile() {
+  case "\${1:-}" in
+    --version|-V|version|login|logout)
+      return 0
+      ;;
+  esac
+  return 1
+}
 `;
 
   if (command === "codex-oai") {
@@ -3116,46 +3156,32 @@ exec "$REAL" "\${args[@]}" "$@"
   if (command === "codex-multi") {
     return `${common}
 ensure_multicodex
+if has_profile_arg "$@" || should_bypass_profile "\${1:-}"; then
+  exec "$REAL" "$@"
+fi
 exec "$REAL" --profile multicodex "$@"
 `;
   }
 
-  return `#!/usr/bin/env bash
-${marker}
-set -euo pipefail
-${realResolver}
-
-has_profile=0
-expect=""
-
-for arg in "$@"; do
-  if [[ "$expect" == "profile" ]]; then
-    has_profile=1
-    expect=""
-    continue
-  fi
-  case "$arg" in
-    -p|--profile)
-      expect="profile"
-      ;;
-    --profile=*)
-      has_profile=1
-      ;;
-  esac
-done
-
-case "\${1:-}" in
-  --help|-h|--version|-V|app-server|debug|mcp|mcp-server|login|logout|auth|completion|apply|sandbox|proto|features|cloud|remote-control|exec-server|plugin|doctor|update|archive|delete|unarchive|fork)
-    exec "$REAL" "$@"
-    ;;
-esac
-
-if [[ "$has_profile" == 1 ]]; then
+  return `${common}
+ensure_multicodex
+if has_profile_arg "$@" || should_bypass_profile "\${1:-}"; then
   exec "$REAL" "$@"
 fi
-
-exec "$REAL" --profile oai "$@"
+exec "$REAL" --profile multicodex "$@"
 `;
+}
+
+function windowsLauncherScript(command) {
+  const root = cmdDefault(ROOT);
+  return [
+    "@ECHO off",
+    `REM ${CMD_SHIM_MARKER} ${SHIM_MARKER}`,
+    "SETLOCAL",
+    "IF NOT DEFINED MULTICODEX_ROOT SET \"MULTICODEX_ROOT=" + root + "\"",
+    `node "%MULTICODEX_ROOT%\\bin\\codex-multicodex.js" __run-wrapper ${command} %*`,
+    "",
+  ].join("\r\n");
 }
 
 function readManifest() {
@@ -3202,7 +3228,10 @@ function wrapperInfo(filePath) {
   if (!fs.existsSync(filePath)) return { status: "missing" };
   const content = fs.readFileSync(filePath, "utf8");
   const managed = isOwnedWrapper(filePath);
-  const rootMatch = content.match(/^ROOT="\$\{MULTICODEX_ROOT:-(.*)\}"$/m);
+  const rootMatch =
+    content.match(/^ROOT="\$\{MULTICODEX_ROOT:-(.*)\}"$/m) ||
+    content.match(/^IF NOT DEFINED MULTICODEX_ROOT SET "MULTICODEX_ROOT=(.*)"$/m) ||
+    content.match(/^\$root = if \(\$env:MULTICODEX_ROOT\) \{ \$env:MULTICODEX_ROOT \} else \{ '(.*)' \}$/m);
   const realMatch = content.match(/^REAL_DEFAULT="(.*)"$/m) || content.match(/^REAL="\$\{CODEX_REAL_BIN:-(.*)\}"$/m);
   const root = rootMatch?.[1];
   const real = realMatch?.[1];
@@ -3215,13 +3244,103 @@ function wrapperInfo(filePath) {
   };
 }
 
+function hasModelArg(argv) {
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "-m" || arg === "--model") return true;
+    if (String(arg).startsWith("--model=")) return true;
+  }
+  return false;
+}
+
+function hasProfileArg(argv) {
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--profile") return true;
+    if (String(arg).startsWith("--profile=")) return true;
+  }
+  return false;
+}
+
+function shouldBypassCodexProfile(argv) {
+  const first = argv[0];
+  return first === "--version" || first === "-V" || first === "version" || first === "login" || first === "logout";
+}
+
+async function spawnRealCodex(argv) {
+  const real = resolveCodexBin();
+  const child = spawn(real, argv, {
+    stdio: "inherit",
+    env: process.env,
+    shell: IS_WINDOWS_LAUNCHER,
+  });
+  const code = await new Promise((resolve, reject) => {
+    child.on("error", reject);
+    child.on("exit", (exitCode, signal) => {
+      if (signal) resolve(128);
+      else resolve(exitCode ?? 0);
+    });
+  });
+  process.exit(code);
+}
+
+async function runWrapper(command, argv) {
+  if (command === "opencodex" || command === "codex-multicodex") {
+    await dispatchCli(argv[0] || "sync", argv.slice(1));
+    return;
+  }
+
+  if (command === "codex-oai") {
+    await spawnRealCodex(shouldBypassCodexProfile(argv) ? argv : ["--profile", "oai", ...argv]);
+    return;
+  }
+
+  if (command === "codex-oss") {
+    const args = ["--oss", "--local-provider", process.env.CODEX_OSS_PROVIDER || "ollama"];
+    if (!hasModelArg(argv)) args.push("-m", process.env.CODEX_OSS_MODEL || "gemma4:e2b");
+    await spawnRealCodex([...args, ...argv]);
+    return;
+  }
+
+  if (command === "codex" || command === "codex-multi") {
+    if (shouldBypassCodexProfile(argv)) {
+      await spawnRealCodex(argv);
+      return;
+    }
+    await startServer();
+    await spawnRealCodex(hasProfileArg(argv) ? argv : ["--profile", "multicodex", ...argv]);
+    return;
+  }
+
+  throw new Error(`unknown OpenCodex wrapper command: ${command || "<empty>"}`);
+}
+
 function installWrappers() {
+  for (const filePath of Object.values(LEGACY_WINDOWS_WRAPPER_PATHS)) {
+    if (fs.existsSync(filePath) && isOwnedWrapper(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  }
+
   for (const [name, filePath] of Object.entries(WRAPPER_PATHS)) {
     if (fs.existsSync(filePath) && !isOwnedWrapper(filePath)) {
       throw new Error(`${filePath} already exists and is not a MultiCodex-managed wrapper`);
     }
     writeExecutable(filePath, launcherScript(name));
+    if (IS_WINDOWS_LAUNCHER) {
+      const ps1Path = path.join(path.dirname(filePath), `${name}.ps1`);
+      writeExecutable(ps1Path, windowsPowerShellLauncherScript(name));
+    }
   }
+}
+
+function windowsPowerShellLauncherScript(command) {
+  const root = String(ROOT).replace(/'/g, "''");
+  return `# ${CMD_SHIM_MARKER} ${SHIM_MARKER}
+$root = if ($env:MULTICODEX_ROOT) { $env:MULTICODEX_ROOT } else { '${root}' }
+& node (Join-Path $root 'bin/codex-multicodex.js') __run-wrapper ${command} @args
+exit $LASTEXITCODE
+`;
 }
 
 function writeProfile() {
@@ -3259,13 +3378,12 @@ fast_mode = true
 
 function syncConfig() {
   let config = fs.existsSync(CONFIG_PATH) ? fs.readFileSync(CONFIG_PATH, "utf8") : "";
-  config = removeProviderBlock(config);
-  config = removeTopLevelToml(config, "model_catalog_json", (value) =>
-    value === JSON.stringify(CATALOG_PATH) || value === JSON.stringify(OAI_CATALOG_PATH),
-  );
-  if (/^model_provider\s*=\s*"multicodex"\s*$/m.test(config)) {
-    config = replaceTopLevelToml(config, "model_provider", "openai");
-  }
+  config = upsertProviderBlock(config);
+  config = replaceTopLevelToml(config, "model_provider", "multicodex");
+  config = replaceTopLevelToml(config, "model", "gpt-5.5");
+  config = replaceTopLevelToml(config, "model_catalog_json", CATALOG_PATH);
+  config = replaceTopLevelToml(config, "service_tier", CODEX_FAST_CONFIG_TIER);
+  config = upsertTableValue(config, "features", "fast_mode", true);
   fs.writeFileSync(CONFIG_PATH, `${config.trimEnd()}\n`);
 }
 
@@ -3377,6 +3495,11 @@ function loadEffectiveCatalog() {
 async function doctor() {
   const models = await listModels();
   const catalog = fs.existsSync(CATALOG_PATH) ? JSON.parse(fs.readFileSync(CATALOG_PATH, "utf8")) : { models: [] };
+  const config = fs.existsSync(CONFIG_PATH) ? fs.readFileSync(CONFIG_PATH, "utf8") : "";
+  const configMulticodexDefault =
+    /^model_provider\s*=\s*"multicodex"$/m.test(config) &&
+    config.includes(CATALOG_PATH) &&
+    /^service_tier\s*=\s*"fast"$/m.test(config);
   console.log(`proxy: ${BASE}`);
   console.log(`data_dir: ${DATA_DIR}`);
   console.log(`store: ${STORE_PATH}`);
@@ -3391,9 +3514,7 @@ async function doctor() {
       fs.existsSync(OAI_CATALOG_PATH) ? (JSON.parse(fs.readFileSync(OAI_CATALOG_PATH, "utf8")).models || []).length : 0
     }`,
   );
-  console.log(`config_managed_default_clean: ${
-    fs.existsSync(CONFIG_PATH) && !fs.readFileSync(CONFIG_PATH, "utf8").includes(CATALOG_PATH)
-  }`);
+  console.log(`config_multicodex_default: ${configMulticodexDefault}`);
   for (const [name, filePath] of Object.entries(WRAPPER_PATHS)) {
     const info = wrapperInfo(filePath);
     const details = [
@@ -3415,12 +3536,11 @@ async function doctor() {
   console.log("fast_command: use /fast on, /fast off, or /fast status in a Codex TUI session; managed profiles persist service_tier=fast");
 }
 
-const command = process.argv[2] || "sync";
-try {
+async function dispatchCli(command, argv) {
   if (command === "sync") {
     await sync();
   } else if (command === "models") {
-    await printModels(parseCliOptions(process.argv.slice(3)));
+    await printModels(parseCliOptions(argv));
   } else if (command === "install" || command === "update") {
     await install();
   } else if (command === "uninstall" || command === "remove") {
@@ -3428,10 +3548,19 @@ try {
   } else if (command === "doctor") {
     await doctor();
   } else if (command === "auth" || command === "connect") {
-    await auth(process.argv.slice(3));
+    await auth(argv);
   } else {
     console.error("Usage: opencodex <sync|models|install|update|uninstall|doctor|auth>");
     process.exit(2);
+  }
+}
+
+const command = process.argv[2] || "sync";
+try {
+  if (command === "__run-wrapper") {
+    await runWrapper(process.argv[3], process.argv.slice(4));
+  } else {
+    await dispatchCli(command, process.argv.slice(3));
   }
 } catch (err) {
   console.error(err instanceof Error ? err.message : String(err));

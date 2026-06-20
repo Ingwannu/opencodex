@@ -567,6 +567,46 @@ function emptyImageInputError(part: unknown): string | undefined {
   return "ERROR: Image file is empty or corrupted. Please provide a valid image.";
 }
 
+const INVALID_SURROGATE_RE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+function sanitizeTextSurrogates(text: string): string {
+  return text.replace(INVALID_SURROGATE_RE, "\uFFFD");
+}
+
+function sanitizeTextBearingValue(value: unknown): unknown {
+  if (typeof value === "string") return sanitizeTextSurrogates(value);
+  if (Array.isArray(value)) return value.map((item) => sanitizeTextBearingValue(item));
+  if (!value || typeof value !== "object") return value;
+
+  const source = value as Record<string, unknown>;
+  const type = typeof source.type === "string" ? source.type : undefined;
+  const shouldSanitizeText =
+    !type ||
+    type === "input_text" ||
+    type === "output_text" ||
+    type === "text" ||
+    type === "reasoning";
+  const out: Record<string, unknown> = { ...source };
+
+  for (const [key, raw] of Object.entries(source)) {
+    if (typeof raw === "string") {
+      out[key] = shouldSanitizeText && ["text", "content", "instructions", "prompt"].includes(key)
+        ? sanitizeTextSurrogates(raw)
+        : raw;
+      continue;
+    }
+    if (["content", "input", "messages", "output"].includes(key)) {
+      out[key] = sanitizeTextBearingValue(raw);
+    }
+  }
+
+  return out;
+}
+
+function applyTextSurrogateSanitization(payload: unknown): unknown {
+  return sanitizeTextBearingValue(payload);
+}
+
 function unsupportedInputText(modality: InputModality, part: Record<string, unknown>): string {
   const filename = typeof part.filename === "string" && part.filename.trim()
     ? ` \"${part.filename.trim()}\"`
@@ -2137,6 +2177,7 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
           : isChatCompletions
             ? chatCompletionsToResponsesPayload(req.body, sessionId)
             : normalizeResponsesPayload(req.body, sessionId);
+        payloadToUpstream = applyTextSurrogateSanitization(payloadToUpstream) as any;
         stripProxyOnlyRequestFields(payloadToUpstream);
         if (
           shouldSendChatCompletions &&

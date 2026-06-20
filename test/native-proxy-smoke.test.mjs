@@ -1137,6 +1137,89 @@ test("proxy replaces empty configured model image input with text error", async 
   }
 });
 
+test("proxy sanitizes invalid configured model text surrogates", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "no model listing" }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/responses") {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "resp_sanitized_text",
+          object: "response",
+          created_at: 1,
+          model: "text-model",
+          output: [
+            {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "output_text", text: "Text checked" }],
+            },
+          ],
+          usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "surrogate-smoke",
+          provider: "openai-compatible",
+          providerId: "surrogate-provider",
+          providerAdapter: "openai-compatible",
+          accessToken: "configured-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          upstreamMode: "responses",
+          compatibilityMode: "responses",
+          providerModels: {
+            "text-model": {
+              name: "Text Model",
+              capabilities: {
+                input: { text: true },
+              },
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/responses`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "text-model",
+            input: [
+              {
+                role: "user",
+                content: [
+                  { type: "input_text", text: "bad \uD800 value" },
+                ],
+              },
+            ],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+        const content = capturedRequest.input[0].content;
+        assert.equal(content[0].text, "bad \uFFFD value");
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy applies configured OpenCode model variants from request effort", async () => {
   let capturedRequest;
   const upstream = http.createServer(async (req, res) => {

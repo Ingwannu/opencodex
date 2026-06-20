@@ -3225,6 +3225,7 @@ test("proxy refreshes xAI OAuth and routes Responses API", async () => {
             model: "grok-4",
             input: "Hello",
             stream: false,
+            reasoning_effort: "high",
           }),
         });
         const json = await res.json();
@@ -3237,6 +3238,8 @@ test("proxy refreshes xAI OAuth and routes Responses API", async () => {
         assert.equal(capturedModelsAuthorization, "Bearer xai-refreshed-access");
         assert.equal(capturedResponsesAuthorization, "Bearer xai-refreshed-access");
         assert.equal(capturedRequest.model, "grok-4");
+        assert.equal(capturedRequest.reasoningEffort, "high");
+        assert.equal(capturedRequest.reasoning_effort, undefined);
       },
     );
   } finally {

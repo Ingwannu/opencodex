@@ -75,7 +75,7 @@ full OpenCode provider parity.
 - OpenRouter and LLM Gateway reasoning variants now mirror OpenCode's provider
   shape by translating requested flat `reasoning_effort` into
   `reasoning: { effort }` before forwarding chat/completions requests.
-- Groq and Venice reasoning variants now mirror OpenCode's provider shape by
+- Groq, xAI, and Venice reasoning variants now mirror OpenCode's provider shape by
   translating requested flat `reasoning_effort` into `reasoningEffort` before
   forwarding chat/completions requests.
 - Mistral adjustable reasoning variants now mirror OpenCode's provider shape by
@@ -121,7 +121,7 @@ full OpenCode provider parity.
 - OpenCode provider identity default fixture for session cache keys, Z.ai
   thinking, Alibaba CN reasoning enablement, and gateway-style request hints.
 - OpenCode OpenRouter reasoning variant fixture for request-effort mapping.
-- OpenCode Groq and Venice reasoning variant fixtures for request-effort
+- OpenCode Groq, xAI, and Venice reasoning variant fixtures for request-effort
   mapping.
 - OpenCode Mistral adjustable reasoning variant fixture for request-effort
   mapping on supported Mistral reasoning models.

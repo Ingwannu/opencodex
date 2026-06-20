@@ -1189,9 +1189,11 @@ function applyOpenCodeProviderDefaults(
 
   if (
     (account.providerNpm === "@ai-sdk/groq" ||
+      account.providerNpm === "@ai-sdk/xai" ||
       account.providerNpm === "venice-ai-sdk-provider" ||
       (account.providerNpm === "@ai-sdk/mistral" && isMistralReasoningModel(modelId)) ||
       providerId === "groq" ||
+      providerId === "xai" ||
       providerId === "venice" ||
       (providerId === "mistral" && isMistralReasoningModel(modelId))) &&
     flatReasoningEffort &&

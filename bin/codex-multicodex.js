@@ -68,13 +68,19 @@ function findOnPath(command, exclude = new Set()) {
   return undefined;
 }
 
+function windowsCommandSibling(filePath) {
+  if (!IS_WINDOWS_LAUNCHER || !filePath || /\.(cmd|bat|exe)$/i.test(filePath)) return filePath;
+  const cmdPath = `${filePath}.cmd`;
+  return isExecutable(cmdPath) ? cmdPath : filePath;
+}
+
 function resolveCodexBin() {
   const explicit = process.env.CODEX_BIN || process.env.CODEX_REAL_BIN;
-  if (explicit) return explicit;
+  if (explicit) return windowsCommandSibling(explicit);
 
   const manifest = readManifest();
   if (typeof manifest?.codexRealBin === "string" && manifest.codexRealBin && isExecutable(manifest.codexRealBin)) {
-    return manifest.codexRealBin;
+    return windowsCommandSibling(manifest.codexRealBin);
   }
 
   if (isExecutable(DEFAULT_CODEX_BIN)) return DEFAULT_CODEX_BIN;
@@ -1536,10 +1542,14 @@ function makeCatalog(models, bundledCatalog = loadBundledCatalog()) {
 }
 
 function replaceTopLevelToml(source, key, value) {
-  const line = `${key} = ${JSON.stringify(value)}`;
+  const line = `${key} = ${tomlString(value)}`;
   const re = new RegExp(`^${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*=.*$`, "m");
   if (re.test(source)) return source.replace(re, line);
   return `${line}\n${source}`;
+}
+
+function tomlString(value) {
+  return JSON.stringify(String(value));
 }
 
 function upsertProviderBlock(source) {
@@ -1590,6 +1600,12 @@ function shellDefault(value) {
 
 function cmdDefault(value) {
   return String(value).replace(/"/g, '""');
+}
+
+function cmdArg(value) {
+  const text = String(value);
+  if (!text) return '""';
+  return `"${text.replace(/(["^&|<>%])/g, "^$1")}"`;
 }
 
 async function canonicalAuthProvider(name, opts = {}) {
@@ -3179,7 +3195,7 @@ function windowsLauncherScript(command) {
     `REM ${CMD_SHIM_MARKER} ${SHIM_MARKER}`,
     "SETLOCAL",
     "IF NOT DEFINED MULTICODEX_ROOT SET \"MULTICODEX_ROOT=" + root + "\"",
-    `node "%MULTICODEX_ROOT%\\bin\\codex-multicodex.js" __run-wrapper ${command} %*`,
+    `node "%MULTICODEX_ROOT%\\bin\\codex-multicodex.js" __run-wrapper ${cmdArg(command)} %*`,
     "",
   ].join("\r\n");
 }
@@ -3269,10 +3285,15 @@ function shouldBypassCodexProfile(argv) {
 
 async function spawnRealCodex(argv) {
   const real = resolveCodexBin();
-  const child = spawn(real, argv, {
+  const windowsScript = IS_WINDOWS_LAUNCHER && /\.(cmd|bat)$/i.test(real);
+  const child = windowsScript ? spawn(process.env.ComSpec || "cmd.exe", ["/d", "/c", "call", real, ...argv], {
     stdio: "inherit",
     env: process.env,
-    shell: IS_WINDOWS_LAUNCHER,
+    shell: false,
+  }) : spawn(real, argv, {
+    stdio: "inherit",
+    env: process.env,
+    shell: false,
   });
   const code = await new Promise((resolve, reject) => {
     child.on("error", reject);
@@ -3349,15 +3370,15 @@ model = "gpt-5.5"
 model_reasoning_effort = "high"
 model_context_window = 819200
 model_auto_compact_token_limit = 240000
-model_catalog_json = "${CATALOG_PATH}"
-service_tier = "${CODEX_FAST_CONFIG_TIER}"
+model_catalog_json = ${tomlString(CATALOG_PATH)}
+service_tier = ${tomlString(CODEX_FAST_CONFIG_TIER)}
 
 [features]
 fast_mode = true
 
 [model_providers.multicodex]
 name = "MultiCodex Proxy"
-base_url = "${BASE}/v1"
+base_url = ${tomlString(`${BASE}/v1`)}
 wire_api = "responses"
 `;
   fs.writeFileSync(PROFILE_PATH, profile);
@@ -3367,8 +3388,8 @@ model = "gpt-5.5"
 model_reasoning_effort = "high"
 model_context_window = 819200
 model_auto_compact_token_limit = 240000
-model_catalog_json = "${OAI_CATALOG_PATH}"
-service_tier = "${CODEX_FAST_CONFIG_TIER}"
+model_catalog_json = ${tomlString(OAI_CATALOG_PATH)}
+service_tier = ${tomlString(CODEX_FAST_CONFIG_TIER)}
 
 [features]
 fast_mode = true

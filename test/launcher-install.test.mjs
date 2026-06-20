@@ -521,6 +521,13 @@ test("windows install writes executable cmd launchers and removes extensionless 
   assert.match(config, /^model_provider = "multicodex"$/m);
   assert.match(config, /^service_tier = "fast"$/m);
 
+  const multiProfile = fs.readFileSync(path.join(home, ".codex", "multicodex.config.toml"), "utf8");
+  const oaiProfile = fs.readFileSync(path.join(home, ".codex", "oai.config.toml"), "utf8");
+  assert.doesNotMatch(multiProfile, /model_catalog_json = "[A-Z]:\\[^\\]/);
+  assert.doesNotMatch(oaiProfile, /model_catalog_json = "[A-Z]:\\[^\\]/);
+  assert.equal(JSON.parse(multiProfile.match(/^model_catalog_json = (".*")$/m)[1]), path.join(home, ".codex", "model-catalogs", "multicodex-models.json"));
+  assert.equal(JSON.parse(oaiProfile.match(/^model_catalog_json = (".*")$/m)[1]), path.join(home, ".codex", "model-catalogs", "oai-models.json"));
+
   const doctorOutput = execFileSync(process.execPath, [cli, "doctor"], {
     cwd: root,
     env,

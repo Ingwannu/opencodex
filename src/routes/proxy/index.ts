@@ -683,6 +683,55 @@ function isClaudeLikeModel(model: string | undefined): boolean {
   return modelId.includes("claude") || modelId.includes("anthropic");
 }
 
+function shouldApplyOpenCodePromptCaching(
+  account: Pick<Account, "provider" | "providerId" | "providerNpm">,
+  model: string | undefined,
+): boolean {
+  const provider = normalizeProvider(account);
+  const providerId = String(account.providerId ?? "").toLowerCase();
+  return (
+    providerId === "anthropic" ||
+    providerId.includes("bedrock") ||
+    providerId === "openrouter" ||
+    provider === "anthropic" ||
+    account.providerNpm === "@ai-sdk/anthropic" ||
+    isClaudeLikeModel(model)
+  );
+}
+
+function applyOpenCodePromptCaching(
+  payload: unknown,
+  account: Pick<Account, "provider" | "providerId" | "providerNpm">,
+  model: string | undefined,
+): void {
+  if (!shouldApplyOpenCodePromptCaching(account, model)) return;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
+  const source = payload as Record<string, unknown>;
+  if (!Array.isArray(source.messages)) return;
+
+  const system = source.messages
+    .filter((message) => objectValue(message)?.role === "system")
+    .slice(0, 2);
+  const final = source.messages
+    .filter((message) => objectValue(message)?.role !== "system")
+    .slice(-2);
+  const selected = new Set([...system, ...final]);
+  const providerOptions = {
+    openrouter: { cacheControl: { type: "ephemeral" } },
+    openaiCompatible: { cache_control: { type: "ephemeral" } },
+  };
+
+  source.messages = source.messages.map((message) => {
+    if (!selected.has(message)) return message;
+    const record = objectValue(message);
+    if (!record) return message;
+    return {
+      ...record,
+      providerOptions: mergeRecordDefaults(record.providerOptions, providerOptions),
+    };
+  });
+}
+
 function applyMistralInputNormalization(payload: unknown): void {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
   const source = payload as Record<string, unknown>;
@@ -2586,6 +2635,11 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
           applyInterleavedReasoningNormalization(
             payloadToUpstream,
             configuredModelMetadata,
+          );
+          applyOpenCodePromptCaching(
+            payloadToUpstream,
+            selected,
+            candidate.resolvedModel ?? requestModel,
           );
         }
         applyConfiguredInputCapabilities(

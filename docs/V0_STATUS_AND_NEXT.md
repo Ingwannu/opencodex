@@ -43,6 +43,9 @@ full OpenCode provider parity.
 - OpenCode Claude-compatible tool-call transform mirrored for chat/completions
   payloads: tool call IDs are scrubbed to Claude's `[A-Za-z0-9_-]` shape before
   forwarding to OpenAI-compatible Claude endpoints.
+- OpenCode prompt-caching hints mirrored for Claude-compatible chat/completions
+  requests by marking the first two system messages and final two non-system
+  messages with ephemeral OpenRouter/OpenAI-compatible cache metadata.
 - OpenCode configured model provider metadata defaults are forwarded to upstream
   requests via `providerOptions` and `experimental_providerMetadata`, preserving
   provider-specific cache/control hints when the caller did not override them.
@@ -99,6 +102,8 @@ full OpenCode provider parity.
 - OpenCode SAP AI Core Anthropic `modelParams.thinking` reasoning fixture and
   native SAP adapter passthrough fixture.
 - OpenCode Claude-compatible tool-call ID normalization fixture for
+  OpenAI-compatible providers.
+- OpenCode Claude-compatible prompt-caching hint fixture for OpenRouter-style
   OpenAI-compatible providers.
 - Launcher regression coverage that proves the default `codex` wrapper uses the
   OpenAI profile without requiring proxy startup, while `codex-multi` remains

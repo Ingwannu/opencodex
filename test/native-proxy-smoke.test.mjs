@@ -1533,6 +1533,101 @@ test("proxy applies OpenCode provider defaults from provider identity", async ()
   }
 });
 
+test("proxy applies OpenCode prompt caching hints to Claude-compatible messages", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "anthropic/claude-cache-smoke" }] }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/chat/completions") {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl_cache_hints",
+          object: "chat.completion",
+          created: 1,
+          model: "anthropic/claude-cache-smoke",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Cache OK" },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "openrouter-cache-hints-smoke",
+          provider: "openai-compatible",
+          providerId: "openrouter",
+          providerAdapter: "openai-compatible",
+          providerNpm: "@openrouter/ai-sdk-provider",
+          accessToken: "openrouter-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          providerModels: {
+            "anthropic/claude-cache-smoke": { id: "anthropic/claude-cache-smoke" },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "anthropic/claude-cache-smoke",
+            messages: [
+              { role: "system", content: "System one" },
+              { role: "system", content: "System two" },
+              { role: "system", content: "System three" },
+              { role: "user", content: "Earlier user" },
+              { role: "assistant", content: "Earlier assistant" },
+              { role: "user", content: "Final user" },
+            ],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+
+        assert.deepEqual(capturedRequest.messages[0].providerOptions, {
+          openrouter: { cacheControl: { type: "ephemeral" } },
+          openaiCompatible: { cache_control: { type: "ephemeral" } },
+        });
+        assert.deepEqual(capturedRequest.messages[1].providerOptions, {
+          openrouter: { cacheControl: { type: "ephemeral" } },
+          openaiCompatible: { cache_control: { type: "ephemeral" } },
+        });
+        assert.equal(capturedRequest.messages[2].providerOptions, undefined);
+        assert.equal(capturedRequest.messages[3].providerOptions, undefined);
+        assert.deepEqual(capturedRequest.messages[4].providerOptions, {
+          openrouter: { cacheControl: { type: "ephemeral" } },
+          openaiCompatible: { cache_control: { type: "ephemeral" } },
+        });
+        assert.deepEqual(capturedRequest.messages[5].providerOptions, {
+          openrouter: { cacheControl: { type: "ephemeral" } },
+          openaiCompatible: { cache_control: { type: "ephemeral" } },
+        });
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy applies OpenCode OpenRouter usage and Gemini 3 reasoning defaults", async () => {
   let capturedRequest;
   const upstream = http.createServer(async (req, res) => {

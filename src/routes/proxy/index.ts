@@ -551,6 +551,22 @@ function inputPartModality(part: unknown): InputModality | undefined {
   return undefined;
 }
 
+function emptyImageInputError(part: unknown): string | undefined {
+  if (!part || typeof part !== "object" || Array.isArray(part)) return undefined;
+  const source = part as Record<string, unknown>;
+  const type = String(source.type ?? "").toLowerCase();
+  if (type !== "input_image" && type !== "image") return undefined;
+  const image = typeof source.image_url === "string"
+    ? source.image_url
+    : typeof source.image === "string"
+      ? source.image
+      : undefined;
+  if (!image?.startsWith("data:")) return undefined;
+  const match = /^data:([^;]+);base64,(.*)$/s.exec(image);
+  if (!match || match[2].length > 0) return undefined;
+  return "ERROR: Image file is empty or corrupted. Please provide a valid image.";
+}
+
 function unsupportedInputText(modality: InputModality, part: Record<string, unknown>): string {
   const filename = typeof part.filename === "string" && part.filename.trim()
     ? ` \"${part.filename.trim()}\"`
@@ -572,6 +588,13 @@ function applyConfiguredInputCapabilities(
     const record = item as Record<string, unknown>;
     if (!Array.isArray(record.content)) continue;
     record.content = record.content.map((part) => {
+      const imageError = emptyImageInputError(part);
+      if (imageError) {
+        return {
+          type: "input_text",
+          text: imageError,
+        };
+      }
       const modality = inputPartModality(part);
       if (!modality || configuredInputCapability(metadata, modality) !== false) {
         return part;

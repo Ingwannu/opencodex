@@ -716,6 +716,58 @@ function applyDeepSeekChatNormalization(payload: unknown): void {
   });
 }
 
+function configuredInterleavedReasoningField(
+  metadata: Record<string, unknown> | undefined,
+): string | undefined {
+  const capabilities = objectValue(metadata?.capabilities);
+  const interleaved = objectValue(capabilities?.interleaved);
+  const field = stringValue(interleaved?.field);
+  return field && /^[A-Za-z_][A-Za-z0-9_]*$/.test(field) ? field : undefined;
+}
+
+function applyInterleavedReasoningNormalization(
+  payload: unknown,
+  metadata: Record<string, unknown> | undefined,
+): void {
+  const field = configuredInterleavedReasoningField(metadata);
+  if (!field || !payload || typeof payload !== "object" || Array.isArray(payload)) return;
+  const source = payload as Record<string, unknown>;
+  if (!Array.isArray(source.messages)) return;
+
+  source.messages = source.messages.map((message) => {
+    if (!message || typeof message !== "object" || Array.isArray(message)) return message;
+    const record = message as Record<string, unknown>;
+    if (record.role !== "assistant" || !Array.isArray(record.content)) return message;
+
+    const reasoningText = record.content
+      .filter(
+        (part) =>
+          part &&
+          typeof part === "object" &&
+          !Array.isArray(part) &&
+          (part as Record<string, unknown>).type === "reasoning",
+      )
+      .map((part) => String((part as Record<string, unknown>).text ?? ""))
+      .join("");
+    if (!reasoningText && hasOwn(record, field)) return message;
+
+    const filteredContent = record.content.filter(
+      (part) =>
+        !(
+          part &&
+          typeof part === "object" &&
+          !Array.isArray(part) &&
+          (part as Record<string, unknown>).type === "reasoning"
+        ),
+    );
+    return {
+      ...record,
+      content: filteredContent,
+      [field]: reasoningText,
+    };
+  });
+}
+
 function requestVariantKey(
   requestBody: any,
   requestEffort: EffortTier | undefined,
@@ -2308,6 +2360,12 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
           configuredModelOptions,
           shouldSendChatCompletions,
         );
+        if (shouldSendChatCompletions) {
+          applyInterleavedReasoningNormalization(
+            payloadToUpstream,
+            configuredModelMetadata,
+          );
+        }
         applyConfiguredInputCapabilities(
           payloadToUpstream,
           configuredModelMetadata,

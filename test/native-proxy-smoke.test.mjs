@@ -908,6 +908,94 @@ test("proxy adds DeepSeek assistant reasoning content for OpenAI-compatible upst
   }
 });
 
+test("proxy maps interleaved reasoning parts to configured OpenAI-compatible fields", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "no model listing" }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/chat/completions") {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl-interleaved-reasoning",
+          object: "chat.completion",
+          created: 1,
+          model: "interleaved-model",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Interleaved OK" },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "interleaved-reasoning-smoke",
+          provider: "openai-compatible",
+          providerId: "interleaved-provider",
+          providerAdapter: "openai-compatible",
+          accessToken: "interleaved-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          providerModels: {
+            "interleaved-model": {
+              name: "Interleaved Model",
+              capabilities: {
+                interleaved: { field: "reasoning_content" },
+              },
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "interleaved-model",
+            messages: [
+              { role: "user", content: "First" },
+              {
+                role: "assistant",
+                content: [
+                  { type: "text", text: "Visible answer" },
+                  { type: "reasoning", text: "hidden reasoning" },
+                ],
+              },
+              { role: "user", content: "Follow up" },
+            ],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+        assert.equal(capturedRequest.messages[1].role, "assistant");
+        assert.equal(capturedRequest.messages[1].reasoning_content, "hidden reasoning");
+        assert.deepEqual(capturedRequest.messages[1].content, [
+          { type: "text", text: "Visible answer" },
+        ]);
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy normalizes Mistral tool ids and tool-user turns", async () => {
   let capturedRequest;
   const upstream = http.createServer(async (req, res) => {

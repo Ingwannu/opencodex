@@ -103,6 +103,51 @@ test("Anthropic adapter converts chat payloads and responses", () => {
   assert.equal(converted.usage.completion_tokens, 3);
 });
 
+test("Anthropic adapter removes empty text parts before upstream requests", () => {
+  const request = buildNativeProviderRequest(
+    "anthropic",
+    { accessToken: "ant-key" },
+    {
+      model: "claude-sonnet-4-5",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "" },
+            { type: "text", text: "Keep me" },
+          ],
+        },
+      ],
+      max_tokens: 64,
+    },
+    false,
+  );
+
+  assert.deepEqual(request.body.messages, [
+    { role: "user", content: [{ type: "text", text: "Keep me" }] },
+  ]);
+});
+
+test("Anthropic adapter removes empty string messages before upstream requests", () => {
+  const request = buildNativeProviderRequest(
+    "anthropic",
+    { accessToken: "ant-key" },
+    {
+      model: "claude-sonnet-4-5",
+      messages: [
+        { role: "user", content: "" },
+        { role: "user", content: "Keep me" },
+      ],
+      max_tokens: 64,
+    },
+    false,
+  );
+
+  assert.deepEqual(request.body.messages, [
+    { role: "user", content: [{ type: "text", text: "Keep me" }] },
+  ]);
+});
+
 test("Gateway adapter converts chat payloads, responses, and model metadata", () => {
   const request = buildNativeProviderRequest(
     "gateway",

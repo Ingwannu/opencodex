@@ -538,7 +538,7 @@ function responseUsageFromChatUsage(usage: {
 
 function anthropicContentParts(content: unknown) {
   const text = textFromContent(content);
-  return text ? [{ type: "text", text }] : [{ type: "text", text: " " }];
+  return text ? [{ type: "text", text }] : [];
 }
 
 function buildAnthropicPayload(payload: Record<string, unknown>) {
@@ -581,10 +581,13 @@ function buildAnthropicPayload(payload: Record<string, unknown>) {
           input: coerceJsonObject(tc.function?.arguments),
         } as any);
       }
+      if (!content.length) continue;
       outMessages.push({ role: "assistant", content });
       continue;
     }
-    outMessages.push({ role: "user", content: anthropicContentParts(message.content) });
+    const content = anthropicContentParts(message.content);
+    if (!content.length) continue;
+    outMessages.push({ role: "user", content });
   }
 
   const body: Record<string, unknown> = {

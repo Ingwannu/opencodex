@@ -45,16 +45,36 @@ If the real Codex binary is not in the default standalone location, OpenCodex
 auto-detects the existing `codex` on `PATH` during install. You can pin it with
 `CODEX_REAL_BIN=/absolute/path/to/codex opencodex install`.
 
+If `codex` does not start after an old MultiCodex install, run:
+
+```bash
+opencodex doctor
+opencodex install
+```
+
+`doctor` prints each wrapper's detected root. `managed-stale` means an older
+shim is still pointing at a previous source checkout, and `install` rewrites it
+to the current npm/source package.
+
 Useful commands:
 
 ```bash
 opencodex auth providers
+opencodex auth list --json
+opencodex models
 opencodex auth login openrouter --id openrouter --token-env OPENROUTER_API_KEY
+opencodex auth login deepseek --id deepseek --token-env DEEPSEEK_API_KEY
+opencodex auth login openai-compatible --id custom --base-url https://api.example.com/v1 --token-env CUSTOM_API_KEY
 opencodex auth import-opencode
 opencodex auth import-opencode ~/.local/share/opencode/auth.json --config ./opencode.jsonc
 opencodex update
 opencodex uninstall
 ```
+
+Model visibility is driven by the enabled accounts plus the generated Codex
+catalogs under `~/.codex/model-catalogs/`. After adding or importing accounts,
+run `opencodex sync` or relaunch `codex` so `/model` sees the refreshed list.
+Use `opencodex models` to print the proxy's current exposed model list.
 
 Release status and next work are tracked in
 [docs/V0_STATUS_AND_NEXT.md](./docs/V0_STATUS_AND_NEXT.md).

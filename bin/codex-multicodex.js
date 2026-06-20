@@ -1369,6 +1369,18 @@ async function listModels() {
   return (payload.data || []).map((model) => model.id).filter(Boolean);
 }
 
+async function printModels(opts = {}) {
+  const models = await listModels();
+  if (opts.json) {
+    console.log(JSON.stringify({ baseUrl: BASE, count: models.length, models }, null, 2));
+    return;
+  }
+
+  console.log(`proxy: ${BASE}`);
+  console.log(`models: ${models.length}`);
+  for (const model of models) console.log(model);
+}
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -2789,6 +2801,7 @@ function printAuthUsage() {
   opencodex auth providers
   opencodex auth list [--json]
   opencodex auth login <provider> --id <id> (--token <token>|--token-env ENV|--stdin) [--base-url URL]
+  opencodex auth login <provider> --id <id> --base-url URL --token-env ENV [--upstream-mode responses|chat/completions]
   opencodex auth oauth-start --email <email> [--account-id <id>]
   opencodex auth oauth-status <flowId>
   opencodex auth oauth-complete --flow-id <flowId> (--input <redirect-url-or-code>|--stdin)
@@ -2797,8 +2810,17 @@ function printAuthUsage() {
   opencodex auth disable <id>
   opencodex auth import-opencode [auth.json] [--config opencode.jsonc]
 
+Examples:
+  opencodex auth providers
+  opencodex auth list --json
+  opencodex auth login openrouter --id openrouter --token-env OPENROUTER_API_KEY
+  opencodex auth login deepseek --id deepseek --token-env DEEPSEEK_API_KEY
+  opencodex auth login openai-compatible --id local --base-url http://127.0.0.1:11434/v1 --token none --provider openai-compatible
+  opencodex auth import-opencode ~/.local/share/opencode/auth.json --config ./opencode.jsonc
+
 Providers: ${Object.keys(authProviderPresets).join(", ")}
-Any provider name is accepted with --base-url and is saved as openai-compatible.`);
+Any provider name is accepted with --base-url and is saved as openai-compatible.
+Web UI: run opencodex sync or launch codex once, then open ${BASE} and use Accounts.`);
 }
 
 async function auth(argv) {
@@ -3156,6 +3178,23 @@ function isOwnedWrapper(filePath) {
   );
 }
 
+function wrapperInfo(filePath) {
+  if (!fs.existsSync(filePath)) return { status: "missing" };
+  const content = fs.readFileSync(filePath, "utf8");
+  const managed = isOwnedWrapper(filePath);
+  const rootMatch = content.match(/^ROOT="\$\{MULTICODEX_ROOT:-(.*)\}"$/m);
+  const realMatch = content.match(/^REAL_DEFAULT="(.*)"$/m) || content.match(/^REAL="\$\{CODEX_REAL_BIN:-(.*)\}"$/m);
+  const root = rootMatch?.[1];
+  const real = realMatch?.[1];
+  const staleRoot = Boolean(root && path.resolve(root) !== ROOT);
+  return {
+    status: managed ? (staleRoot ? "managed-stale" : "managed") : "foreign",
+    root,
+    real,
+    staleRoot,
+  };
+}
+
 function installWrappers() {
   for (const [name, filePath] of Object.entries(WRAPPER_PATHS)) {
     if (fs.existsSync(filePath) && !isOwnedWrapper(filePath)) {
@@ -3314,6 +3353,8 @@ async function doctor() {
   console.log(`proxy: ${BASE}`);
   console.log(`data_dir: ${DATA_DIR}`);
   console.log(`store: ${STORE_PATH}`);
+  console.log(`root: ${ROOT}`);
+  console.log(`real_codex: ${CODEX_BIN}`);
   console.log(`proxy_models: ${models.length}`);
   console.log(`catalog: ${CATALOG_PATH}`);
   console.log(`catalog_models: ${(catalog.models || []).length}`);
@@ -3325,7 +3366,13 @@ async function doctor() {
   );
   console.log(`config_has_catalog: ${fs.existsSync(CONFIG_PATH) && fs.readFileSync(CONFIG_PATH, "utf8").includes(CATALOG_PATH)}`);
   for (const [name, filePath] of Object.entries(WRAPPER_PATHS)) {
-    console.log(`${name}_wrapper: ${fs.existsSync(filePath) ? (isOwnedWrapper(filePath) ? "managed" : "foreign") : "missing"}`);
+    const info = wrapperInfo(filePath);
+    const details = [
+      info.root ? `root=${info.root}` : "",
+      info.staleRoot ? `expected=${ROOT}` : "",
+      info.real ? `real=${info.real}` : "",
+    ].filter(Boolean);
+    console.log(`${name}_wrapper: ${info.status}${details.length ? ` ${details.join(" ")}` : ""}`);
   }
   const effective = loadEffectiveCatalog();
   if (effective.error) {
@@ -3343,6 +3390,8 @@ const command = process.argv[2] || "sync";
 try {
   if (command === "sync") {
     await sync();
+  } else if (command === "models") {
+    await printModels(parseCliOptions(process.argv.slice(3)));
   } else if (command === "install" || command === "update") {
     await install();
   } else if (command === "uninstall" || command === "remove") {
@@ -3352,7 +3401,7 @@ try {
   } else if (command === "auth" || command === "connect") {
     await auth(process.argv.slice(3));
   } else {
-    console.error("Usage: opencodex <sync|install|update|uninstall|doctor|auth>");
+    console.error("Usage: opencodex <sync|models|install|update|uninstall|doctor|auth>");
     process.exit(2);
   }
 } catch (err) {

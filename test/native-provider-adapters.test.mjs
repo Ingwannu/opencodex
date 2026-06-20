@@ -601,6 +601,7 @@ test("Amazon Bedrock adapter converts chat payloads and responses", () => {
       ],
       max_tokens: 64,
       temperature: 0.2,
+      reasoningConfig: { type: "enabled", budgetTokens: 16000 },
       stream: true,
     },
     false,
@@ -618,6 +619,10 @@ test("Amazon Bedrock adapter converts chat payloads and responses", () => {
   assert.deepEqual(request.body.inferenceConfig, {
     maxTokens: 64,
     temperature: 0.2,
+  });
+  assert.deepEqual(request.body.reasoningConfig, {
+    type: "enabled",
+    budgetTokens: 16000,
   });
 
   const converted = convertNativeProviderResponse(

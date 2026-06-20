@@ -2887,6 +2887,82 @@ test("proxy routes Amazon Bedrock chat completions through Converse API", async 
   }
 });
 
+test("proxy derives OpenCode Bedrock Anthropic reasoning variants from request effort", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (
+      req.method === "POST" &&
+      req.url === "/model/anthropic.claude-3-5-sonnet-20241022-v2%3A0/converse"
+    ) {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          output: {
+            message: {
+              role: "assistant",
+              content: [{ text: "Bedrock Variant OK" }],
+            },
+          },
+          stopReason: "end_turn",
+          usage: {
+            inputTokens: 5,
+            outputTokens: 2,
+            totalTokens: 7,
+          },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "bedrock-variant-smoke",
+          provider: "amazon-bedrock",
+          providerId: "amazon-bedrock",
+          providerAdapter: "amazon-bedrock",
+          providerNpm: "@ai-sdk/amazon-bedrock",
+          accessToken: "bedrock-smoke-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          providerModels: {
+            "anthropic.claude-3-5-sonnet-20241022-v2:0": {
+              id: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+              name: "Claude 3.5 Sonnet",
+              capabilities: { reasoning: true },
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            messages: [{ role: "user", content: "Hello" }],
+            reasoning_effort: "high",
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+        assert.equal(json.choices[0].message.content, "Bedrock Variant OK");
+        assert.deepEqual(capturedRequest.reasoningConfig, {
+          type: "enabled",
+          budgetTokens: 16000,
+        });
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy signs Amazon Bedrock Converse requests with AWS SigV4 credentials", async () => {
   let capturedRequest;
   let capturedAuthorization;

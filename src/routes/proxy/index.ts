@@ -1053,6 +1053,20 @@ function applyOpenCodeProviderDefaults(
     payloadRecord.reasoning = { effort: "high" };
   }
 
+  if (
+    account.providerNpm === "@ai-sdk/amazon-bedrock" &&
+    modelId.includes("anthropic") &&
+    flatReasoningEffort &&
+    !hasOwn(requestRecord, "reasoningConfig") &&
+    !hasOwn(payloadRecord, "reasoningConfig")
+  ) {
+    payloadRecord.reasoningConfig = {
+      type: "enabled",
+      budgetTokens: flatReasoningEffort === "max" ? 31999 : 16000,
+    };
+    delete payloadRecord.reasoning_effort;
+  }
+
   const provider = normalizeProvider(account);
   if (
     (account.providerNpm === "@ai-sdk/google" ||

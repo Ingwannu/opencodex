@@ -1421,6 +1421,13 @@ function buildBedrockPayload(payload: Record<string, unknown>) {
   };
   if (system.length) body.system = system;
   if (Object.keys(inferenceConfig).length) body.inferenceConfig = inferenceConfig;
+  if (
+    payload.reasoningConfig &&
+    typeof payload.reasoningConfig === "object" &&
+    !Array.isArray(payload.reasoningConfig)
+  ) {
+    body.reasoningConfig = payload.reasoningConfig;
+  }
   return body;
 }
 

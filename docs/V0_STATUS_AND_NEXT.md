@@ -3,7 +3,7 @@
 This document tracks the v0 release boundary separately from the larger goal of
 full OpenCode provider parity.
 
-## v0.2.12 shipped surface
+## v0.2.13 shipped surface
 
 - One Codex launcher/proxy surface for OpenAI, local, and OpenAI-compatible
   providers, with `codex` as the safe default launcher, `codex-multi` as the
@@ -43,8 +43,13 @@ full OpenCode provider parity.
 - Default `codex` launcher fail-open behavior now falls back through the OpenAI
   profile when the MultiCodex proxy cannot start, so an installed wrapper should
   not trap normal Codex startup on a broken proxy.
+- `opencodex install` no longer forces the user's top-level
+  `~/.codex/config.toml` into the MultiCodex provider. It writes managed
+  profiles/catalogs and cleans stale managed catalog/provider entries, leaving
+  strict all-provider startup to `codex-multi` and OpenAI-only startup to
+  `codex-oai`.
 
-## Verified for v0.2.12
+## Verified for v0.2.13
 
 - `npm test`
 - `npm run build`
@@ -57,6 +62,9 @@ full OpenCode provider parity.
 - OpenCode model `options.topK` / `top_k` request-default fixture.
 - Launcher regression coverage that proves the default `codex` wrapper falls
   back to the real Codex CLI when the MultiCodex proxy cannot start.
+- Launcher regression coverage that proves `opencodex install` preserves the
+  user's default Codex provider outside the managed `codex-multi`/`codex-oai`
+  profiles.
 - Packed npm tarball install smoke for `@ingwannu/opencodex`, confirming
   `opencodex doctor` can detect `managed-stale` wrappers that still point at an
   older source checkout and that `opencodex install` is the required rewrite

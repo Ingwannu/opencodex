@@ -166,3 +166,91 @@ test("default codex launcher falls back to the real Codex binary when proxy star
   const calls = fs.readFileSync(markerPath, "utf8");
   assert.match(calls, /--profile oai hello/);
 });
+
+test("install preserves the user's default Codex provider outside managed profiles", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-default-config-"));
+  const home = path.join(dir, "home");
+  const binDir = path.join(home, ".local", "bin");
+  const codexHome = path.join(home, ".codex");
+  const fakeBin = path.join(dir, "real-bin");
+  const markerPath = path.join(dir, "fake-codex-calls.log");
+  const fakeCodex = path.join(fakeBin, "codex");
+  writeFakeCodex(fakeCodex, markerPath);
+
+  fs.mkdirSync(codexHome, { recursive: true });
+  fs.writeFileSync(
+    path.join(codexHome, "config.toml"),
+    `model_provider = "openai"
+model = "gpt-5.5"
+model_reasoning_effort = "high"
+
+[features]
+fast_mode = false
+`,
+  );
+
+  const env = {
+    ...process.env,
+    HOME: home,
+    CODEX_HOME: codexHome,
+    CODEX_MULTICODEX_BIN_DIR: binDir,
+    MULTICODEX_PORT: String(22000 + Math.floor(Math.random() * 1000)),
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+  };
+
+  execFileSync(process.execPath, [cli, "install"], {
+    cwd: root,
+    env,
+    encoding: "utf8",
+  });
+
+  const config = fs.readFileSync(path.join(codexHome, "config.toml"), "utf8");
+  assert.match(config, /^model_provider = "openai"$/m);
+  assert.match(config, /^model = "gpt-5\.5"$/m);
+  assert.doesNotMatch(config, /^model_provider = "multicodex"$/m);
+  assert.doesNotMatch(config, /^model_catalog_json = /m);
+});
+
+test("doctor reports MultiCodex catalog entries even when the default Codex config stays OpenAI", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-doctor-catalog-"));
+  const home = path.join(dir, "home");
+  const binDir = path.join(home, ".local", "bin");
+  const codexHome = path.join(home, ".codex");
+  const fakeBin = path.join(dir, "real-bin");
+  const markerPath = path.join(dir, "fake-codex-calls.log");
+  const fakeCodex = path.join(fakeBin, "codex");
+  writeFakeCodex(fakeCodex, markerPath);
+
+  fs.mkdirSync(codexHome, { recursive: true });
+  fs.writeFileSync(
+    path.join(codexHome, "config.toml"),
+    `model_provider = "openai"
+model = "gpt-5.5"
+`,
+  );
+
+  const env = {
+    ...process.env,
+    HOME: home,
+    CODEX_HOME: codexHome,
+    CODEX_MULTICODEX_BIN_DIR: binDir,
+    MULTICODEX_PORT: String(23000 + Math.floor(Math.random() * 1000)),
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+  };
+
+  execFileSync(process.execPath, [cli, "install"], {
+    cwd: root,
+    env,
+    encoding: "utf8",
+  });
+
+  const doctorOutput = execFileSync(process.execPath, [cli, "doctor"], {
+    cwd: root,
+    env,
+    encoding: "utf8",
+  });
+
+  assert.match(doctorOutput, /config_managed_default_clean: true/);
+  assert.match(doctorOutput, /glm-5\.2-fast: \{"visibility":"list"/);
+  assert.match(doctorOutput, /kimi-k2\.7-code: \{"visibility":"list"/);
+});

@@ -3350,16 +3350,14 @@ fast_mode = true
 
 function syncConfig() {
   let config = fs.existsSync(CONFIG_PATH) ? fs.readFileSync(CONFIG_PATH, "utf8") : "";
-  config = replaceTopLevelToml(config, "model_provider", "multicodex");
-  config = replaceTopLevelToml(config, "model", "gpt-5.5");
-  config = replaceTopLevelToml(config, "model_reasoning_effort", "high");
-  config = replaceTopLevelToml(config, "model_catalog_json", CATALOG_PATH);
-  config = replaceTopLevelToml(config, "service_tier", FAST_SERVICE_TIER);
-  config = replaceTopLevelToml(config, "oss_provider", "ollama");
-  config = upsertTableValue(config, "features", "fast_mode", true);
-  config = upsertTableValue(config, "notice", "fast_default_opt_out", false);
-  config = upsertProviderBlock(config);
-  fs.writeFileSync(CONFIG_PATH, config);
+  config = removeProviderBlock(config);
+  config = removeTopLevelToml(config, "model_catalog_json", (value) =>
+    value === JSON.stringify(CATALOG_PATH) || value === JSON.stringify(OAI_CATALOG_PATH),
+  );
+  if (/^model_provider\s*=\s*"multicodex"\s*$/m.test(config)) {
+    config = replaceTopLevelToml(config, "model_provider", "openai");
+  }
+  fs.writeFileSync(CONFIG_PATH, `${config.trimEnd()}\n`);
 }
 
 function cleanupConfig() {
@@ -3437,6 +3435,15 @@ function summarizeEffectiveModel(model) {
 }
 
 function loadEffectiveCatalog() {
+  if (fs.existsSync(CATALOG_PATH)) {
+    try {
+      const payload = JSON.parse(fs.readFileSync(CATALOG_PATH, "utf8"));
+      return { models: payload.models || payload.data || payload };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
   const result = spawnSync(CODEX_BIN, ["debug", "models"], {
     encoding: "utf8",
     env: {
@@ -3475,7 +3482,9 @@ async function doctor() {
       fs.existsSync(OAI_CATALOG_PATH) ? (JSON.parse(fs.readFileSync(OAI_CATALOG_PATH, "utf8")).models || []).length : 0
     }`,
   );
-  console.log(`config_has_catalog: ${fs.existsSync(CONFIG_PATH) && fs.readFileSync(CONFIG_PATH, "utf8").includes(CATALOG_PATH)}`);
+  console.log(`config_managed_default_clean: ${
+    fs.existsSync(CONFIG_PATH) && !fs.readFileSync(CONFIG_PATH, "utf8").includes(CATALOG_PATH)
+  }`);
   for (const [name, filePath] of Object.entries(WRAPPER_PATHS)) {
     const info = wrapperInfo(filePath);
     const details = [

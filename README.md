@@ -19,9 +19,10 @@ opencodex doctor
 
 Installed commands:
 
-- `codex`: default launcher that injects the MultiCodex profile unless you pass
-  an explicit profile/provider/local mode. If the proxy cannot start, it prints
-  a warning and opens the real Codex CLI without the MultiCodex profile.
+- `codex`: safe default launcher. It can inject the MultiCodex profile when the
+  wrapper is active, but `opencodex install` no longer rewrites the user's
+  top-level `~/.codex/config.toml` default provider. If the proxy cannot start,
+  it prints a warning and opens the real Codex CLI with the OpenAI profile.
 - `codex-multi`: always uses the MultiCodex proxy profile and fails loudly when
   the proxy cannot start.
 - `codex-oai`: uses the normal OpenAI Codex profile.
@@ -92,12 +93,31 @@ to the current npm/source package.
 
 Launcher behavior after install:
 
-- `codex`: default MultiCodex profile. If the proxy cannot start, it falls back
-  to the normal OpenAI profile so the Codex CLI still opens.
+- `codex`: safe launcher. It tries the MultiCodex profile when the wrapper can
+  start the proxy, but falls back to the normal OpenAI profile so the Codex CLI
+  still opens if the proxy is broken or stale.
 - `codex-multi`: strict MultiCodex profile for OpenAI, API-key providers, and
   local providers in one generated model catalog.
 - `codex-oai`: normal OpenAI Codex profile only.
 - `codex-oss`: Codex `--oss` using Ollama by default.
+
+Model/account management:
+
+- Add or rotate API-key accounts with `opencodex auth login <provider> --id <id>
+  --token-env ENV`, or use `--token <token>` / `--stdin` when you intentionally
+  want to store the token in OpenCodex's account file.
+- Add auth-free local endpoints with `--token none`, for example Ollama or LM
+  Studio OpenAI-compatible servers.
+- Use `opencodex auth oauth-start` and `opencodex auth oauth-complete` for the
+  OpenAI ChatGPT OAuth redirect-paste flow.
+- Use `opencodex auth import-opencode [auth.json] [--config opencode.jsonc]` to
+  import OpenCode credentials, provider options, custom endpoints, and configured
+  model metadata.
+- Use the web dashboard Accounts tab at `http://127.0.0.1:1455` for the same
+  account actions, including enable/disable, edit base URL/provider options,
+  refresh usage, unblock, and OpenCode import.
+- Run `opencodex sync` after account changes, then use `codex-multi` for the
+  combined OpenAI/API-key/local model catalog or `codex-oai` for OpenAI only.
 
 Useful commands:
 

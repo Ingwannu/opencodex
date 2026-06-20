@@ -692,6 +692,30 @@ function applyMistralInputNormalization(payload: unknown): void {
   source.input = normalized;
 }
 
+function isDeepSeekChatAccount(
+  account: Pick<Account, "providerId">,
+  model: string | undefined,
+): boolean {
+  const providerId = String(account.providerId ?? "").toLowerCase();
+  const modelId = String(model ?? "").toLowerCase();
+  return providerId.includes("deepseek") || modelId.includes("deepseek");
+}
+
+function applyDeepSeekChatNormalization(payload: unknown): void {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
+  const source = payload as Record<string, unknown>;
+  if (!Array.isArray(source.messages)) return;
+
+  source.messages = source.messages.map((message) => {
+    if (!message || typeof message !== "object" || Array.isArray(message)) return message;
+    const record = message as Record<string, unknown>;
+    if (record.role !== "assistant") return message;
+    if (typeof record.reasoning_content === "string") return message;
+    if (typeof record.reasoning_details === "string") return message;
+    return { ...record, reasoning_content: "" };
+  });
+}
+
 function requestVariantKey(
   requestBody: any,
   requestEffort: EffortTier | undefined,
@@ -2236,6 +2260,13 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
         }
         if (shouldSendChatCompletions && isSnowflakeCortexAccount(selected)) {
           payloadToUpstream = normalizeSnowflakeCortexChatPayload(payloadToUpstream);
+        }
+        if (
+          shouldSendChatCompletions &&
+          candidate.provider === "openai-compatible" &&
+          isDeepSeekChatAccount(selected, candidate.resolvedModel ?? requestModel)
+        ) {
+          applyDeepSeekChatNormalization(payloadToUpstream);
         }
 
         if (

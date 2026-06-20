@@ -834,6 +834,80 @@ test("proxy forwards OpenCode provider option headers to OpenAI-compatible upstr
   }
 });
 
+test("proxy adds DeepSeek assistant reasoning content for OpenAI-compatible upstreams", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "deepseek-chat" }] }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/chat/completions") {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl-deepseek-reasoning",
+          object: "chat.completion",
+          created: 1,
+          model: "deepseek-chat",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "DeepSeek OK" },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "deepseek-reasoning-smoke",
+          provider: "openai-compatible",
+          providerId: "deepseek",
+          providerAdapter: "openai-compatible",
+          accessToken: "deepseek-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          providerModels: {
+            "deepseek-chat": { name: "DeepSeek Chat" },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "deepseek-chat",
+            messages: [
+              { role: "user", content: "First" },
+              { role: "assistant", content: "Answer" },
+              { role: "user", content: "Follow up" },
+            ],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+        assert.equal(capturedRequest.messages[1].role, "assistant");
+        assert.equal(capturedRequest.messages[1].reasoning_content, "");
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy normalizes Mistral tool ids and tool-user turns", async () => {
   let capturedRequest;
   const upstream = http.createServer(async (req, res) => {

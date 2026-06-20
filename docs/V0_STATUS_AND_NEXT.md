@@ -40,6 +40,9 @@ full OpenCode provider parity.
   tool IDs are scrubbed to Mistral's nine-character alphanumeric format, and an
   assistant `Done.` turn is inserted between a tool result and the following
   user turn.
+- OpenCode Claude-compatible tool-call transform mirrored for chat/completions
+  payloads: tool call IDs are scrubbed to Claude's `[A-Za-z0-9_-]` shape before
+  forwarding to OpenAI-compatible Claude endpoints.
 - OpenCode configured model provider metadata defaults are forwarded to upstream
   requests via `providerOptions` and `experimental_providerMetadata`, preserving
   provider-specific cache/control hints when the caller did not override them.
@@ -95,6 +98,8 @@ full OpenCode provider parity.
   Bedrock adapter passthrough fixture.
 - OpenCode SAP AI Core Anthropic `modelParams.thinking` reasoning fixture and
   native SAP adapter passthrough fixture.
+- OpenCode Claude-compatible tool-call ID normalization fixture for
+  OpenAI-compatible providers.
 - Launcher regression coverage that proves the default `codex` wrapper uses the
   OpenAI profile without requiring proxy startup, while `codex-multi` remains
   the strict unified-provider launcher.

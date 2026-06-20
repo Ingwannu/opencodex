@@ -651,6 +651,38 @@ function scrubMistralToolId(id: string): string {
   return id.replace(/[^a-zA-Z0-9]/g, "").substring(0, 9).padEnd(9, "0");
 }
 
+function scrubClaudeToolId(id: string): string {
+  return id.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+function applyClaudeToolIdNormalization(payload: unknown): void {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
+  const source = payload as Record<string, unknown>;
+  if (!Array.isArray(source.messages)) return;
+
+  source.messages = source.messages.map((message) => {
+    if (!message || typeof message !== "object" || Array.isArray(message)) return message;
+    const record = { ...(message as Record<string, unknown>) };
+    if (Array.isArray(record.tool_calls)) {
+      record.tool_calls = record.tool_calls.map((toolCall) => {
+        if (!toolCall || typeof toolCall !== "object" || Array.isArray(toolCall)) return toolCall;
+        const next = { ...(toolCall as Record<string, unknown>) };
+        if (typeof next.id === "string") next.id = scrubClaudeToolId(next.id);
+        return next;
+      });
+    }
+    if (typeof record.tool_call_id === "string") {
+      record.tool_call_id = scrubClaudeToolId(record.tool_call_id);
+    }
+    return record;
+  });
+}
+
+function isClaudeLikeModel(model: string | undefined): boolean {
+  const modelId = String(model ?? "").toLowerCase();
+  return modelId.includes("claude") || modelId.includes("anthropic");
+}
+
 function applyMistralInputNormalization(payload: unknown): void {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
   const source = payload as Record<string, unknown>;
@@ -2496,6 +2528,12 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
           isDeepSeekChatAccount(selected, candidate.resolvedModel ?? requestModel)
         ) {
           applyDeepSeekChatNormalization(payloadToUpstream);
+        }
+        if (
+          shouldSendChatCompletions &&
+          isClaudeLikeModel(candidate.resolvedModel ?? requestModel)
+        ) {
+          applyClaudeToolIdNormalization(payloadToUpstream);
         }
 
         if (

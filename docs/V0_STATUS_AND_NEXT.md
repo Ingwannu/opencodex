@@ -43,6 +43,7 @@ full OpenCode provider parity.
 - `npm publish --dry-run --access public`
 - DigitalOcean cached router import fixtures for both CLI and web/admin import
   paths.
+- OpenCode model `options.topK` / `top_k` request-default fixture.
 
 ## Known gaps
 
@@ -52,7 +53,9 @@ full OpenCode provider parity.
   OpenCode's browser OAuth plugin should still be smoke-tested against a real
   Poe account.
 - Provider-specific edge transforms from OpenCode's `provider/transform.ts` are
-  not exhaustively mirrored for every minor provider.
+  not exhaustively mirrored for every minor provider, though model option
+  defaults now cover temperature, top-p, top-k, max output tokens, reasoning,
+  include, text verbosity, and variants.
 - The unscoped `opencodex` npm package name is blocked by npm's similarity
   policy, so the npm package is published as `@ingwannu/opencodex`.
 

@@ -582,6 +582,16 @@ function applyConfiguredModelOptions(
     payload.top_p = topP;
   }
 
+  const topK = finiteNumber(options.topK ?? options.top_k);
+  if (
+    topK !== undefined &&
+    !hasOwn(requestBody, "topK") &&
+    !hasOwn(requestBody, "top_k") &&
+    !hasOwn(payload, "top_k")
+  ) {
+    payload.top_k = topK;
+  }
+
   const maxOutputTokens = finiteNumber(
     options.maxOutputTokens ??
       options.max_output_tokens ??

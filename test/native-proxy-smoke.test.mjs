@@ -889,6 +889,7 @@ test("proxy applies configured OpenCode model options as request defaults", asyn
                 include: ["reasoning.encrypted_content"],
                 temperature: 0.2,
                 topP: 0.7,
+                topK: 64,
                 maxOutputTokens: 123,
               },
             },
@@ -916,6 +917,7 @@ test("proxy applies configured OpenCode model options as request defaults", asyn
         assert.deepEqual(capturedRequest.include, ["reasoning.encrypted_content"]);
         assert.equal(capturedRequest.temperature, 0.2);
         assert.equal(capturedRequest.top_p, 0.7);
+        assert.equal(capturedRequest.top_k, 64);
         assert.equal(capturedRequest.max_output_tokens, 123);
       },
     );

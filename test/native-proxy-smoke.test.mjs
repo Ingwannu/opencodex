@@ -1303,6 +1303,78 @@ test("proxy applies configured OpenCode provider metadata as request defaults", 
   }
 });
 
+test("proxy applies OpenCode OpenRouter usage include default", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "no model listing" }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/chat/completions") {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl_openrouter_usage",
+          object: "chat.completion",
+          created_at: 1,
+          model: "openrouter-usage-model",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Usage OK" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "openrouter-usage-smoke",
+          provider: "openai-compatible",
+          providerId: "openrouter",
+          providerAdapter: "openai-compatible",
+          providerNpm: "@openrouter/ai-sdk-provider",
+          accessToken: "configured-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}/v1`,
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          providerModels: {
+            "openrouter-usage-model": { name: "OpenRouter Usage Model" },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "openrouter-usage-model",
+            messages: [{ role: "user", content: "Hello" }],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+        assert.equal(json.choices[0].message.content, "Usage OK");
+        assert.deepEqual(capturedRequest.usage, { include: true });
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy replaces unsupported configured model image input with text error", async () => {
   let capturedRequest;
   const upstream = http.createServer(async (req, res) => {

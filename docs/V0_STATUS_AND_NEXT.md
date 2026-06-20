@@ -43,6 +43,8 @@ full OpenCode provider parity.
 - OpenCode configured model provider metadata defaults are forwarded to upstream
   requests via `providerOptions` and `experimental_providerMetadata`, preserving
   provider-specific cache/control hints when the caller did not override them.
+- OpenCode OpenRouter and LLM Gateway request defaults now mirror
+  `usage: { include: true }` when the caller did not provide a usage option.
 - Default `codex` launcher fail-open behavior now falls back through the OpenAI
   profile when the MultiCodex proxy cannot start, so an installed wrapper should
   not trap normal Codex startup on a broken proxy.
@@ -65,6 +67,7 @@ full OpenCode provider parity.
 - OpenCode model `options.topK` / `top_k` request-default fixture.
 - OpenCode model `options.providerOptions`, `options.providerMetadata`, and
   `options.experimental_providerMetadata` request-default fixture.
+- OpenCode OpenRouter usage default fixture.
 - Launcher regression coverage that proves the default `codex` wrapper falls
   back to the real Codex CLI when the MultiCodex proxy cannot start.
 - Launcher regression coverage that proves `opencodex install` preserves the

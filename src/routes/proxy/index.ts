@@ -990,6 +990,27 @@ function applyConfiguredModelOptions(
   }
 }
 
+function applyOpenCodeProviderDefaults(
+  payload: any,
+  requestBody: any,
+  account: Pick<Account, "providerNpm">,
+): void {
+  if (!payload || typeof payload !== "object") return;
+  const requestRecord = requestBody && typeof requestBody === "object"
+    ? (requestBody as Record<string, unknown>)
+    : {};
+  const payloadRecord = payload as Record<string, unknown>;
+
+  if (
+    (account.providerNpm === "@openrouter/ai-sdk-provider" ||
+      account.providerNpm === "@llmgateway/ai-sdk-provider") &&
+    !hasOwn(requestRecord, "usage") &&
+    !hasOwn(payloadRecord, "usage")
+  ) {
+    payloadRecord.usage = { include: true };
+  }
+}
+
 function mergeConfiguredAccountModels(
   byId: Map<string, ExposedModel>,
   account: Account,
@@ -2387,6 +2408,7 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
           configuredModelOptions,
           shouldSendChatCompletions,
         );
+        applyOpenCodeProviderDefaults(payloadToUpstream, req.body, selected);
         if (shouldSendChatCompletions) {
           applyInterleavedReasoningNormalization(
             payloadToUpstream,

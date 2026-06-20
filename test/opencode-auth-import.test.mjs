@@ -1201,3 +1201,63 @@ test("imports Snowflake Cortex from OpenCode config and env PAT/JWT token", () =
   assert.equal(snowflake?.enabled, true);
   assert.ok(snowflake?.providerModels?.["claude-sonnet-4-5"]);
 });
+
+test("imports DigitalOcean cached router metadata through the CLI", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-digitalocean-router-auth-"));
+  const storePath = path.join(dir, "accounts.json");
+  const authPath = path.join(dir, "auth.json");
+
+  fs.writeFileSync(
+    authPath,
+    JSON.stringify(
+      {
+        digitalocean: {
+          type: "api",
+          key: "do-model-access-key",
+          metadata: {
+            routers: JSON.stringify([
+              {
+                name: "my-router",
+                uuid: "11f1499a-aaaa-bbbb-cccc-4e013e2ddde4",
+                description: "Route to the best model",
+              },
+              {
+                name: "other-router",
+                uuid: "22f1499a-aaaa-bbbb-cccc-4e013e2ddde4",
+              },
+            ]),
+            routers_fetched_at: String(Date.now()),
+            oauth_access: "doo_v1_test",
+            oauth_expires: String(Date.now() + 60 * 60 * 1000),
+          },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  execFileSync(process.execPath, [cli, "auth", "import-opencode", authPath], {
+    cwd: root,
+    env: {
+      ...process.env,
+      MULTICODEX_STORE_PATH: storePath,
+      MULTICODEX_DATA_DIR: dir,
+    },
+    encoding: "utf8",
+  });
+
+  const store = readStore(storePath);
+  const digitalocean = store.accounts.find(
+    (account) => account.providerId === "digitalocean",
+  );
+  assert.equal(digitalocean?.providerAdapter, "openai-compatible");
+  assert.equal(digitalocean?.baseUrl, "https://inference.do-ai.run");
+  assert.equal(digitalocean?.enabled, true);
+  assert.equal(digitalocean?.providerModels?.["router:my-router"]?.api?.id, "router:my-router");
+  assert.equal(digitalocean?.providerModels?.["router:my-router"]?.api?.url, "https://inference.do-ai.run/v1");
+  assert.equal(digitalocean?.providerModels?.["router:my-router"]?.api?.npm, "@ai-sdk/openai-compatible");
+  assert.equal(digitalocean?.providerModels?.["router:my-router"]?.name, "my-router");
+  assert.equal(digitalocean?.providerModels?.["router:my-router"]?.description, "Route to the best model");
+  assert.ok(digitalocean?.providerModels?.["router:other-router"]);
+});

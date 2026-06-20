@@ -476,6 +476,72 @@ function baseProviderModelsForRegistry(
   return Object.keys(out).length ? out : undefined;
 }
 
+function parseDigitalOceanRouters(body: unknown): Array<Record<string, unknown>> {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return [];
+  const metadata = (body as Record<string, unknown>).metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return [];
+  const raw = (metadata as Record<string, unknown>).routers;
+  if (typeof raw !== "string" || !raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((router): Array<Record<string, unknown>> => {
+      if (!router || typeof router !== "object" || Array.isArray(router)) return [];
+      const source = router as Record<string, unknown>;
+      const name = typeof source.name === "string" ? source.name.trim() : "";
+      if (!name) return [];
+      return [{ ...source, name }];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function digitalOceanRouterModel(router: Record<string, unknown>): Record<string, unknown> {
+  const name = String(router.name);
+  const id = `router:${name}`;
+  return {
+    id,
+    name,
+    description: typeof router.description === "string" ? router.description : undefined,
+    family: "digitalocean-inference-routers",
+    api: {
+      id,
+      url: "https://inference.do-ai.run/v1",
+      npm: "@ai-sdk/openai-compatible",
+    },
+    status: "active",
+    cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+    limit: { context: 128_000, output: 8_192 },
+    capabilities: {
+      temperature: true,
+      reasoning: false,
+      attachment: false,
+      toolcall: true,
+      input: { text: true, audio: false, image: false, video: false, pdf: false },
+      output: { text: true, audio: false, image: false, video: false, pdf: false },
+      interleaved: false,
+    },
+    variants: {},
+    routerUuid: typeof router.uuid === "string" ? router.uuid : undefined,
+  };
+}
+
+function providerModelsForAuthEntry(
+  providerKey: string,
+  registry: ProviderRegistryEntry,
+  body: unknown,
+): Record<string, unknown> | undefined {
+  const models = { ...(baseProviderModelsForRegistry(registry) ?? {}) };
+  if (sanitizeProviderId(providerKey) === "digitalocean") {
+    for (const router of parseDigitalOceanRouters(body)) {
+      const id = `router:${router.name}`;
+      if (!models[id]) models[id] = digitalOceanRouterModel(router);
+    }
+  }
+  return Object.keys(models).length ? models : undefined;
+}
+
 function modelProviderOverrideAccountsForRegistry(
   baseAccount: Account,
   registry: ProviderRegistryEntry,
@@ -861,7 +927,7 @@ export async function accountsFromOpenCodeAuthPayload(
       providerAuthEnv: registry.tokenEnv,
       providerAuthType: credential.providerAuthType ?? registry.authType,
       providerOptions: providerOptionsForAuthEntry(providerKey, registry, body),
-      providerModels: baseProviderModelsForRegistry(registry),
+      providerModels: providerModelsForAuthEntry(providerKey, registry, body),
       upstreamMode: registry.upstreamMode,
       compatibilityMode: registry.compatibilityMode,
       openAiPathPrefix: registry.openAiPathPrefix,
@@ -906,7 +972,7 @@ export async function accountsFromOpenCodeAuthPayload(
       providerAuthEnv: registry.tokenEnv,
       providerAuthType: registry.authType,
       providerOptions: registry.providerOptions,
-      providerModels: baseProviderModelsForRegistry(registry),
+      providerModels: providerModelsForAuthEntry(providerKey, registry, undefined),
       upstreamMode: registry.upstreamMode,
       compatibilityMode: registry.compatibilityMode,
       openAiPathPrefix: registry.openAiPathPrefix,
@@ -953,7 +1019,7 @@ export async function accountsFromOpenCodeAuthPayload(
       providerAuthEnv: registry.tokenEnv,
       providerAuthType: registry.authType,
       providerOptions: registry.providerOptions,
-      providerModels: baseProviderModelsForRegistry(registry),
+      providerModels: providerModelsForAuthEntry(providerKey, registry, undefined),
       upstreamMode: registry.upstreamMode,
       compatibilityMode: registry.compatibilityMode,
       openAiPathPrefix: registry.openAiPathPrefix,

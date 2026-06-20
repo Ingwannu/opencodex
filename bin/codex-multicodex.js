@@ -2246,6 +2246,67 @@ function baseProviderModelsForPreset(preset) {
   return Object.keys(out).length ? out : undefined;
 }
 
+function parseDigitalOceanRouters(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return [];
+  const metadata = body.metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return [];
+  const raw = metadata.routers;
+  if (typeof raw !== "string" || !raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((router) => {
+      if (!router || typeof router !== "object" || Array.isArray(router)) return [];
+      const name = typeof router.name === "string" ? router.name.trim() : "";
+      if (!name) return [];
+      return [{ ...router, name }];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function digitalOceanRouterModel(router) {
+  const name = String(router.name);
+  const id = `router:${name}`;
+  return {
+    id,
+    name,
+    description: typeof router.description === "string" ? router.description : undefined,
+    family: "digitalocean-inference-routers",
+    api: {
+      id,
+      url: "https://inference.do-ai.run/v1",
+      npm: "@ai-sdk/openai-compatible",
+    },
+    status: "active",
+    cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+    limit: { context: 128_000, output: 8_192 },
+    capabilities: {
+      temperature: true,
+      reasoning: false,
+      attachment: false,
+      toolcall: true,
+      input: { text: true, audio: false, image: false, video: false, pdf: false },
+      output: { text: true, audio: false, image: false, video: false, pdf: false },
+      interleaved: false,
+    },
+    variants: {},
+    routerUuid: typeof router.uuid === "string" ? router.uuid : undefined,
+  };
+}
+
+function providerModelsForAuthEntry(providerKey, preset, body) {
+  const models = { ...(baseProviderModelsForPreset(preset) || {}) };
+  if (sanitizeProviderId(providerKey) === "digitalocean") {
+    for (const router of parseDigitalOceanRouters(body)) {
+      const id = `router:${router.name}`;
+      if (!models[id]) models[id] = digitalOceanRouterModel(router);
+    }
+  }
+  return Object.keys(models).length ? models : undefined;
+}
+
 function modelProviderOverrideAccountsForPreset(baseAccount, preset, token) {
   if (!preset.models || typeof preset.models !== "object") return [];
 
@@ -2557,7 +2618,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         providerAuthEnv: preset.tokenEnv,
         providerAuthType: credential.providerAuthType || preset.authType,
         providerOptions: providerOptionsForAuthEntry(providerKey, preset, body),
-        providerModels: baseProviderModelsForPreset(preset),
+        providerModels: providerModelsForAuthEntry(providerKey, preset, body),
         upstreamMode: preset.upstreamMode,
         compatibilityMode: preset.compatibilityMode,
         openAiPathPrefix: preset.openAiPathPrefix,
@@ -2598,7 +2659,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         providerAuthEnv: preset.tokenEnv,
         providerAuthType: preset.authType,
         providerOptions: preset.providerOptions,
-        providerModels: baseProviderModelsForPreset(preset),
+        providerModels: providerModelsForAuthEntry(providerKey, preset, undefined),
         upstreamMode: preset.upstreamMode,
         compatibilityMode: preset.compatibilityMode,
         openAiPathPrefix: preset.openAiPathPrefix,
@@ -2641,7 +2702,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         providerAuthEnv: preset.tokenEnv,
         providerAuthType: preset.authType,
         providerOptions: preset.providerOptions,
-        providerModels: baseProviderModelsForPreset(preset),
+        providerModels: providerModelsForAuthEntry(providerKey, preset, undefined),
         upstreamMode: preset.upstreamMode,
         compatibilityMode: preset.compatibilityMode,
         openAiPathPrefix: preset.openAiPathPrefix,

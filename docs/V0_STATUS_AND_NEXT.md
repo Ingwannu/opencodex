@@ -11,6 +11,8 @@ full OpenCode provider parity.
   and importing provider accounts.
 - OpenCode `auth.json`, current credential records, pasted auth/config content,
   and `opencode.json/jsonc` provider config import.
+- DigitalOcean cached Inference Router metadata import, exposing OAuth-discovered
+  routers as `router:<name>` models.
 - Built-in routing for:
   - OpenAI ChatGPT OAuth and OpenAI API Responses
   - OpenAI-compatible providers
@@ -39,14 +41,13 @@ full OpenCode provider parity.
 - `npm audit --audit-level=high`
 - `npm --prefix web audit --audit-level=high`
 - `npm publish --dry-run --access public`
+- DigitalOcean cached router import fixtures for both CLI and web/admin import
+  paths.
 
 ## Known gaps
 
 - Live end-to-end calls have not been run for every provider because they require
   real third-party accounts, subscriptions, and API keys.
-- DigitalOcean is available as an OpenAI-compatible provider, but OpenCode's
-  OAuth plugin also merges `metadata.routers` into `router:<name>` models. That
-  router model merge still needs first-class parity.
 - Poe is available as an OpenAI-compatible provider with API-key style auth, but
   OpenCode's browser OAuth plugin should still be smoke-tested against a real
   Poe account.
@@ -57,11 +58,9 @@ full OpenCode provider parity.
 
 ## Next update order
 
-1. Add DigitalOcean router metadata import so OpenCode OAuth credentials expose
-   `router:<name>` models locally.
-2. Add live smoke scripts for the major providers with opt-in environment keys.
-3. Audit OpenCode `provider/transform.ts` for provider-specific request options
+1. Add live smoke scripts for the major providers with opt-in environment keys.
+2. Audit OpenCode `provider/transform.ts` for provider-specific request options
    that should be mirrored in the proxy.
-4. Add Poe OAuth live smoke coverage once a test account is available.
-5. Continue expanding minor provider fixtures from Models.dev and OpenCode's
+3. Add Poe OAuth live smoke coverage once a test account is available.
+4. Continue expanding minor provider fixtures from Models.dev and OpenCode's
    provider config surface.

@@ -16,6 +16,7 @@ const OAI_CATALOG_PATH = path.join(CODEX_HOME, "model-catalogs", "oai-models.jso
 const PROFILE_PATH = path.join(CODEX_HOME, "multicodex.config.toml");
 const OAI_PROFILE_PATH = path.join(CODEX_HOME, "oai.config.toml");
 const CONFIG_PATH = path.join(CODEX_HOME, "config.toml");
+const MODELS_CACHE_PATH = path.join(CODEX_HOME, "models_cache.json");
 const MANAGED_DIR = path.join(CODEX_HOME, "opencodex");
 const DATA_DIR = process.env.MULTICODEX_DATA_DIR || path.join(MANAGED_DIR, "data");
 const LEGACY_DATA_DIRS = [path.join(CODEX_HOME, "multicodex-proxy", "data"), path.join(ROOT, "data")];
@@ -3448,13 +3449,29 @@ async function sync() {
   const models = await listModels();
   const oaiModels = models.filter((model) => gptMetadata[model]);
   const bundledCatalog = loadBundledCatalog();
+  const multicodexCatalog = makeCatalog(models, bundledCatalog);
+  const oaiCatalog = makeCatalog(oaiModels, bundledCatalog);
   fs.mkdirSync(path.dirname(CATALOG_PATH), { recursive: true });
-  fs.writeFileSync(CATALOG_PATH, `${JSON.stringify(makeCatalog(models, bundledCatalog), null, 2)}\n`);
-  fs.writeFileSync(OAI_CATALOG_PATH, `${JSON.stringify(makeCatalog(oaiModels, bundledCatalog), null, 2)}\n`);
+  fs.writeFileSync(CATALOG_PATH, `${JSON.stringify(multicodexCatalog, null, 2)}\n`);
+  fs.writeFileSync(OAI_CATALOG_PATH, `${JSON.stringify(oaiCatalog, null, 2)}\n`);
+  fs.writeFileSync(
+    MODELS_CACHE_PATH,
+    `${JSON.stringify(
+      {
+        fetched_at: new Date().toISOString(),
+        etag: "opencodex-multicodex",
+        client_version: "opencodex",
+        models: multicodexCatalog.models,
+      },
+      null,
+      2,
+    )}\n`,
+  );
   writeProfile();
   syncConfig();
   console.log(`Synced ${models.length} models to ${CATALOG_PATH}`);
   console.log(`Synced ${oaiModels.length} OpenAI models to ${OAI_CATALOG_PATH}`);
+  console.log(`Updated ${MODELS_CACHE_PATH}`);
   console.log(`Updated ${PROFILE_PATH}`);
   console.log(`Updated ${OAI_PROFILE_PATH}`);
   console.log(`Updated ${CONFIG_PATH}`);

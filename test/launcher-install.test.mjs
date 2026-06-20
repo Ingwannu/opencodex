@@ -326,6 +326,11 @@ fast_mode = false
   assert.match(config, /^service_tier = "fast"$/m);
   assert.match(config, /^fast_mode = true$/m);
   assert.match(config, /^\[model_providers\.multicodex\]$/m);
+
+  const modelsCache = JSON.parse(fs.readFileSync(path.join(codexHome, "models_cache.json"), "utf8"));
+  assert.equal(modelsCache.client_version, "opencodex");
+  assert.equal(modelsCache.models.length, 19);
+  assert.ok(modelsCache.models.some((model) => model.slug === "glm-5.2-fast"));
 });
 
 test("install writes profile defaults that enable Codex Fast mode for OpenAI models", () => {

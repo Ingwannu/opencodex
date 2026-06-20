@@ -555,6 +555,28 @@ function objectValue(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+function cloneJsonValue<T>(value: T): T {
+  return value === undefined ? value : JSON.parse(JSON.stringify(value));
+}
+
+function applyConfiguredPayloadDefault(
+  payload: Record<string, unknown>,
+  requestBody: Record<string, unknown>,
+  options: Record<string, unknown>,
+  optionKeys: string[],
+  payloadKey: string,
+): void {
+  if (hasOwn(payload, payloadKey) || hasOwn(requestBody, payloadKey)) return;
+
+  for (const optionKey of optionKeys) {
+    if (!hasOwn(options, optionKey)) continue;
+    const value = options[optionKey];
+    if (value === undefined) continue;
+    payload[payloadKey] = cloneJsonValue(value);
+    return;
+  }
+}
+
 function applyConfiguredModelOptions(
   payload: any,
   requestBody: any,
@@ -663,6 +685,25 @@ function applyConfiguredModelOptions(
       (value): value is string => typeof value === "string" && value.trim().length > 0,
     );
   }
+
+  const payloadRecord = payload as Record<string, unknown>;
+  const requestRecord = requestBody && typeof requestBody === "object"
+    ? (requestBody as Record<string, unknown>)
+    : {};
+  applyConfiguredPayloadDefault(payloadRecord, requestRecord, options, ["store"], "store");
+  applyConfiguredPayloadDefault(
+    payloadRecord,
+    requestRecord,
+    options,
+    ["prompt_cache_key", "promptCacheKey"],
+    "prompt_cache_key",
+  );
+  applyConfiguredPayloadDefault(payloadRecord, requestRecord, options, ["usage"], "usage");
+  applyConfiguredPayloadDefault(payloadRecord, requestRecord, options, ["enable_thinking"], "enable_thinking");
+  applyConfiguredPayloadDefault(payloadRecord, requestRecord, options, ["thinking"], "thinking");
+  applyConfiguredPayloadDefault(payloadRecord, requestRecord, options, ["thinkingConfig"], "thinkingConfig");
+  applyConfiguredPayloadDefault(payloadRecord, requestRecord, options, ["chat_template_args"], "chat_template_args");
+  applyConfiguredPayloadDefault(payloadRecord, requestRecord, options, ["gateway"], "gateway");
 }
 
 function mergeConfiguredAccountModels(

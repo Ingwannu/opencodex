@@ -55,7 +55,8 @@ full OpenCode provider parity.
 - Provider-specific edge transforms from OpenCode's `provider/transform.ts` are
   not exhaustively mirrored for every minor provider, though model option
   defaults now cover temperature, top-p, top-k, max output tokens, reasoning,
-  include, text verbosity, and variants.
+  include, text verbosity, variants, store, prompt-cache keys, usage hints,
+  thinking flags/config, chat template args, and gateway caching hints.
 - The unscoped `opencodex` npm package name is blocked by npm's similarity
   policy, so the npm package is published as `@ingwannu/opencodex`.
 

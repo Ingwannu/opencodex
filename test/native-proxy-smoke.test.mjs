@@ -891,6 +891,14 @@ test("proxy applies configured OpenCode model options as request defaults", asyn
                 topP: 0.7,
                 topK: 64,
                 maxOutputTokens: 123,
+                store: false,
+                promptCacheKey: "session-cache-key",
+                usage: { include: true },
+                enable_thinking: true,
+                thinking: { type: "enabled", clear_thinking: false },
+                thinkingConfig: { includeThoughts: true, thinkingBudget: 16000 },
+                chat_template_args: { enable_thinking: true },
+                gateway: { caching: "auto" },
               },
             },
           },
@@ -919,6 +927,22 @@ test("proxy applies configured OpenCode model options as request defaults", asyn
         assert.equal(capturedRequest.top_p, 0.7);
         assert.equal(capturedRequest.top_k, 64);
         assert.equal(capturedRequest.max_output_tokens, 123);
+        assert.equal(capturedRequest.store, false);
+        assert.equal(capturedRequest.prompt_cache_key, "session-cache-key");
+        assert.deepEqual(capturedRequest.usage, { include: true });
+        assert.equal(capturedRequest.enable_thinking, true);
+        assert.deepEqual(capturedRequest.thinking, {
+          type: "enabled",
+          clear_thinking: false,
+        });
+        assert.deepEqual(capturedRequest.thinkingConfig, {
+          includeThoughts: true,
+          thinkingBudget: 16000,
+        });
+        assert.deepEqual(capturedRequest.chat_template_args, {
+          enable_thinking: true,
+        });
+        assert.deepEqual(capturedRequest.gateway, { caching: "auto" });
       },
     );
   } finally {

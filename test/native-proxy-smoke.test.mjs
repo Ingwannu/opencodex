@@ -3316,6 +3316,7 @@ test("proxy routes GitHub Copilot with OpenCode-compatible headers", async () =>
           body: JSON.stringify({
             model: "gpt-5.1-codex",
             messages: [{ role: "user", content: "Hello" }],
+            reasoning_effort: "high",
           }),
         });
         const json = await res.json();
@@ -3334,6 +3335,10 @@ test("proxy routes GitHub Copilot with OpenCode-compatible headers", async () =>
         assert.equal(capturedChatHeaders["x-initiator"], "user");
         assert.ok(capturedChatHeaders["user-agent"]?.includes("pi ("));
         assert.equal(capturedRequest.model, "gpt-5.1-codex");
+        assert.equal(capturedRequest.reasoningEffort, "high");
+        assert.equal(capturedRequest.reasoningSummary, "auto");
+        assert.deepEqual(capturedRequest.include, ["reasoning.encrypted_content"]);
+        assert.equal(capturedRequest.reasoning_effort, undefined);
       },
     );
   } finally {

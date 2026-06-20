@@ -1189,6 +1189,24 @@ function applyOpenCodeProviderDefaults(
   }
 
   if (
+    account.providerNpm === "@ai-sdk/github-copilot" &&
+    flatReasoningEffort &&
+    !modelId.includes("gemini") &&
+    !modelId.includes("claude") &&
+    !hasOwn(requestRecord, "reasoningEffort") &&
+    !hasOwn(payloadRecord, "reasoningEffort")
+  ) {
+    payloadRecord.reasoningEffort = flatReasoningEffort;
+    if (!hasOwn(requestRecord, "reasoningSummary") && !hasOwn(payloadRecord, "reasoningSummary")) {
+      payloadRecord.reasoningSummary = "auto";
+    }
+    if (!hasOwn(requestRecord, "include") && !hasOwn(payloadRecord, "include")) {
+      payloadRecord.include = ["reasoning.encrypted_content"];
+    }
+    delete payloadRecord.reasoning_effort;
+  }
+
+  if (
     (account.providerNpm === "@openrouter/ai-sdk-provider" ||
       account.providerNpm === "@llmgateway/ai-sdk-provider") &&
     model.includes("gemini-3") &&

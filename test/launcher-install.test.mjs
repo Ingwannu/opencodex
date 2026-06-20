@@ -84,11 +84,22 @@ test("install writes launchers that call the detected real Codex binary", () => 
   });
   assert.match(codexOutput, /fake-codex 1\.0\.0/);
 
+  const debugModels = execFileSync(path.join(binDir, "codex"), ["debug", "models"], {
+    cwd: root,
+    env: {
+      ...env,
+      PATH: `${binDir}${path.delimiter}${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+    },
+    encoding: "utf8",
+  });
+  assert.match(debugModels, /"gpt-5\.5"/);
+
   const calls = fs.readFileSync(markerPath, "utf8");
   assert.match(calls, /debug models --bundled/);
   assert.match(calls, /debug models/);
   assert.match(calls, /--version/);
   assert.doesNotMatch(calls, /--profile oai --version/);
+  assert.doesNotMatch(calls, /--profile multicodex debug models/);
 });
 
 test("doctor reports stale managed launchers and install rewrites them", () => {

@@ -3119,7 +3119,7 @@ has_profile_arg() {
 
 should_bypass_profile() {
   case "\${1:-}" in
-    --version|-V|version|login|logout)
+    --help|-h|--version|-V|version|debug|doctor|login|logout|auth|mcp|mcp-server|completion|app-server|proto|features|cloud|remote-control|exec-server|plugin|update)
       return 0
       ;;
   esac
@@ -3280,7 +3280,29 @@ function hasProfileArg(argv) {
 
 function shouldBypassCodexProfile(argv) {
   const first = argv[0];
-  return first === "--version" || first === "-V" || first === "version" || first === "login" || first === "logout";
+  return [
+    "--help",
+    "-h",
+    "--version",
+    "-V",
+    "version",
+    "debug",
+    "doctor",
+    "login",
+    "logout",
+    "auth",
+    "mcp",
+    "mcp-server",
+    "completion",
+    "app-server",
+    "proto",
+    "features",
+    "cloud",
+    "remote-control",
+    "exec-server",
+    "plugin",
+    "update",
+  ].includes(first);
 }
 
 async function spawnRealCodex(argv) {

@@ -993,13 +993,32 @@ function applyConfiguredModelOptions(
 function applyOpenCodeProviderDefaults(
   payload: any,
   requestBody: any,
-  account: Pick<Account, "provider" | "providerAdapter" | "providerNpm">,
+  account: Pick<Account, "provider" | "providerAdapter" | "providerId" | "providerNpm" | "providerOptions">,
+  metadata: Record<string, unknown> | undefined,
+  sessionId: string | undefined,
 ): void {
   if (!payload || typeof payload !== "object") return;
   const requestRecord = requestBody && typeof requestBody === "object"
     ? (requestBody as Record<string, unknown>)
     : {};
   const payloadRecord = payload as Record<string, unknown>;
+  const model = typeof payloadRecord.model === "string" ? payloadRecord.model : "";
+  const modelId = model.toLowerCase();
+  const providerId = String(account.providerId ?? account.provider ?? "").toLowerCase();
+
+  if (
+    sessionId &&
+    (providerId === "openai" ||
+      account.providerNpm === "@ai-sdk/openai" ||
+      account.providerOptions?.setCacheKey === true ||
+      providerId === "venice" ||
+      providerId === "openrouter") &&
+    !hasOwn(requestRecord, "prompt_cache_key") &&
+    !hasOwn(requestRecord, "promptCacheKey") &&
+    !hasOwn(payloadRecord, "prompt_cache_key")
+  ) {
+    payloadRecord.prompt_cache_key = sessionId;
+  }
 
   if (
     (account.providerNpm === "@openrouter/ai-sdk-provider" ||
@@ -1010,7 +1029,6 @@ function applyOpenCodeProviderDefaults(
     payloadRecord.usage = { include: true };
   }
 
-  const model = typeof payloadRecord.model === "string" ? payloadRecord.model : "";
   if (
     (account.providerNpm === "@openrouter/ai-sdk-provider" ||
       account.providerNpm === "@llmgateway/ai-sdk-provider") &&
@@ -1027,11 +1045,54 @@ function applyOpenCodeProviderDefaults(
       account.providerNpm === "@ai-sdk/google-vertex" ||
       provider === "google" ||
       provider === "vertex") &&
-    model.includes("gemini-3") &&
+    modelId.includes("gemini-3") &&
     !hasOwn(requestRecord, "thinkingConfig") &&
     !hasOwn(payloadRecord, "thinkingConfig")
   ) {
     payloadRecord.thinkingConfig = { includeThoughts: true, thinkingLevel: "high" };
+  }
+
+  if (
+    (providerId.includes("zai") || providerId.includes("zhipuai")) &&
+    account.providerNpm === "@ai-sdk/openai-compatible" &&
+    !hasOwn(requestRecord, "thinking") &&
+    !hasOwn(payloadRecord, "thinking")
+  ) {
+    payloadRecord.thinking = { type: "enabled", clear_thinking: false };
+  }
+
+  const capabilities = metadata?.capabilities;
+  const reasoningCapable =
+    capabilities &&
+    typeof capabilities === "object" &&
+    !Array.isArray(capabilities) &&
+    (capabilities as Record<string, unknown>).reasoning === true;
+  if (
+    providerId === "alibaba-cn" &&
+    reasoningCapable &&
+    account.providerNpm === "@ai-sdk/openai-compatible" &&
+    !modelId.includes("kimi-k2-thinking") &&
+    !hasOwn(requestRecord, "enable_thinking") &&
+    !hasOwn(payloadRecord, "enable_thinking")
+  ) {
+    payloadRecord.enable_thinking = true;
+  }
+
+  if (
+    (providerId === "baseten" ||
+      (providerId === "opencode" && ["kimi-k2-thinking", "glm-4.6"].includes(modelId))) &&
+    !hasOwn(requestRecord, "chat_template_args") &&
+    !hasOwn(payloadRecord, "chat_template_args")
+  ) {
+    payloadRecord.chat_template_args = { enable_thinking: true };
+  }
+
+  if (
+    account.providerNpm === "@ai-sdk/gateway" &&
+    !hasOwn(requestRecord, "gateway") &&
+    !hasOwn(payloadRecord, "gateway")
+  ) {
+    payloadRecord.gateway = { caching: "auto" };
   }
 }
 
@@ -2432,7 +2493,13 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
           configuredModelOptions,
           shouldSendChatCompletions,
         );
-        applyOpenCodeProviderDefaults(payloadToUpstream, req.body, selected);
+        applyOpenCodeProviderDefaults(
+          payloadToUpstream,
+          req.body,
+          selected,
+          configuredModelMetadata,
+          sessionId,
+        );
         if (shouldSendChatCompletions) {
           applyInterleavedReasoningNormalization(
             payloadToUpstream,

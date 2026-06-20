@@ -50,6 +50,11 @@ full OpenCode provider parity.
   default thinking config by sending `includeThoughts: true` and
   `thinkingLevel: "high"` through `generationConfig.thinkingConfig` when the
   caller did not provide a thinking config.
+- Additional OpenCode provider-level request defaults are mirrored from provider
+  identity and model metadata: OpenRouter/Venice/OpenAI-compatible
+  `setCacheKey` session cache keys, Z.ai/ZhipuAI thinking enablement,
+  Alibaba CN reasoning `enable_thinking`, Baseten/OpenCode chat-template
+  thinking hints, and AI Gateway automatic caching hints.
 - Default `codex` launcher fail-open behavior now falls back through the OpenAI
   profile when the MultiCodex proxy cannot start, so an installed wrapper should
   not trap normal Codex startup on a broken proxy.
@@ -74,6 +79,8 @@ full OpenCode provider parity.
   `options.experimental_providerMetadata` request-default fixture.
 - OpenCode OpenRouter usage and Gemini 3 reasoning default fixture.
 - Google native Gemini 3 `thinkingConfig` default fixture.
+- OpenCode provider identity default fixture for session cache keys, Z.ai
+  thinking, Alibaba CN reasoning enablement, and gateway-style request hints.
 - Launcher regression coverage that proves the default `codex` wrapper falls
   back to the real Codex CLI when the MultiCodex proxy cannot start.
 - Launcher regression coverage that proves `opencodex install` preserves the

@@ -1307,6 +1307,144 @@ test("proxy applies configured OpenCode provider metadata as request defaults", 
   }
 });
 
+test("proxy applies OpenCode provider defaults from provider identity", async () => {
+  const captured = new Map();
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "no model listing" }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/chat/completions") {
+      const body = await readJson(req);
+      captured.set(body.model, body);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: `chat_${body.model}`,
+          object: "chat.completion",
+          created: 1,
+          model: body.model,
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "OK" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "openrouter-defaults-smoke",
+          provider: "openai-compatible",
+          providerId: "openrouter",
+          providerAdapter: "openai-compatible",
+          providerNpm: "@openrouter/ai-sdk-provider",
+          accessToken: "openrouter-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          providerModels: { "openrouter-model": { name: "OpenRouter Model" } },
+          enabled: true,
+        },
+        {
+          id: "set-cache-defaults-smoke",
+          provider: "openai-compatible",
+          providerId: "timed-provider",
+          providerAdapter: "openai-compatible",
+          providerNpm: "@ai-sdk/openai-compatible",
+          accessToken: "timed-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          providerOptions: { setCacheKey: true },
+          providerModels: { "set-cache-model": { name: "Set Cache Model" } },
+          enabled: true,
+        },
+        {
+          id: "zai-defaults-smoke",
+          provider: "openai-compatible",
+          providerId: "zai",
+          providerAdapter: "openai-compatible",
+          providerNpm: "@ai-sdk/openai-compatible",
+          accessToken: "zai-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          providerModels: { "zai-thinking-model": { name: "Z.ai Thinking Model" } },
+          enabled: true,
+        },
+        {
+          id: "alibaba-cn-defaults-smoke",
+          provider: "openai-compatible",
+          providerId: "alibaba-cn",
+          providerAdapter: "openai-compatible",
+          providerNpm: "@ai-sdk/openai-compatible",
+          accessToken: "alibaba-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          providerModels: {
+            "qwen3-thinking-model": {
+              name: "Qwen3 Thinking Model",
+              capabilities: { reasoning: true },
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        for (const model of [
+          "openrouter-model",
+          "set-cache-model",
+          "zai-thinking-model",
+          "qwen3-thinking-model",
+        ]) {
+          const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "session-id": "provider-session-key",
+            },
+            body: JSON.stringify({
+              model,
+              messages: [{ role: "user", content: "Hello" }],
+            }),
+          });
+          const json = await res.json();
+          assert.equal(res.status, 200, JSON.stringify(json));
+        }
+
+        assert.equal(
+          captured.get("openrouter-model")?.prompt_cache_key,
+          "provider-session-key",
+        );
+        assert.equal(
+          captured.get("set-cache-model")?.prompt_cache_key,
+          "provider-session-key",
+        );
+        assert.deepEqual(captured.get("zai-thinking-model")?.thinking, {
+          type: "enabled",
+          clear_thinking: false,
+        });
+        assert.equal(captured.get("qwen3-thinking-model")?.enable_thinking, true);
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy applies OpenCode OpenRouter usage and Gemini 3 reasoning defaults", async () => {
   let capturedRequest;
   const upstream = http.createServer(async (req, res) => {

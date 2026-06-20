@@ -94,6 +94,12 @@ full OpenCode provider parity.
 - Default `codex` launcher behavior now uses the OpenAI profile without
   requiring MultiCodex proxy startup, while `codex-multi` owns strict unified
   provider startup. Codex management commands are passed through unchanged.
+- Managed OpenAI and MultiCodex profiles now persist Codex Fast mode with
+  `service_tier = "fast"` and `[features].fast_mode = true`; model catalogs
+  still expose the underlying Fast tier id used by Codex metadata.
+- The default `codex` launcher now respects an explicit user `--profile` / `-p`
+  flag instead of appending its own OpenAI profile and causing duplicate profile
+  errors.
 - SAP AI Core Anthropic reasoning variants now mirror OpenCode's wrapped
   `modelParams.thinking` shape and the native SAP adapter forwards those params
   into orchestration `model.params`.
@@ -143,6 +149,9 @@ full OpenCode provider parity.
 - Launcher regression coverage that proves the default `codex` wrapper uses the
   OpenAI profile without requiring proxy startup, while `codex-multi` remains
   the strict unified-provider launcher.
+- Launcher regression coverage that proves explicit `--profile` flags are not
+  duplicated and managed profiles persist the Codex `service_tier = "fast"`
+  default needed for `/fast`.
 - Launcher regression coverage that proves `opencodex install` preserves the
   user's default Codex provider outside the managed `codex-multi`/`codex-oai`
   profiles.

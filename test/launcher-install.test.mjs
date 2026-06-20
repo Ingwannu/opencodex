@@ -174,6 +174,47 @@ test("default codex launcher uses the OpenAI profile without requiring proxy sta
   assert.match(calls, /--profile oai hello/);
 });
 
+test("default codex launcher respects an explicit profile without duplicating profile flags", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-launcher-explicit-profile-"));
+  const home = path.join(dir, "home");
+  const binDir = path.join(home, ".local", "bin");
+  const fakeBin = path.join(dir, "real-bin");
+  const markerPath = path.join(dir, "fake-codex-calls.log");
+  const fakeCodex = path.join(fakeBin, "codex");
+  writeFakeCodex(fakeCodex, markerPath);
+
+  const env = {
+    ...process.env,
+    HOME: home,
+    CODEX_HOME: path.join(home, ".codex"),
+    CODEX_MULTICODEX_BIN_DIR: binDir,
+    MULTICODEX_PORT: String(20500 + Math.floor(Math.random() * 1000)),
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+  };
+
+  execFileSync(process.execPath, [cli, "install"], {
+    cwd: root,
+    env,
+    encoding: "utf8",
+  });
+
+  const result = spawnSync(path.join(binDir, "codex"), ["--profile", "multicodex", "hello"], {
+    cwd: root,
+    env: {
+      ...env,
+      PATH: `${binDir}${path.delimiter}${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+    },
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /fake-codex --profile multicodex hello/);
+  assert.doesNotMatch(result.stdout, /--profile oai --profile multicodex/);
+  const calls = fs.readFileSync(markerPath, "utf8");
+  assert.match(calls, /--profile multicodex hello/);
+  assert.doesNotMatch(calls, /--profile oai --profile multicodex/);
+});
+
 test("strict codex-multi launcher owns proxy startup for unified providers", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-codex-multi-strict-"));
   const home = path.join(dir, "home");
@@ -260,6 +301,39 @@ fast_mode = false
   assert.match(config, /^model = "gpt-5\.5"$/m);
   assert.doesNotMatch(config, /^model_provider = "multicodex"$/m);
   assert.doesNotMatch(config, /^model_catalog_json = /m);
+});
+
+test("install writes profile defaults that enable Codex Fast mode for OpenAI models", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-fast-profile-"));
+  const home = path.join(dir, "home");
+  const binDir = path.join(home, ".local", "bin");
+  const codexHome = path.join(home, ".codex");
+  const fakeBin = path.join(dir, "real-bin");
+  const markerPath = path.join(dir, "fake-codex-calls.log");
+  const fakeCodex = path.join(fakeBin, "codex");
+  writeFakeCodex(fakeCodex, markerPath);
+
+  const env = {
+    ...process.env,
+    HOME: home,
+    CODEX_HOME: codexHome,
+    CODEX_MULTICODEX_BIN_DIR: binDir,
+    MULTICODEX_PORT: String(22500 + Math.floor(Math.random() * 1000)),
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+  };
+
+  execFileSync(process.execPath, [cli, "install"], {
+    cwd: root,
+    env,
+    encoding: "utf8",
+  });
+
+  const oaiProfile = fs.readFileSync(path.join(codexHome, "oai.config.toml"), "utf8");
+  const multiProfile = fs.readFileSync(path.join(codexHome, "multicodex.config.toml"), "utf8");
+  assert.match(oaiProfile, /^service_tier = "fast"$/m);
+  assert.match(multiProfile, /^service_tier = "fast"$/m);
+  assert.match(oaiProfile, /^fast_mode = true$/m);
+  assert.match(multiProfile, /^fast_mode = true$/m);
 });
 
 test("doctor reports MultiCodex catalog entries even when the default Codex config stays OpenAI", () => {

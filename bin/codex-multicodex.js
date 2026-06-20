@@ -28,6 +28,7 @@ const OPENCODE_AUTH_PATH =
   process.env.OPENCODE_AUTH_PATH || path.join(HOME, ".local", "share", "opencode", "auth.json");
 const DEFAULT_CODEX_BIN = path.join(CODEX_HOME, "packages", "standalone", "current", "bin", "codex");
 const FAST_SERVICE_TIER = "priority";
+const CODEX_FAST_CONFIG_TIER = "fast";
 const MANIFEST_PATH = path.join(MANAGED_DIR, "manifest.json");
 const BIN_DIR = process.env.CODEX_MULTICODEX_BIN_DIR || path.join(HOME, ".local", "bin");
 const WRAPPER_PATHS = {
@@ -3124,11 +3125,34 @@ ${marker}
 set -euo pipefail
 ${realResolver}
 
+has_profile=0
+expect=""
+
+for arg in "$@"; do
+  if [[ "$expect" == "profile" ]]; then
+    has_profile=1
+    expect=""
+    continue
+  fi
+  case "$arg" in
+    -p|--profile)
+      expect="profile"
+      ;;
+    --profile=*)
+      has_profile=1
+      ;;
+  esac
+done
+
 case "\${1:-}" in
   --help|-h|--version|-V|app-server|debug|mcp|mcp-server|login|logout|auth|completion|apply|sandbox|proto|features|cloud|remote-control|exec-server|plugin|doctor|update|archive|delete|unarchive|fork)
     exec "$REAL" "$@"
     ;;
 esac
+
+if [[ "$has_profile" == 1 ]]; then
+  exec "$REAL" "$@"
+fi
 
 exec "$REAL" --profile oai "$@"
 `;
@@ -3207,7 +3231,7 @@ model_reasoning_effort = "high"
 model_context_window = 819200
 model_auto_compact_token_limit = 240000
 model_catalog_json = "${CATALOG_PATH}"
-service_tier = "${FAST_SERVICE_TIER}"
+service_tier = "${CODEX_FAST_CONFIG_TIER}"
 
 [features]
 fast_mode = true
@@ -3225,7 +3249,7 @@ model_reasoning_effort = "high"
 model_context_window = 819200
 model_auto_compact_token_limit = 240000
 model_catalog_json = "${OAI_CATALOG_PATH}"
-service_tier = "${FAST_SERVICE_TIER}"
+service_tier = "${CODEX_FAST_CONFIG_TIER}"
 
 [features]
 fast_mode = true
@@ -3388,7 +3412,7 @@ async function doctor() {
     const model = effective.models.find((entry) => (entry.slug || entry.id) === id);
     console.log(`${id}: ${JSON.stringify(summarizeEffectiveModel(model))}`);
   }
-  console.log("fast_command: use /fast to toggle the Fast service tier; Codex 0.141.0 does not handle /fast status/on/off as separate inline arguments");
+  console.log("fast_command: use /fast on, /fast off, or /fast status in a Codex TUI session; managed profiles persist service_tier=fast");
 }
 
 const command = process.argv[2] || "sync";

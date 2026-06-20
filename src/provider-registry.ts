@@ -432,6 +432,7 @@ type OpenAiCompatibleProviderDefault = {
   label?: string;
   tokenEnv?: string[];
   providerDoc?: string;
+  providerOptions?: Record<string, unknown>;
   openAiPathPrefix?: OpenAiPathPrefix;
   upstreamMode?: UpstreamMode;
   compatibilityMode?: CompatibilityMode;
@@ -667,6 +668,12 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     label: "Kilo Gateway",
     baseUrl: "https://api.kilo.ai/api/gateway",
     tokenEnv: ["KILO_API_KEY"],
+    providerOptions: {
+      headers: {
+        "HTTP-Referer": "https://opencode.ai/",
+        "X-Title": "opencode",
+      },
+    },
   },
   "kuae-cloud-coding-plan": {
     label: "KUAE Cloud Coding Plan",
@@ -677,6 +684,13 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     label: "LLM Gateway",
     baseUrl: "https://api.llmgateway.io/v1",
     tokenEnv: ["LLMGATEWAY_API_KEY"],
+    providerOptions: {
+      headers: {
+        "HTTP-Referer": "https://opencode.ai/",
+        "X-Title": "opencode",
+        "X-Source": "opencode",
+      },
+    },
   },
   llama: {
     label: "Llama",
@@ -747,6 +761,13 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     label: "NVIDIA",
     baseUrl: "https://integrate.api.nvidia.com/v1",
     tokenEnv: ["NVIDIA_API_KEY"],
+    providerOptions: {
+      headers: {
+        "HTTP-Referer": "https://opencode.ai/",
+        "X-Title": "opencode",
+        "X-BILLING-INVOKE-ORIGIN": "OpenCode",
+      },
+    },
   },
   nebius: {
     label: "Nebius Token Factory",
@@ -1006,6 +1027,12 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     label: "ZenMux",
     baseUrl: "https://zenmux.ai/api/v1",
     tokenEnv: ["ZENMUX_API_KEY"],
+    providerOptions: {
+      headers: {
+        "HTTP-Referer": "https://opencode.ai/",
+        "X-Title": "opencode",
+      },
+    },
   },
 };
 
@@ -2094,6 +2121,7 @@ function fallbackOpenAiCompatibleRegistryEntry(
       api: defaults.baseUrl,
       env: defaults.tokenEnv ?? [],
       doc: defaults.providerDoc ?? "https://opencode.ai/docs/providers/",
+      options: defaults.providerOptions,
     },
     "builtin",
   );

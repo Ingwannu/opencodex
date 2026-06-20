@@ -1481,6 +1481,57 @@ console.log(JSON.stringify(out));`,
   }
 });
 
+test("OpenCode provider plugin header defaults are mirrored offline", () => {
+  const expectedHeaders = {
+    kilo: {
+      "HTTP-Referer": "https://opencode.ai/",
+      "X-Title": "opencode",
+    },
+    llmgateway: {
+      "HTTP-Referer": "https://opencode.ai/",
+      "X-Title": "opencode",
+      "X-Source": "opencode",
+    },
+    nvidia: {
+      "HTTP-Referer": "https://opencode.ai/",
+      "X-Title": "opencode",
+      "X-BILLING-INVOKE-ORIGIN": "OpenCode",
+    },
+    zenmux: {
+      "HTTP-Referer": "https://opencode.ai/",
+      "X-Title": "opencode",
+    },
+  };
+  const output = execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `const { resolveProviderRegistryEntry } = await import("./dist/provider-registry.js");
+const expected = ${JSON.stringify(Object.keys(expectedHeaders))};
+const out = {};
+for (const providerId of expected) {
+  const entry = await resolveProviderRegistryEntry(providerId);
+  out[providerId] = entry.providerOptions?.headers ?? {};
+}
+console.log(JSON.stringify(out));`,
+    ],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MODELS_DEV_API_URL: "data:application/json,{}",
+      },
+      encoding: "utf8",
+    },
+  );
+  const entries = JSON.parse(output);
+
+  for (const [providerId, headers] of Object.entries(expectedHeaders)) {
+    assert.deepEqual(entries[providerId], headers, providerId);
+  }
+});
+
 test("OpenCode directory Anthropic-compatible providers have offline runtime defaults", () => {
   const expected = {
     freemodel: "https://cc.freemodel.dev",

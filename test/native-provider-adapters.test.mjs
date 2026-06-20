@@ -645,6 +645,25 @@ test("Amazon Bedrock adapter converts chat payloads and responses", () => {
   assert.equal(converted.usage.total_tokens, 7);
 });
 
+test("Amazon Bedrock adapter removes empty string messages before upstream requests", () => {
+  const request = buildNativeProviderRequest(
+    "amazon-bedrock",
+    { accessToken: "bedrock-key" },
+    {
+      model: "anthropic.claude-3-haiku-20240307-v1:0",
+      messages: [
+        { role: "user", content: "" },
+        { role: "user", content: "Keep me" },
+      ],
+    },
+    false,
+  );
+
+  assert.deepEqual(request.body.messages, [
+    { role: "user", content: [{ text: "Keep me" }] },
+  ]);
+});
+
 test("Amazon Bedrock adapter signs requests with AWS SigV4 credentials", () => {
   const credentials = resolveAwsBedrockCredentials(
     { region: "us-east-1" },

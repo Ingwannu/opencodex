@@ -1392,10 +1392,15 @@ function buildBedrockPayload(payload: Record<string, unknown>) {
     .map((text) => ({ text }));
   const outMessages = messages
     .filter((message) => message.role !== "system")
-    .map((message) => ({
-      role: message.role === "assistant" ? "assistant" : "user",
-      content: [{ text: textFromContent(message.content) || " " }],
-    }));
+    .map((message) => {
+      const text = textFromContent(message.content);
+      if (!text) return undefined;
+      return {
+        role: message.role === "assistant" ? "assistant" : "user",
+        content: [{ text }],
+      };
+    })
+    .filter((message): message is { role: string; content: Array<{ text: string }> } => Boolean(message));
   const inferenceConfig: Record<string, unknown> = {};
   const maxTokens = optionalOutputLimit(payload);
   if (maxTokens !== undefined) inferenceConfig.maxTokens = maxTokens;

@@ -1483,6 +1483,13 @@ console.log(JSON.stringify(out));`,
 
 test("OpenCode provider plugin header defaults are mirrored offline", () => {
   const expectedHeaders = {
+    anthropic: {
+      "anthropic-beta":
+        "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14",
+    },
+    cerebras: {
+      "X-Cerebras-3rd-Party-Integration": "opencode",
+    },
     kilo: {
       "HTTP-Referer": "https://opencode.ai/",
       "X-Title": "opencode",
@@ -1496,6 +1503,14 @@ test("OpenCode provider plugin header defaults are mirrored offline", () => {
       "HTTP-Referer": "https://opencode.ai/",
       "X-Title": "opencode",
       "X-BILLING-INVOKE-ORIGIN": "OpenCode",
+    },
+    openrouter: {
+      "HTTP-Referer": "https://opencode.ai/",
+      "X-Title": "opencode",
+    },
+    v0: {
+      "http-referer": "https://opencode.ai/",
+      "x-title": "opencode",
     },
     zenmux: {
       "HTTP-Referer": "https://opencode.ai/",

@@ -138,6 +138,12 @@ const authProviderPresets = {
     baseUrl: "https://openrouter.ai/api",
     upstreamMode: "chat/completions",
     compatibilityMode: "chat-completions-bridge",
+    providerOptions: {
+      headers: {
+        "HTTP-Referer": "https://opencode.ai/",
+        "X-Title": "opencode",
+      },
+    },
     tokenEnv: ["OPENROUTER_API_KEY"],
     runtimeSupported: true,
   },
@@ -210,6 +216,12 @@ const authProviderPresets = {
     providerSource: "builtin",
     providerDoc: "https://docs.anthropic.com/en/docs/about-claude/models",
     baseUrl: "https://api.anthropic.com",
+    providerOptions: {
+      headers: {
+        "anthropic-beta":
+          "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14",
+      },
+    },
     tokenEnv: ["ANTHROPIC_API_KEY"],
     runtimeSupported: true,
   },
@@ -401,7 +413,14 @@ const openAiCompatibleSdkProviderDefaults = {
   xai: { baseUrl: "https://api.x.ai" },
   groq: { baseUrl: "https://api.groq.com/openai" },
   deepinfra: { baseUrl: "https://api.deepinfra.com/v1/openai" },
-  cerebras: { baseUrl: "https://api.cerebras.ai" },
+  cerebras: {
+    baseUrl: "https://api.cerebras.ai",
+    providerOptions: {
+      headers: {
+        "X-Cerebras-3rd-Party-Integration": "opencode",
+      },
+    },
+  },
   togetherai: { baseUrl: "https://api.together.ai" },
   perplexity: {
     baseUrl: "https://api.perplexity.ai",
@@ -427,14 +446,29 @@ const openAiCompatibleSdkProviderDefaults = {
     label: "OpenCode Go",
     tokenEnv: ["OPENCODE_API_KEY"],
   },
-  v0: { baseUrl: "https://api.v0.dev/v1" },
+  v0: {
+    baseUrl: "https://api.v0.dev/v1",
+    providerOptions: {
+      headers: {
+        "http-referer": "https://opencode.ai/",
+        "x-title": "opencode",
+      },
+    },
+  },
 };
 
 const openAiCompatibleSdkPackageDefaults = {
   "@ai-sdk/alibaba": {
     baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
   },
-  "@ai-sdk/cerebras": { baseUrl: "https://api.cerebras.ai/v1" },
+  "@ai-sdk/cerebras": {
+    baseUrl: "https://api.cerebras.ai/v1",
+    providerOptions: {
+      headers: {
+        "X-Cerebras-3rd-Party-Integration": "opencode",
+      },
+    },
+  },
   "@ai-sdk/deepinfra": { baseUrl: "https://api.deepinfra.com/v1/openai" },
   "@ai-sdk/groq": { baseUrl: "https://api.groq.com/openai/v1" },
   "@ai-sdk/perplexity": {
@@ -444,9 +478,25 @@ const openAiCompatibleSdkPackageDefaults = {
     compatibilityMode: "chat-completions-bridge",
   },
   "@ai-sdk/togetherai": { baseUrl: "https://api.together.xyz/v1" },
-  "@ai-sdk/vercel": { baseUrl: "https://api.v0.dev/v1" },
+  "@ai-sdk/vercel": {
+    baseUrl: "https://api.v0.dev/v1",
+    providerOptions: {
+      headers: {
+        "http-referer": "https://opencode.ai/",
+        "x-title": "opencode",
+      },
+    },
+  },
   "@ai-sdk/xai": { baseUrl: "https://api.x.ai/v1" },
-  "@openrouter/ai-sdk-provider": { baseUrl: "https://openrouter.ai/api/v1" },
+  "@openrouter/ai-sdk-provider": {
+    baseUrl: "https://openrouter.ai/api/v1",
+    providerOptions: {
+      headers: {
+        "HTTP-Referer": "https://opencode.ai/",
+        "X-Title": "opencode",
+      },
+    },
+  },
   "venice-ai-sdk-provider": { baseUrl: "https://api.venice.ai/api/v1" },
 };
 
@@ -3186,7 +3236,8 @@ if [[ "$inject" == 1 ]]; then
     exec "$REAL" --profile multicodex "$@"
   fi
 
-  echo "MultiCodex proxy unavailable; launching Codex without MultiCodex profile." >&2
+  echo "MultiCodex proxy unavailable; launching Codex with the OpenAI profile." >&2
+  exec "$REAL" --profile oai "$@"
 fi
 
 exec "$REAL" "$@"

@@ -102,6 +102,12 @@ const BUILTIN_PROVIDERS: ProviderRegistryEntry[] = [
     baseUrl: "https://openrouter.ai/api",
     upstreamMode: "chat/completions",
     compatibilityMode: "chat-completions-bridge",
+    providerOptions: {
+      headers: {
+        "HTTP-Referer": "https://opencode.ai/",
+        "X-Title": "opencode",
+      },
+    },
     tokenEnv: ["OPENROUTER_API_KEY"],
     authType: "api-key",
     runtimeSupported: true,
@@ -190,6 +196,12 @@ const BUILTIN_PROVIDERS: ProviderRegistryEntry[] = [
     providerSource: "builtin",
     providerDoc: "https://docs.anthropic.com/en/docs/about-claude/models",
     baseUrl: "https://api.anthropic.com",
+    providerOptions: {
+      headers: {
+        "anthropic-beta":
+          "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14",
+      },
+    },
     tokenEnv: ["ANTHROPIC_API_KEY"],
     authType: "api-key",
     runtimeSupported: true,
@@ -1006,7 +1018,14 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
   },
   groq: { baseUrl: "https://api.groq.com/openai" },
   deepinfra: { baseUrl: "https://api.deepinfra.com/v1/openai" },
-  cerebras: { baseUrl: "https://api.cerebras.ai" },
+  cerebras: {
+    baseUrl: "https://api.cerebras.ai",
+    providerOptions: {
+      headers: {
+        "X-Cerebras-3rd-Party-Integration": "opencode",
+      },
+    },
+  },
   togetherai: { baseUrl: "https://api.together.ai" },
   perplexity: {
     baseUrl: "https://api.perplexity.ai",
@@ -1022,7 +1041,15 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
   venice: { baseUrl: "https://api.venice.ai/api/v1" },
   aihubmix: { baseUrl: "https://aihubmix.com/v1" },
   "merge-gateway": { baseUrl: "https://api-gateway.merge.dev/v1/openai" },
-  v0: { baseUrl: "https://api.v0.dev/v1" },
+  v0: {
+    baseUrl: "https://api.v0.dev/v1",
+    providerOptions: {
+      headers: {
+        "http-referer": "https://opencode.ai/",
+        "x-title": "opencode",
+      },
+    },
+  },
   zenmux: {
     label: "ZenMux",
     baseUrl: "https://zenmux.ai/api/v1",
@@ -1139,7 +1166,14 @@ const OPENAI_COMPATIBLE_SDK_PACKAGE_DEFAULTS: Record<
   "@ai-sdk/alibaba": {
     baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
   },
-  "@ai-sdk/cerebras": { baseUrl: "https://api.cerebras.ai/v1" },
+  "@ai-sdk/cerebras": {
+    baseUrl: "https://api.cerebras.ai/v1",
+    providerOptions: {
+      headers: {
+        "X-Cerebras-3rd-Party-Integration": "opencode",
+      },
+    },
+  },
   "@ai-sdk/deepinfra": { baseUrl: "https://api.deepinfra.com/v1/openai" },
   "@ai-sdk/groq": { baseUrl: "https://api.groq.com/openai/v1" },
   "@ai-sdk/github-copilot": {
@@ -1153,7 +1187,15 @@ const OPENAI_COMPATIBLE_SDK_PACKAGE_DEFAULTS: Record<
     compatibilityMode: "chat-completions-bridge",
   },
   "@ai-sdk/togetherai": { baseUrl: "https://api.together.xyz/v1" },
-  "@ai-sdk/vercel": { baseUrl: "https://api.v0.dev/v1" },
+  "@ai-sdk/vercel": {
+    baseUrl: "https://api.v0.dev/v1",
+    providerOptions: {
+      headers: {
+        "http-referer": "https://opencode.ai/",
+        "x-title": "opencode",
+      },
+    },
+  },
   "@ai-sdk/xai": {
     baseUrl: "https://api.x.ai/v1",
     upstreamMode: "responses",
@@ -1163,7 +1205,15 @@ const OPENAI_COMPATIBLE_SDK_PACKAGE_DEFAULTS: Record<
   "merge-gateway-ai-sdk-provider": {
     baseUrl: "https://api-gateway.merge.dev/v1/openai",
   },
-  "@openrouter/ai-sdk-provider": { baseUrl: "https://openrouter.ai/api/v1" },
+  "@openrouter/ai-sdk-provider": {
+    baseUrl: "https://openrouter.ai/api/v1",
+    providerOptions: {
+      headers: {
+        "HTTP-Referer": "https://opencode.ai/",
+        "X-Title": "opencode",
+      },
+    },
+  },
   "venice-ai-sdk-provider": { baseUrl: "https://api.venice.ai/api/v1" },
 };
 

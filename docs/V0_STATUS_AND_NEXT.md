@@ -3,7 +3,7 @@
 This document tracks the v0 release boundary separately from the larger goal of
 full OpenCode provider parity.
 
-## v0.2.2 shipped surface
+## v0.2.12 shipped surface
 
 - One Codex launcher/proxy surface for OpenAI, local, and OpenAI-compatible
   providers, with `codex` as the safe default launcher, `codex-multi` as the
@@ -34,8 +34,13 @@ full OpenCode provider parity.
   - xAI/Grok API keys and OpenCode OAuth/SuperGrok refresh
 - v0 major-provider coverage for DeepSeek, Xiaomi, Neuralwatt, Fireworks AI,
   OpenAI, Anthropic, Google, and xAI.
+- OpenCode plugin header defaults mirrored for Anthropic, Cerebras, OpenRouter,
+  Vercel/v0, Kilo, LLM Gateway, Nvidia, and ZenMux provider paths.
+- Default `codex` launcher fail-open behavior now falls back through the OpenAI
+  profile when the MultiCodex proxy cannot start, so an installed wrapper should
+  not trap normal Codex startup on a broken proxy.
 
-## Verified for v0.2.2
+## Verified for v0.2.12
 
 - `npm test`
 - `npm run build`

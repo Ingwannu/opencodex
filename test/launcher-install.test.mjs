@@ -162,7 +162,7 @@ test("default codex launcher falls back to the real Codex binary when proxy star
     encoding: "utf8",
   });
 
-  assert.match(output, /fake-codex hello/);
+  assert.match(output, /fake-codex --profile oai hello/);
   const calls = fs.readFileSync(markerPath, "utf8");
-  assert.match(calls, /hello/);
+  assert.match(calls, /--profile oai hello/);
 });

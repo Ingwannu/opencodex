@@ -1067,6 +1067,22 @@ function applyOpenCodeProviderDefaults(
     delete payloadRecord.reasoning_effort;
   }
 
+  if (
+    normalizeProvider(account) === "sap-ai-core" &&
+    modelId.includes("anthropic") &&
+    flatReasoningEffort &&
+    !hasOwn(objectValue(payloadRecord.modelParams), "thinking")
+  ) {
+    payloadRecord.modelParams = {
+      ...(objectValue(payloadRecord.modelParams) ?? {}),
+      thinking: {
+        type: "enabled",
+        budget_tokens: flatReasoningEffort === "max" ? 31999 : 16000,
+      },
+    };
+    delete payloadRecord.reasoning_effort;
+  }
+
   const provider = normalizeProvider(account);
   if (
     (account.providerNpm === "@ai-sdk/google" ||

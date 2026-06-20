@@ -61,9 +61,12 @@ full OpenCode provider parity.
 - Amazon Bedrock Anthropic reasoning variants now mirror OpenCode's Converse
   request shape by deriving `reasoningConfig` budgets from requested effort and
   forwarding them through the native Bedrock adapter.
-- Default `codex` launcher fail-open behavior now falls back through the OpenAI
-  profile when the MultiCodex proxy cannot start, so an installed wrapper should
-  not trap normal Codex startup on a broken proxy.
+- Default `codex` launcher behavior now uses the OpenAI profile without
+  requiring MultiCodex proxy startup, while `codex-multi` owns strict unified
+  provider startup. Codex management commands are passed through unchanged.
+- SAP AI Core Anthropic reasoning variants now mirror OpenCode's wrapped
+  `modelParams.thinking` shape and the native SAP adapter forwards those params
+  into orchestration `model.params`.
 - `opencodex install` no longer forces the user's top-level
   `~/.codex/config.toml` into the MultiCodex provider. It writes managed
   profiles/catalogs and cleans stale managed catalog/provider entries, leaving
@@ -90,8 +93,11 @@ full OpenCode provider parity.
 - OpenCode OpenRouter reasoning variant fixture for request-effort mapping.
 - OpenCode Amazon Bedrock Anthropic `reasoningConfig` variant fixture and native
   Bedrock adapter passthrough fixture.
-- Launcher regression coverage that proves the default `codex` wrapper falls
-  back to the real Codex CLI when the MultiCodex proxy cannot start.
+- OpenCode SAP AI Core Anthropic `modelParams.thinking` reasoning fixture and
+  native SAP adapter passthrough fixture.
+- Launcher regression coverage that proves the default `codex` wrapper uses the
+  OpenAI profile without requiring proxy startup, while `codex-multi` remains
+  the strict unified-provider launcher.
 - Launcher regression coverage that proves `opencodex install` preserves the
   user's default Codex provider outside the managed `codex-multi`/`codex-oai`
   profiles.

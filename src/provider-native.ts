@@ -1166,7 +1166,10 @@ function sapMessages(payload: Record<string, unknown>): Array<Record<string, unk
 }
 
 function sapModelParams(payload: Record<string, unknown>): Record<string, unknown> {
-  const params: Record<string, unknown> = {};
+  const params: Record<string, unknown> =
+    payload.modelParams && typeof payload.modelParams === "object" && !Array.isArray(payload.modelParams)
+      ? { ...(payload.modelParams as Record<string, unknown>) }
+      : {};
   const maxTokens = optionalOutputLimit(payload);
   if (maxTokens !== undefined) params.max_tokens = maxTokens;
   if (typeof payload.temperature === "number") params.temperature = payload.temperature;

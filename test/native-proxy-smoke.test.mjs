@@ -3558,6 +3558,7 @@ test("proxy exchanges SAP AI Core service key and routes orchestration chat comp
               { role: "user", content: "Hello" },
             ],
             max_tokens: 64,
+            reasoning_effort: "high",
           }),
         });
         const json = await res.json();
@@ -3577,6 +3578,10 @@ test("proxy exchanges SAP AI Core service key and routes orchestration chat comp
         assert.equal(
           capturedCompletionRequest.config.modules.prompt_templating.model.params.max_tokens,
           64,
+        );
+        assert.deepEqual(
+          capturedCompletionRequest.config.modules.prompt_templating.model.params.thinking,
+          { type: "enabled", budget_tokens: 16000 },
         );
         assert.equal(
           capturedCompletionRequest.config.modules.prompt_templating.prompt.template[0].content,

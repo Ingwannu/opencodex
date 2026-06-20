@@ -764,6 +764,9 @@ test("SAP AI Core adapter builds service-key auth and orchestration requests", (
       ],
       max_tokens: 64,
       temperature: 0.2,
+      modelParams: {
+        thinking: { type: "enabled", budget_tokens: 16000 },
+      },
     },
     {
       deploymentId: "orchestration-deployment",
@@ -789,6 +792,10 @@ test("SAP AI Core adapter builds service-key auth and orchestration requests", (
   assert.equal(
     providerRequest.body.config.modules.prompt_templating.model.params.temperature,
     0.2,
+  );
+  assert.deepEqual(
+    providerRequest.body.config.modules.prompt_templating.model.params.thinking,
+    { type: "enabled", budget_tokens: 16000 },
   );
   assert.deepEqual(
     providerRequest.body.config.modules.prompt_templating.prompt.template,

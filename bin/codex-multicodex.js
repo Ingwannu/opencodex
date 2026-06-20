@@ -3119,133 +3119,18 @@ exec "$REAL" --profile multicodex "$@"
 `;
   }
 
-  return `${common}
-inject=1
-expect=""
+  return `#!/usr/bin/env bash
+${marker}
+set -euo pipefail
+${realResolver}
 
-pick_multicodex_model() {
-  local default="\${CODEX_DEFAULT_MULTICODEX_MODEL:-gpt-5.5}"
-  local selected=""
-  local choice=""
-  local i=0
-  local n=0
-  local model=""
-  local -a models=()
+case "\${1:-}" in
+  --help|-h|--version|-V|app-server|debug|mcp|mcp-server|login|logout|auth|completion|apply|sandbox|proto|features|cloud|remote-control|exec-server|plugin|doctor|update|archive|delete|unarchive|fork)
+    exec "$REAL" "$@"
+    ;;
+esac
 
-  mapfile -t models < <(
-    curl -fsS "\${BASE}/v1/models" | node -e '
-const fs = require("fs");
-const data = JSON.parse(fs.readFileSync(0, "utf8"));
-for (const model of data.data || []) {
-  if (model && model.id) console.log(model.id);
-}
-' 2>/dev/null
-  )
-
-  if [[ "\${#models[@]}" -eq 0 ]]; then
-    printf '%s\\n' "$default"
-    return 0
-  fi
-
-  selected="\${models[0]}"
-  for model in "\${models[@]}"; do
-    if [[ "$model" == "$default" ]]; then
-      selected="$default"
-      break
-    fi
-  done
-
-  {
-    printf '\\nSelect Codex model (MultiCodex)\\n'
-    for i in "\${!models[@]}"; do
-      if [[ "\${models[$i]}" == "$selected" ]]; then
-        printf '%2d. %s (default)\\n' "$((i + 1))" "\${models[$i]}"
-      else
-        printf '%2d. %s\\n' "$((i + 1))" "\${models[$i]}"
-      fi
-    done
-    printf '> '
-  } > /dev/tty
-
-  while IFS= read -r choice < /dev/tty; do
-    if [[ -z "$choice" ]]; then
-      printf '%s\\n' "$selected"
-      return 0
-    fi
-
-    if [[ "$choice" =~ ^[0-9]+$ ]]; then
-      n=$((10#$choice))
-      if (( n >= 1 && n <= \${#models[@]} )); then
-        printf '%s\\n' "\${models[$((n - 1))]}"
-        return 0
-      fi
-    fi
-
-    for model in "\${models[@]}"; do
-      if [[ "$choice" == "$model" ]]; then
-        printf '%s\\n' "$choice"
-        return 0
-      fi
-    done
-
-    printf 'Invalid selection. Enter 1-%d or model id: ' "\${#models[@]}" > /dev/tty
-  done
-
-  printf '%s\\n' "$selected"
-}
-
-for arg in "$@"; do
-  if [[ -n "$expect" ]]; then
-    if [[ "$expect" == "config" ]]; then
-      case "$arg" in
-        model_provider=*|*.model_provider=*)
-          inject=0
-          ;;
-      esac
-    fi
-    expect=""
-    continue
-  fi
-
-  case "$arg" in
-    -m|--model)
-      expect="value"
-      ;;
-    -p|--profile|--local-provider)
-      inject=0
-      expect="value"
-      ;;
-    -c|--config)
-      expect="config"
-      ;;
-    --profile=*|--local-provider=*|--oss|--help|-h|--version|-V)
-      inject=0
-      ;;
-    model_provider=*)
-      inject=0
-      ;;
-    app-server|debug|mcp|mcp-server|login|logout|auth|completion|apply|sandbox|proto|features|cloud|remote-control|exec-server|plugin|doctor|update|archive|delete|unarchive|fork)
-      inject=0
-      break
-      ;;
-  esac
-done
-
-if [[ "$inject" == 1 ]]; then
-  if ensure_multicodex; then
-
-    if [[ "$#" -eq 0 && -t 0 && -t 1 && "\${CODEX_MODEL_PICKER:-0}" == "1" ]]; then
-      exec "$REAL" --profile multicodex -m "$(pick_multicodex_model)"
-    fi
-
-    exec "$REAL" --profile multicodex "$@"
-  fi
-
-  echo "MultiCodex proxy unavailable; launching Codex with the OpenAI profile." >&2
-  exec "$REAL" --profile oai "$@"
-fi
-
-exec "$REAL" "$@"
+exec "$REAL" --profile oai "$@"
 `;
 }
 

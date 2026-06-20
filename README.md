@@ -19,10 +19,9 @@ opencodex doctor
 
 Installed commands:
 
-- `codex`: safe default launcher. It can inject the MultiCodex profile when the
-  wrapper is active, but `opencodex install` no longer rewrites the user's
-  top-level `~/.codex/config.toml` default provider. If the proxy cannot start,
-  it prints a warning and opens the real Codex CLI with the OpenAI profile.
+- `codex`: safe default launcher. It opens the real Codex CLI with the OpenAI
+  profile for normal sessions and passes Codex management commands such as
+  `--version`, `login`, `doctor`, and `update` through unchanged.
 - `codex-multi`: always uses the MultiCodex proxy profile and fails loudly when
   the proxy cannot start.
 - `codex-oai`: uses the normal OpenAI Codex profile.
@@ -30,14 +29,14 @@ Installed commands:
 - `opencodex`: setup, auth, sync, update, uninstall, and doctor CLI.
 - `codex-multicodex`: compatibility alias for the same CLI.
 
-After `opencodex install`, the proxy starts lazily when `codex` or
-`codex-multi` is launched and no proxy is already healthy on the configured
-port. It does not install a boot daemon. Runtime account data is stored under
+After `opencodex install`, the proxy starts lazily when `codex-multi` is
+launched and no proxy is already healthy on the configured port. It does not
+install a boot daemon. Runtime account data is stored under
 `~/.codex/opencodex/data` by default, not inside the npm tarball.
 
 Manage models, API keys, and auth in either surface:
 
-- Web dashboard: run `opencodex sync` or launch `codex` once, then open
+- Web dashboard: run `opencodex sync` or launch `codex-multi` once, then open
   `http://127.0.0.1:1455`. Use the Accounts tab to add providers, paste or
   rotate API keys, choose auth-free local endpoints, start/complete OpenAI OAuth,
   enable/disable accounts, edit base URLs, refresh usage, unblock accounts, or
@@ -93,9 +92,9 @@ to the current npm/source package.
 
 Launcher behavior after install:
 
-- `codex`: safe launcher. It tries the MultiCodex profile when the wrapper can
-  start the proxy, but falls back to the normal OpenAI profile so the Codex CLI
-  still opens if the proxy is broken or stale.
+- `codex`: safe launcher. It uses the normal OpenAI profile for sessions and
+  does not require the MultiCodex proxy, so Codex still opens if the proxy is
+  broken or stale.
 - `codex-multi`: strict MultiCodex profile for OpenAI, API-key providers, and
   local providers in one generated model catalog.
 - `codex-oai`: normal OpenAI Codex profile only.

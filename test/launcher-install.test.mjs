@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import test from "node:test";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -74,6 +74,7 @@ test("install writes launchers that call the detected real Codex binary", () => 
   assert.match(calls, /debug models --bundled/);
   assert.match(calls, /debug models/);
   assert.match(calls, /--version/);
+  assert.doesNotMatch(calls, /--profile oai --version/);
 });
 
 test("doctor reports stale managed launchers and install rewrites them", () => {
@@ -123,11 +124,15 @@ exec "$REAL" "$@"
   });
 
   const rewritten = fs.readFileSync(path.join(binDir, "codex"), "utf8");
-  assert.match(rewritten, new RegExp(`MULTICODEX_ROOT:-${root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  assert.match(rewritten, /--profile oai/);
   assert.doesNotMatch(rewritten, new RegExp(staleRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+
+  const rewrittenMulti = fs.readFileSync(path.join(binDir, "codex-multi"), "utf8");
+  assert.match(rewrittenMulti, new RegExp(`MULTICODEX_ROOT:-${root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  assert.doesNotMatch(rewrittenMulti, new RegExp(staleRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
-test("default codex launcher falls back to the real Codex binary when proxy startup fails", () => {
+test("default codex launcher uses the OpenAI profile without requiring proxy startup", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-launcher-fallback-"));
   const home = path.join(dir, "home");
   const binDir = path.join(home, ".local", "bin");
@@ -151,7 +156,7 @@ test("default codex launcher falls back to the real Codex binary when proxy star
     encoding: "utf8",
   });
 
-  const output = execFileSync(path.join(binDir, "codex"), ["hello"], {
+  const result = spawnSync(path.join(binDir, "codex"), ["hello"], {
     cwd: root,
     env: {
       ...env,
@@ -162,9 +167,55 @@ test("default codex launcher falls back to the real Codex binary when proxy star
     encoding: "utf8",
   });
 
-  assert.match(output, /fake-codex --profile oai hello/);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /fake-codex --profile oai hello/);
+  assert.doesNotMatch(result.stderr, /MultiCodex proxy/);
   const calls = fs.readFileSync(markerPath, "utf8");
   assert.match(calls, /--profile oai hello/);
+});
+
+test("strict codex-multi launcher owns proxy startup for unified providers", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-codex-multi-strict-"));
+  const home = path.join(dir, "home");
+  const binDir = path.join(home, ".local", "bin");
+  const fakeBin = path.join(dir, "real-bin");
+  const markerPath = path.join(dir, "fake-codex-calls.log");
+  const fakeCodex = path.join(fakeBin, "codex");
+  writeFakeCodex(fakeCodex, markerPath);
+
+  const env = {
+    ...process.env,
+    HOME: home,
+    CODEX_HOME: path.join(home, ".codex"),
+    CODEX_MULTICODEX_BIN_DIR: binDir,
+    MULTICODEX_PORT: String(24000 + Math.floor(Math.random() * 1000)),
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+  };
+
+  execFileSync(process.execPath, [cli, "install"], {
+    cwd: root,
+    env,
+    encoding: "utf8",
+  });
+
+  assert.throws(
+    () =>
+      execFileSync(path.join(binDir, "codex-multi"), ["hello"], {
+        cwd: root,
+        env: {
+          ...env,
+          MULTICODEX_ROOT: path.join(dir, "missing-proxy-root"),
+          MULTICODEX_PORT: String(25000 + Math.floor(Math.random() * 1000)),
+          PATH: `${binDir}${path.delimiter}${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+        },
+        encoding: "utf8",
+      }),
+    /MultiCodex proxy server not found/,
+  );
+
+  assert.equal(fs.existsSync(markerPath), true);
+  const calls = fs.readFileSync(markerPath, "utf8");
+  assert.doesNotMatch(calls, /--profile multicodex hello/);
 });
 
 test("install preserves the user's default Codex provider outside managed profiles", () => {

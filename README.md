@@ -42,7 +42,8 @@ Manage models, API keys, and auth in either surface:
   enable/disable accounts, edit base URLs, refresh usage, unblock accounts, or
   import OpenCode auth/config.
 - CLI: use `opencodex auth providers`, `opencodex auth login ...`,
-  `opencodex auth oauth-start`, and `opencodex auth import-opencode`.
+  `opencodex auth import-codex`, `opencodex auth oauth-start`, and
+  `opencodex auth import-opencode`.
 
 Typical account commands:
 
@@ -62,6 +63,9 @@ opencodex auth login openai-compatible --id ollama --base-url http://127.0.0.1:1
 # Start/complete OpenAI ChatGPT OAuth.
 opencodex auth oauth-start --email you@example.com
 opencodex auth oauth-complete --flow-id <flowId> --input <redirect-url-or-code>
+
+# Import or refresh the existing Codex ChatGPT login from ~/.codex/auth.json.
+opencodex auth import-codex
 
 # Import OpenCode auth/config files.
 opencodex auth import-opencode ~/.local/share/opencode/auth.json --config ./opencode.jsonc
@@ -107,8 +111,12 @@ Model/account management:
   want to store the token in OpenCodex's account file.
 - Add auth-free local endpoints with `--token none`, for example Ollama or LM
   Studio OpenAI-compatible servers.
+- `opencodex install` and `opencodex sync` automatically import or refresh the
+  existing Codex ChatGPT login from `~/.codex/auth.json` when present; run
+  `opencodex auth import-codex` to force that repair manually.
 - Use `opencodex auth oauth-start` and `opencodex auth oauth-complete` for the
-  OpenAI ChatGPT OAuth redirect-paste flow.
+  OpenAI ChatGPT OAuth redirect-paste flow when you want a separate OpenCodex
+  account login.
 - Use `opencodex auth import-opencode [auth.json] [--config opencode.jsonc]` to
   import OpenCode credentials, provider options, custom endpoints, and configured
   model metadata.
@@ -127,6 +135,7 @@ opencodex models
 opencodex auth login openrouter --id openrouter --token-env OPENROUTER_API_KEY
 opencodex auth login deepseek --id deepseek --token-env DEEPSEEK_API_KEY
 opencodex auth login openai-compatible --id custom --base-url https://api.example.com/v1 --token-env CUSTOM_API_KEY
+opencodex auth import-codex
 opencodex auth import-opencode
 opencodex auth import-opencode ~/.local/share/opencode/auth.json --config ./opencode.jsonc
 opencodex update

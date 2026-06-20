@@ -366,6 +366,129 @@ test("install writes profile defaults that enable Codex Fast mode for OpenAI mod
   assert.match(multiProfile, /^fast_mode = true$/m);
 });
 
+test("install imports Codex ChatGPT auth into the proxy store", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-codex-auth-import-"));
+  const home = path.join(dir, "home");
+  const binDir = path.join(home, ".local", "bin");
+  const codexHome = path.join(home, ".codex");
+  const fakeBin = path.join(dir, "real-bin");
+  const markerPath = path.join(dir, "fake-codex-calls.log");
+  const fakeCodex = path.join(fakeBin, "codex");
+  writeFakeCodex(fakeCodex, markerPath);
+
+  fs.mkdirSync(codexHome, { recursive: true });
+  fs.writeFileSync(
+    path.join(codexHome, "auth.json"),
+    `${JSON.stringify(
+      {
+        tokens: {
+          access_token: "codex-access-token-secret",
+          refresh_token: "codex-refresh-token-secret",
+          account_id: "acct_123",
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    { mode: 0o600 },
+  );
+
+  const env = {
+    ...process.env,
+    HOME: home,
+    CODEX_HOME: codexHome,
+    CODEX_MULTICODEX_BIN_DIR: binDir,
+    MULTICODEX_PORT: String(23500 + Math.floor(Math.random() * 1000)),
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+  };
+
+  const installOutput = execFileSync(process.execPath, [cli, "install"], {
+    cwd: root,
+    env,
+    encoding: "utf8",
+  });
+  assert.match(installOutput, /imported Codex ChatGPT auth: openai-chatgpt-acct_123/);
+  assert.doesNotMatch(installOutput, /codex-access-token-secret/);
+  assert.doesNotMatch(installOutput, /codex-refresh-token-secret/);
+
+  const store = JSON.parse(fs.readFileSync(path.join(codexHome, "opencodex", "data", "accounts.json"), "utf8"));
+  assert.equal(store.accounts.length, 1);
+  assert.equal(store.accounts[0].id, "openai-chatgpt-acct_123");
+  assert.equal(store.accounts[0].providerId, "openai-chatgpt");
+  assert.equal(store.accounts[0].providerAdapter, "openai");
+  assert.equal(store.accounts[0].providerSource, "codex-auth");
+  assert.equal(store.accounts[0].enabled, true);
+  assert.equal(store.accounts[0].accessToken, "codex-access-token-secret");
+  assert.equal(store.accounts[0].refreshToken, "codex-refresh-token-secret");
+  assert.equal(store.accounts[0].chatgptAccountId, "acct_123");
+});
+
+test("install refreshes an existing Codex ChatGPT proxy account", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-codex-auth-refresh-"));
+  const home = path.join(dir, "home");
+  const binDir = path.join(home, ".local", "bin");
+  const codexHome = path.join(home, ".codex");
+  const dataDir = path.join(codexHome, "opencodex", "data");
+  const fakeBin = path.join(dir, "real-bin");
+  const markerPath = path.join(dir, "fake-codex-calls.log");
+  const fakeCodex = path.join(fakeBin, "codex");
+  writeFakeCodex(fakeCodex, markerPath);
+
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(codexHome, "auth.json"),
+    `${JSON.stringify({ tokens: { access_token: "new-access", refresh_token: "new-refresh", account_id: "acct_123" } }, null, 2)}\n`,
+    { mode: 0o600 },
+  );
+  fs.writeFileSync(
+    path.join(dataDir, "accounts.json"),
+    `${JSON.stringify(
+      {
+        accounts: [
+          {
+            id: "openai-chatgpt-acct_123",
+            provider: "openai",
+            providerId: "openai-chatgpt",
+            providerAdapter: "openai",
+            providerSource: "codex-auth",
+            accessToken: "old-access",
+            refreshToken: "old-refresh",
+            chatgptAccountId: "acct_123",
+            enabled: true,
+            priority: -100,
+          },
+        ],
+        modelAliases: [],
+        settings: {},
+      },
+      null,
+      2,
+    )}\n`,
+    { mode: 0o600 },
+  );
+
+  const env = {
+    ...process.env,
+    HOME: home,
+    CODEX_HOME: codexHome,
+    CODEX_MULTICODEX_BIN_DIR: binDir,
+    MULTICODEX_PORT: String(23700 + Math.floor(Math.random() * 1000)),
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+  };
+
+  execFileSync(process.execPath, [cli, "install"], {
+    cwd: root,
+    env,
+    encoding: "utf8",
+  });
+
+  const store = JSON.parse(fs.readFileSync(path.join(dataDir, "accounts.json"), "utf8"));
+  assert.equal(store.accounts.length, 1);
+  assert.equal(store.accounts[0].accessToken, "new-access");
+  assert.equal(store.accounts[0].refreshToken, "new-refresh");
+  assert.equal(store.accounts[0].chatgptAccountId, "acct_123");
+});
+
 test("doctor reports MultiCodex catalog entries even when the default Codex config stays OpenAI", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-doctor-catalog-"));
   const home = path.join(dir, "home");

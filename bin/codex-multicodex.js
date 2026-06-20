@@ -17,6 +17,7 @@ const PROFILE_PATH = path.join(CODEX_HOME, "multicodex.config.toml");
 const OAI_PROFILE_PATH = path.join(CODEX_HOME, "oai.config.toml");
 const CONFIG_PATH = path.join(CODEX_HOME, "config.toml");
 const MODELS_CACHE_PATH = path.join(CODEX_HOME, "models_cache.json");
+const CODEX_AUTH_PATH = process.env.CODEX_AUTH_PATH || path.join(CODEX_HOME, "auth.json");
 const MANAGED_DIR = path.join(CODEX_HOME, "opencodex");
 const DATA_DIR = process.env.MULTICODEX_DATA_DIR || path.join(MANAGED_DIR, "data");
 const LEGACY_DATA_DIRS = [path.join(CODEX_HOME, "multicodex-proxy", "data"), path.join(ROOT, "data")];
@@ -1903,6 +1904,98 @@ function upsertAccount(account, resetState = false) {
   return next;
 }
 
+function readCodexAuthTokens() {
+  if (!fs.existsSync(CODEX_AUTH_PATH)) return undefined;
+
+  let payload;
+  try {
+    payload = JSON.parse(fs.readFileSync(CODEX_AUTH_PATH, "utf8"));
+  } catch (err) {
+    throw new Error(`Failed to read Codex auth file ${CODEX_AUTH_PATH}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  const tokens = payload.tokens && typeof payload.tokens === "object" && !Array.isArray(payload.tokens)
+    ? payload.tokens
+    : payload;
+  const accessToken = tokens.access_token || tokens.accessToken || payload.access_token || payload.accessToken;
+  const refreshToken = tokens.refresh_token || tokens.refreshToken || payload.refresh_token || payload.refreshToken;
+  const chatgptAccountId =
+    tokens.account_id ||
+    tokens.accountId ||
+    tokens.chatgpt_account_id ||
+    tokens.chatgptAccountId ||
+    payload.account_id ||
+    payload.accountId ||
+    payload.chatgpt_account_id ||
+    payload.chatgptAccountId;
+  const rawExpiresAt = tokens.expires_at || tokens.expiresAt || payload.expires_at || payload.expiresAt;
+  const expiresAt = Number.isFinite(Number(rawExpiresAt)) ? Number(rawExpiresAt) : undefined;
+
+  if (!accessToken || typeof accessToken !== "string") return undefined;
+  return {
+    accessToken: accessToken.trim(),
+    refreshToken: typeof refreshToken === "string" ? refreshToken.trim() : undefined,
+    chatgptAccountId: typeof chatgptAccountId === "string" ? chatgptAccountId.trim() : undefined,
+    expiresAt,
+  };
+}
+
+function hasEnabledCodexAuthAccount(store) {
+  return store.accounts.some(
+    (account) =>
+      account.enabled !== false &&
+      (account.providerId === "openai-chatgpt" || account.providerSource === "codex-auth" || account.chatgptAccountId),
+  );
+}
+
+function findCodexAuthAccount(store, tokens) {
+  if (tokens.chatgptAccountId) {
+    const byAccountId = store.accounts.find(
+      (account) => account.chatgptAccountId === tokens.chatgptAccountId || account.id === `openai-chatgpt-${tokens.chatgptAccountId}`,
+    );
+    if (byAccountId) return byAccountId;
+  }
+
+  return store.accounts.find((account) => account.providerSource === "codex-auth" || account.providerId === "openai-chatgpt");
+}
+
+function ensureCodexAuthAccount({ quiet = false } = {}) {
+  const store = readStoreFile();
+  const tokens = readCodexAuthTokens();
+  if (!tokens) return false;
+
+  const preset = authProviderPresets["openai-chatgpt"];
+  const existing = findCodexAuthAccount(store, tokens);
+  if (existing && existing.enabled !== false && existing.accessToken === tokens.accessToken && existing.refreshToken === tokens.refreshToken) {
+    return false;
+  }
+
+  if (!existing && hasEnabledCodexAuthAccount(store)) return false;
+
+  const id = existing?.id || (tokens.chatgptAccountId ? `openai-chatgpt-${tokens.chatgptAccountId}` : "openai-chatgpt");
+  const account = {
+    id,
+    provider: preset.provider,
+    providerId: preset.providerId,
+    providerAdapter: preset.providerAdapter,
+    providerLabel: preset.label,
+    providerSource: "codex-auth",
+    providerAuthEnv: preset.tokenEnv,
+    email: tokens.chatgptAccountId || "openai-chatgpt",
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    expiresAt: tokens.expiresAt,
+    chatgptAccountId: tokens.chatgptAccountId,
+    enabled: true,
+    priority: -100,
+  };
+  const saved = upsertAccount(account, false);
+  if (!quiet) {
+    console.log(`imported Codex ChatGPT auth: ${saved.id} provider=openai enabled=true`);
+  }
+  return true;
+}
+
 async function authLogin(providerName, opts = {}) {
   let name;
   let preset;
@@ -2934,6 +3027,7 @@ function printAuthUsage() {
   opencodex auth remove <id>
   opencodex auth enable <id>
   opencodex auth disable <id>
+  opencodex auth import-codex
   opencodex auth import-opencode [auth.json] [--config opencode.jsonc]
 
 Examples:
@@ -2942,6 +3036,7 @@ Examples:
   opencodex auth login openrouter --id openrouter --token-env OPENROUTER_API_KEY
   opencodex auth login deepseek --id deepseek --token-env DEEPSEEK_API_KEY
   opencodex auth login openai-compatible --id local --base-url http://127.0.0.1:11434/v1 --token none --provider openai-compatible
+  opencodex auth import-codex
   opencodex auth import-opencode ~/.local/share/opencode/auth.json --config ./opencode.jsonc
 
 Providers: ${Object.keys(authProviderPresets).join(", ")}
@@ -2967,6 +3062,8 @@ async function auth(argv) {
     authSetEnabled(opts._[0], true);
   } else if (subcommand === "disable") {
     authSetEnabled(opts._[0], false);
+  } else if (subcommand === "import-codex") {
+    if (!ensureCodexAuthAccount()) console.log(`no Codex ChatGPT auth imported from ${CODEX_AUTH_PATH}`);
   } else if (subcommand === "import-opencode") {
     await authImportOpenCode(opts._[0] || OPENCODE_AUTH_PATH, opts);
   } else if (subcommand === "oauth-start" || subcommand === "connect-openai") {
@@ -3446,6 +3543,7 @@ function cleanupConfig() {
 }
 
 async function sync() {
+  ensureCodexAuthAccount();
   const models = await listModels();
   const oaiModels = models.filter((model) => gptMetadata[model]);
   const bundledCatalog = loadBundledCatalog();

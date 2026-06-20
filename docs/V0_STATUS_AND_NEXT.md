@@ -3,7 +3,7 @@
 This document tracks the v0 release boundary separately from the larger goal of
 full OpenCode provider parity.
 
-## v0.2.13 shipped surface
+## v0.2.19 shipped surface
 
 - One Codex launcher/proxy surface for OpenAI, local, and OpenAI-compatible
   providers, with `codex` as the safe default launcher, `codex-multi` as the
@@ -97,6 +97,11 @@ full OpenCode provider parity.
 - Managed OpenAI and MultiCodex profiles now persist Codex Fast mode with
   `service_tier = "fast"` and `[features].fast_mode = true`; model catalogs
   still expose the underlying Fast tier id used by Codex metadata.
+- `opencodex install` and `opencodex sync` now import or refresh the existing
+  Codex ChatGPT login from `~/.codex/auth.json` into the OpenCodex proxy store,
+  preventing `/v1/responses` from failing with `no accounts configured` after a
+  plain Codex relogin. The same repair is available manually with
+  `opencodex auth import-codex`.
 - The default `codex` launcher now respects an explicit user `--profile` / `-p`
   flag instead of appending its own OpenAI profile and causing duplicate profile
   errors.
@@ -109,11 +114,20 @@ full OpenCode provider parity.
   strict all-provider startup to `codex-multi` and OpenAI-only startup to
   `codex-oai`.
 
-## Verified for v0.2.13
+## Verified for v0.2.19
 
 - `npm test`
-- `npm run build`
 - `git diff --check`
+- Windows local install smoke after patching the global npm install: OpenCodex
+  proxy store has `account_count=1`, `http://127.0.0.1:1455/v1/models` exposes
+  19 models, and `%USERPROFILE%\.codex\models_cache.json` contains 19 models.
+- WSL proxy smoke: `http://127.0.0.1:1455/health` returns ok and `/v1/models`
+  exposes 19 models.
+- Launcher regression coverage that proves `opencodex install` imports a Codex
+  ChatGPT account from `~/.codex/auth.json` without printing token contents.
+- Launcher regression coverage that proves `opencodex install` refreshes an
+  existing Codex-imported proxy account after the Codex login token changes.
+- `npm run build`
 - `npm audit --audit-level=high`
 - `npm --prefix web audit --audit-level=high`
 - `npm publish --dry-run --access public`
@@ -182,9 +196,9 @@ full OpenCode provider parity.
 - Install should be followed by `opencodex install`; if a previous wrapper still
   prevents `codex` startup, `opencodex doctor` should show whether it is a stale
   managed wrapper, then `opencodex install` rewrites it.
-- Real npm publishing is currently blocked until npm auth is refreshed; the
-  latest published registry version observed locally is still `0.2.5`, and
-  `npm whoami` currently returns `E401 Unauthorized`.
+- Windows global npm upgrades can fail with `EBUSY` when Codex or Node is still
+  holding the installed package directory. Close running Codex/OpenCodex/Node
+  processes before retrying `npm install -g @ingwannu/opencodex@latest`.
 
 ## Next update order
 

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { atomicWriteFile, websocketsEnabled } from "./config";
 import { restoreCodexCatalog } from "./codex-catalog";
+import { uninstallCodexShim } from "./codex-shim";
 import { CODEX_CONFIG_PATH, CODEX_PROFILE_PATH, DEFAULT_CATALOG_PATH, parseTomlString, readRootTomlString, resolveCodexConfigPath, tomlString } from "./codex-paths";
 import type { OcxConfig } from "./types";
 
@@ -311,10 +312,11 @@ export function removeCodexConfig(): { success: boolean; message: string } {
 export function restoreNativeCodex(): { success: boolean; message: string } {
   const cfg = removeCodexConfig();
   const cat = restoreCodexCatalog();
+  const shim = uninstallCodexShim();
   const msg = cat.removed > 0
     ? `${cfg.message} Catalog restored to ${cat.kept} native model(s) (dropped ${cat.removed} proxy-routed).`
     : cfg.message;
-  return { success: cfg.success, message: msg };
+  return { success: cfg.success, message: shim.removed ? `${msg} ${shim.message}` : msg };
 }
 
 export function getCodexConfigPath(): string {

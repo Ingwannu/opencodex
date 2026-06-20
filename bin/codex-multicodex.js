@@ -27,8 +27,6 @@ const TRACE_STATS_HISTORY_PATH =
 const OPENCODE_AUTH_PATH =
   process.env.OPENCODE_AUTH_PATH || path.join(HOME, ".local", "share", "opencode", "auth.json");
 const DEFAULT_CODEX_BIN = path.join(CODEX_HOME, "packages", "standalone", "current", "bin", "codex");
-const CODEX_BIN =
-  process.env.CODEX_BIN || process.env.CODEX_REAL_BIN || (fs.existsSync(DEFAULT_CODEX_BIN) ? DEFAULT_CODEX_BIN : "codex");
 const FAST_SERVICE_TIER = "priority";
 const MANIFEST_PATH = path.join(MANAGED_DIR, "manifest.json");
 const BIN_DIR = process.env.CODEX_MULTICODEX_BIN_DIR || path.join(HOME, ".local", "bin");
@@ -41,6 +39,45 @@ const WRAPPER_PATHS = {
   "codex-oss": path.join(BIN_DIR, "codex-oss"),
 };
 const SHIM_MARKER = "codex-multicodex managed shim v1";
+
+function isExecutable(filePath) {
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function pathEntries() {
+  return (process.env.PATH || "").split(path.delimiter).filter(Boolean);
+}
+
+function findOnPath(command, exclude = new Set()) {
+  for (const dir of pathEntries()) {
+    const candidate = path.resolve(dir, command);
+    if (exclude.has(candidate)) continue;
+    if (isExecutable(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+function resolveCodexBin() {
+  const explicit = process.env.CODEX_BIN || process.env.CODEX_REAL_BIN;
+  if (explicit) return explicit;
+
+  const manifest = readManifest();
+  if (typeof manifest?.codexRealBin === "string" && manifest.codexRealBin && isExecutable(manifest.codexRealBin)) {
+    return manifest.codexRealBin;
+  }
+
+  if (isExecutable(DEFAULT_CODEX_BIN)) return DEFAULT_CODEX_BIN;
+
+  const managedWrappers = new Set(Object.values(WRAPPER_PATHS).map((entry) => path.resolve(entry)));
+  return findOnPath("codex", managedWrappers) || "codex";
+}
+
+const CODEX_BIN = resolveCodexBin();
 const AWS_BEDROCK_SIGV4_PLACEHOLDER = "__opencodex_aws_sigv4__";
 const GOOGLE_VERTEX_ADC_PLACEHOLDER = "__opencodex_google_vertex_adc__";
 const NO_AUTH_ACCESS_TOKEN = "__opencodex_no_auth__";
@@ -1250,7 +1287,19 @@ function findServerPids() {
       const cwd = fs.realpathSync(path.join(procDir, entry, "cwd"));
       if (cwd !== ROOT) continue;
       const cmdline = fs.readFileSync(path.join(procDir, entry, "cmdline"), "utf8").replace(/\0/g, " ");
-      if (cmdline.includes("node") && cmdline.includes("dist/server.js")) {
+      if (!cmdline.includes("node") || !cmdline.includes("dist/server.js")) continue;
+
+      const env = Object.fromEntries(
+        fs
+          .readFileSync(path.join(procDir, entry, "environ"), "utf8")
+          .split("\0")
+          .filter(Boolean)
+          .map((line) => {
+            const index = line.indexOf("=");
+            return index === -1 ? [line, ""] : [line.slice(0, index), line.slice(index + 1)];
+          }),
+      );
+      if (env.PORT === PORT) {
         pids.push(pid);
       }
     } catch {
@@ -2725,10 +2774,53 @@ async function auth(argv) {
 
 function launcherScript(command) {
   const root = shellDefault(ROOT);
-  const real = shellDefault(DEFAULT_CODEX_BIN);
+  const real = shellDefault(resolveCodexBin());
   const dataDir = shellDefault(DATA_DIR);
   const defaultProxyModels = shellDefault(DEFAULT_PROXY_MODELS);
   const marker = `# ${SHIM_MARKER}`;
+  const realResolver = `REAL_DEFAULT="${real}"
+REAL="\${CODEX_REAL_BIN:-$REAL_DEFAULT}"
+
+resolve_real() {
+  local candidate="\${REAL:-}"
+  local self=""
+  local resolved=""
+  local dir=""
+
+  if [[ -n "\${CODEX_REAL_BIN:-}" ]]; then
+    if [[ -x "$candidate" ]]; then
+      REAL="$candidate"
+      return 0
+    fi
+    echo "CODEX_REAL_BIN is not executable: $candidate" >&2
+    return 127
+  fi
+
+  if [[ -n "$candidate" && "$candidate" != "codex" && -x "$candidate" ]]; then
+    REAL="$candidate"
+    return 0
+  fi
+
+  self="$(readlink -f "$0" 2>/dev/null || printf '%s\\n' "$0")"
+  IFS=: read -r -a path_dirs <<< "\${PATH:-}"
+  for dir in "\${path_dirs[@]}"; do
+    [[ -n "$dir" ]] || continue
+    candidate="$dir/codex"
+    [[ -x "$candidate" ]] || continue
+    resolved="$(readlink -f "$candidate" 2>/dev/null || printf '%s\\n' "$candidate")"
+    [[ "$resolved" != "$self" ]] || continue
+    if grep -q '${SHIM_MARKER}' "$candidate" 2>/dev/null; then
+      continue
+    fi
+    REAL="$candidate"
+    return 0
+  done
+
+  echo "Could not find the real Codex CLI binary. Set CODEX_REAL_BIN=/path/to/codex and retry." >&2
+  return 127
+}
+
+resolve_real`;
 
   if (command === "opencodex" || command === "codex-multicodex") {
     return `#!/usr/bin/env bash
@@ -2743,7 +2835,7 @@ exec node "$ROOT/bin/codex-multicodex.js" "$@"
 ${marker}
 set -euo pipefail
 
-REAL="\${CODEX_REAL_BIN:-${real}}"
+${realResolver}
 ROOT="\${MULTICODEX_ROOT:-${root}}"
 PORT="\${MULTICODEX_PORT:-1455}"
 BASE="\${MULTICODEX_BASE_URL:-http://127.0.0.1:\${PORT}}"
@@ -2792,7 +2884,7 @@ ensure_multicodex() {
     return `#!/usr/bin/env bash
 ${marker}
 set -euo pipefail
-REAL="\${CODEX_REAL_BIN:-${real}}"
+${realResolver}
 exec "$REAL" --profile oai "$@"
 `;
   }
@@ -2801,7 +2893,7 @@ exec "$REAL" --profile oai "$@"
     return `#!/usr/bin/env bash
 ${marker}
 set -euo pipefail
-REAL="\${CODEX_REAL_BIN:-${real}}"
+${realResolver}
 has_model=0
 expect=""
 
@@ -2979,6 +3071,7 @@ function writeManifest(extra = {}) {
     root: ROOT,
     baseUrl: BASE,
     codexHome: CODEX_HOME,
+    codexRealBin: resolveCodexBin(),
     dataDir: DATA_DIR,
     binDir: BIN_DIR,
     wrappers: WRAPPER_PATHS,

@@ -32,6 +32,19 @@ After `opencodex install`, the proxy starts lazily when `codex` or
 port. It does not install a boot daemon. Runtime account data is stored under
 `~/.codex/opencodex/data` by default, not inside the npm tarball.
 
+Manage models, API keys, and auth in either surface:
+
+- Web dashboard: run `opencodex sync` or launch `codex` once, then open
+  `http://127.0.0.1:1455`. Use the Accounts tab to add providers, paste API
+  keys, start OpenAI OAuth, enable/disable accounts, edit base URLs, or import
+  OpenCode auth/config.
+- CLI: use `opencodex auth providers`, `opencodex auth login ...`,
+  `opencodex auth oauth-start`, and `opencodex auth import-opencode`.
+
+If the real Codex binary is not in the default standalone location, OpenCodex
+auto-detects the existing `codex` on `PATH` during install. You can pin it with
+`CODEX_REAL_BIN=/absolute/path/to/codex opencodex install`.
+
 Useful commands:
 
 ```bash

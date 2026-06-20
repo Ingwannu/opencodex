@@ -476,8 +476,12 @@ function baseProviderModelsForRegistry(
   registry: ProviderRegistryEntry,
 ): Record<string, unknown> | undefined {
   if (!registry.models || typeof registry.models !== "object") return undefined;
+  const disabledModels = new Set(
+    (registry.disabledModels ?? []).map((model) => model.trim().toLowerCase()),
+  );
   const out: Record<string, unknown> = {};
   for (const [modelId, metadata] of Object.entries(registry.models)) {
+    if (disabledModels.has(modelId.trim().toLowerCase())) continue;
     if (modelProviderOverrideForMetadata(registry, modelId, metadata)) continue;
     out[modelId] = metadata;
   }

@@ -145,6 +145,7 @@ const authProviderPresets = {
       },
     },
     tokenEnv: ["OPENROUTER_API_KEY"],
+    disabledModels: ["gpt-5-chat-latest", "openai/gpt-5-chat"],
     runtimeSupported: true,
   },
   mistral: {
@@ -496,6 +497,7 @@ const openAiCompatibleSdkPackageDefaults = {
         "X-Title": "opencode",
       },
     },
+    disabledModels: ["gpt-5-chat-latest", "openai/gpt-5-chat"],
   },
   "venice-ai-sdk-provider": { baseUrl: "https://api.venice.ai/api/v1" },
 };
@@ -1114,6 +1116,7 @@ function modelsDevProviderToPreset(providerId, source) {
     openAiPathPrefix: openAiCompatibleDefault?.openAiPathPrefix,
     upstreamMode: adapter === "openai-compatible" ? (isAzureOpenAiProvider ? "responses" : (openAiCompatibleDefault?.upstreamMode || "chat/completions")) : undefined,
     compatibilityMode: adapter === "openai-compatible" ? (isAzureOpenAiProvider ? "responses" : (openAiCompatibleDefault?.compatibilityMode || "chat-completions-bridge")) : undefined,
+    disabledModels: openAiCompatibleDefault?.disabledModels,
     providerOptions: adapter === "amazon-bedrock"
       ? amazonBedrockProviderOptionsFromSource(source)
       : adapter === "vertex" || adapter === "vertex-anthropic"
@@ -2315,8 +2318,10 @@ function modelProviderOverrideForPreset(preset, modelId, metadata) {
 
 function baseProviderModelsForPreset(preset) {
   if (!preset.models || typeof preset.models !== "object") return undefined;
+  const disabledModels = new Set((preset.disabledModels || []).map((model) => String(model).trim().toLowerCase()));
   const out = {};
   for (const [modelId, metadata] of Object.entries(preset.models)) {
+    if (disabledModels.has(String(modelId).trim().toLowerCase())) continue;
     if (modelProviderOverrideForPreset(preset, modelId, metadata)) continue;
     out[modelId] = metadata;
   }

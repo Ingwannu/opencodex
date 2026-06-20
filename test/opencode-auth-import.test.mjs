@@ -388,6 +388,8 @@ test("imports ordinary bundled OpenAI-compatible SDK packages through the CLI", 
             },
             models: {
               "openai/gpt-5": { name: "GPT-5" },
+              "openai/gpt-5-chat": { name: "GPT-5 Chat" },
+              "gpt-5-chat-latest": { name: "GPT-5 Chat Latest" },
             },
           },
           "custom-perplexity": {
@@ -459,6 +461,8 @@ test("imports ordinary bundled OpenAI-compatible SDK packages through the CLI", 
   assert.equal(byId.get("custom-openrouter")?.accessToken, "openrouter-secret");
   assert.equal(byId.get("custom-openrouter")?.enabled, true);
   assert.ok(byId.get("custom-openrouter")?.providerModels?.["openai/gpt-5"]);
+  assert.equal(byId.get("custom-openrouter")?.providerModels?.["openai/gpt-5-chat"], undefined);
+  assert.equal(byId.get("custom-openrouter")?.providerModels?.["gpt-5-chat-latest"], undefined);
 
   assert.equal(byId.get("custom-perplexity")?.providerAdapter, "openai-compatible");
   assert.equal(byId.get("custom-perplexity")?.baseUrl, "https://api.perplexity.ai");

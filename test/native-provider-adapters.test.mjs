@@ -3020,7 +3020,9 @@ test("OpenCode config imports ordinary bundled OpenAI-compatible SDK packages", 
           "apiKey": "openrouter-secret"
         },
         "models": {
-          "openai/gpt-5": { "name": "GPT-5" }
+          "openai/gpt-5": { "name": "GPT-5" },
+          "openai/gpt-5-chat": { "name": "GPT-5 Chat" },
+          "gpt-5-chat-latest": { "name": "GPT-5 Chat Latest" }
         }
       },
       "custom-deepinfra": {
@@ -3147,6 +3149,8 @@ test("OpenCode config imports ordinary bundled OpenAI-compatible SDK packages", 
   assert.equal(byId.get("custom-openrouter")?.accessToken, "openrouter-secret");
   assert.equal(byId.get("custom-openrouter")?.enabled, true);
   assert.ok(byId.get("custom-openrouter")?.providerModels?.["openai/gpt-5"]);
+  assert.equal(byId.get("custom-openrouter")?.providerModels?.["openai/gpt-5-chat"], undefined);
+  assert.equal(byId.get("custom-openrouter")?.providerModels?.["gpt-5-chat-latest"], undefined);
 
   assert.equal(byId.get("custom-deepinfra")?.providerAdapter, "openai-compatible");
   assert.equal(byId.get("custom-deepinfra")?.baseUrl, "https://api.deepinfra.com/v1/openai");

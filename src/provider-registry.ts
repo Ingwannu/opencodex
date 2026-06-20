@@ -33,6 +33,7 @@ export type ProviderRegistryEntry = {
   runtimeSupported: boolean;
   models?: Record<string, unknown>;
   modelsCount?: number;
+  disabledModels?: string[];
 };
 
 type ModelsDevProvider = {
@@ -445,6 +446,7 @@ type OpenAiCompatibleProviderDefault = {
   tokenEnv?: string[];
   providerDoc?: string;
   providerOptions?: Record<string, unknown>;
+  disabledModels?: string[];
   openAiPathPrefix?: OpenAiPathPrefix;
   upstreamMode?: UpstreamMode;
   compatibilityMode?: CompatibilityMode;
@@ -815,6 +817,7 @@ const OPENAI_COMPATIBLE_SDK_PROVIDER_DEFAULTS: Record<
     label: "OpenRouter",
     baseUrl: "https://openrouter.ai/api/v1",
     tokenEnv: ["OPENROUTER_API_KEY"],
+    disabledModels: ["gpt-5-chat-latest", "openai/gpt-5-chat"],
   },
   "novita-ai": {
     label: "NovitaAI",
@@ -1213,6 +1216,7 @@ const OPENAI_COMPATIBLE_SDK_PACKAGE_DEFAULTS: Record<
         "X-Title": "opencode",
       },
     },
+    disabledModels: ["gpt-5-chat-latest", "openai/gpt-5-chat"],
   },
   "venice-ai-sdk-provider": { baseUrl: "https://api.venice.ai/api/v1" },
 };
@@ -2141,6 +2145,7 @@ export function providerRegistryEntryFromMetadata(
     providerOptions: Object.keys(providerOptions).length
       ? providerOptions
       : undefined,
+    disabledModels: openAiCompatibleDefault?.disabledModels,
     tokenEnv,
     authType,
     runtimeSupported,

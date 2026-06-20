@@ -2720,6 +2720,7 @@ test("proxy derives OpenCode Venice reasoning variants from request effort", asy
         const json = await res.json();
         assert.equal(res.status, 200, JSON.stringify(json));
         assert.equal(capturedRequest.reasoningEffort, "high");
+        assert.deepEqual(capturedRequest.veniceParameters, { disableThinking: true });
         assert.equal(capturedRequest.reasoning_effort, undefined);
       },
     );

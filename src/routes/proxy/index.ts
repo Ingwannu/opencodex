@@ -1198,6 +1198,14 @@ function applyOpenCodeProviderDefaults(
     payloadRecord.usage = { include: true };
   }
 
+  if (
+    providerId === "venice" &&
+    !hasOwn(requestRecord, "veniceParameters") &&
+    !hasOwn(payloadRecord, "veniceParameters")
+  ) {
+    payloadRecord.veniceParameters = { disableThinking: true };
+  }
+
   const flatReasoningEffort = stringValue(
     payloadRecord.reasoning_effort ?? requestRecord.reasoning_effort,
   );

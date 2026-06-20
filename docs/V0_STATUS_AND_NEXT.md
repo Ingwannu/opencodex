@@ -79,6 +79,9 @@ full OpenCode provider parity.
   OpenAI-compatible reasoning variants now mirror OpenCode's provider shape by
   translating requested flat `reasoning_effort` into `reasoningEffort` before
   forwarding requests.
+- Venice small-option defaults now mirror OpenCode by sending
+  `veniceParameters: { disableThinking: true }` when the caller did not provide
+  Venice-specific controls.
 - Mistral adjustable reasoning variants now mirror OpenCode's provider shape by
   translating requested flat `reasoning_effort` into `reasoningEffort` for the
   Mistral Small 4 / Medium 3.5 model ids that support adjustable reasoning.
@@ -124,6 +127,7 @@ full OpenCode provider parity.
 - OpenCode OpenRouter reasoning variant fixture for request-effort mapping.
 - OpenCode Cerebras/DeepInfra/Groq/Together AI/xAI/Venice/generic
   OpenAI-compatible reasoning variant fixtures for request-effort mapping.
+- OpenCode Venice `veniceParameters.disableThinking` small-option fixture.
 - OpenCode Mistral adjustable reasoning variant fixture for request-effort
   mapping on supported Mistral reasoning models.
 - OpenCode GitHub Copilot GPT reasoning variant fixture for request-effort

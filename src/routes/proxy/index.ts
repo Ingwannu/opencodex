@@ -993,7 +993,7 @@ function applyConfiguredModelOptions(
 function applyOpenCodeProviderDefaults(
   payload: any,
   requestBody: any,
-  account: Pick<Account, "providerNpm">,
+  account: Pick<Account, "provider" | "providerAdapter" | "providerNpm">,
 ): void {
   if (!payload || typeof payload !== "object") return;
   const requestRecord = requestBody && typeof requestBody === "object"
@@ -1019,6 +1019,19 @@ function applyOpenCodeProviderDefaults(
     !hasOwn(payloadRecord, "reasoning")
   ) {
     payloadRecord.reasoning = { effort: "high" };
+  }
+
+  const provider = normalizeProvider(account);
+  if (
+    (account.providerNpm === "@ai-sdk/google" ||
+      account.providerNpm === "@ai-sdk/google-vertex" ||
+      provider === "google" ||
+      provider === "vertex") &&
+    model.includes("gemini-3") &&
+    !hasOwn(requestRecord, "thinkingConfig") &&
+    !hasOwn(payloadRecord, "thinkingConfig")
+  ) {
+    payloadRecord.thinkingConfig = { includeThoughts: true, thinkingLevel: "high" };
   }
 }
 

@@ -646,6 +646,13 @@ function buildGooglePayload(payload: Record<string, unknown>) {
   if (typeof payload.temperature === "number") {
     generationConfig.temperature = payload.temperature;
   }
+  if (
+    payload.thinkingConfig &&
+    typeof payload.thinkingConfig === "object" &&
+    !Array.isArray(payload.thinkingConfig)
+  ) {
+    generationConfig.thinkingConfig = payload.thinkingConfig;
+  }
 
   const body: Record<string, unknown> = {
     contents: contents.length ? contents : [{ role: "user", parts: [{ text: " " }] }],

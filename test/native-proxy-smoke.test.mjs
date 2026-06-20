@@ -203,12 +203,12 @@ test("proxy routes Google responses through native generateContent API", async (
   const upstream = http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/v1beta/models?key=gem-smoke") {
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ models: [{ name: "models/gemini-smoke" }] }));
+      res.end(JSON.stringify({ models: [{ name: "models/gemini-3-smoke" }] }));
       return;
     }
     if (
       req.method === "POST" &&
-      req.url === "/v1beta/models/gemini-smoke:generateContent?key=gem-smoke"
+      req.url === "/v1beta/models/gemini-3-smoke:generateContent?key=gem-smoke"
     ) {
       capturedRequest = await readJson(req);
       res.writeHead(200, { "content-type": "application/json" });
@@ -251,7 +251,7 @@ test("proxy routes Google responses through native generateContent API", async (
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            model: "gemini-smoke",
+            model: "gemini-3-smoke",
             input: "Hello",
             stream: false,
           }),
@@ -260,6 +260,10 @@ test("proxy routes Google responses through native generateContent API", async (
         assert.equal(res.status, 200);
         assert.equal(json.output[0].content[0].text, "Gemini OK");
         assert.equal(capturedRequest.contents[0].role, "user");
+        assert.deepEqual(capturedRequest.generationConfig.thinkingConfig, {
+          includeThoughts: true,
+          thinkingLevel: "high",
+        });
       },
     );
   } finally {

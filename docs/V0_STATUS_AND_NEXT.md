@@ -46,6 +46,10 @@ full OpenCode provider parity.
 - OpenCode OpenRouter and LLM Gateway request defaults now mirror
   `usage: { include: true }` and the Gemini 3 `reasoning: { effort: "high" }`
   hint when the caller did not provide those options.
+- Google Gemini and Vertex Gemini 3 native requests now mirror OpenCode's
+  default thinking config by sending `includeThoughts: true` and
+  `thinkingLevel: "high"` through `generationConfig.thinkingConfig` when the
+  caller did not provide a thinking config.
 - Default `codex` launcher fail-open behavior now falls back through the OpenAI
   profile when the MultiCodex proxy cannot start, so an installed wrapper should
   not trap normal Codex startup on a broken proxy.
@@ -69,6 +73,7 @@ full OpenCode provider parity.
 - OpenCode model `options.providerOptions`, `options.providerMetadata`, and
   `options.experimental_providerMetadata` request-default fixture.
 - OpenCode OpenRouter usage and Gemini 3 reasoning default fixture.
+- Google native Gemini 3 `thinkingConfig` default fixture.
 - Launcher regression coverage that proves the default `codex` wrapper falls
   back to the real Codex CLI when the MultiCodex proxy cannot start.
 - Launcher regression coverage that proves `opencodex install` preserves the

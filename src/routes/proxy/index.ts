@@ -1029,6 +1029,20 @@ function applyOpenCodeProviderDefaults(
     payloadRecord.usage = { include: true };
   }
 
+  const flatReasoningEffort = stringValue(
+    payloadRecord.reasoning_effort ?? requestRecord.reasoning_effort,
+  );
+  if (
+    (account.providerNpm === "@openrouter/ai-sdk-provider" ||
+      account.providerNpm === "@llmgateway/ai-sdk-provider") &&
+    flatReasoningEffort &&
+    !hasOwn(requestRecord, "reasoning") &&
+    !hasOwn(payloadRecord, "reasoning")
+  ) {
+    payloadRecord.reasoning = { effort: flatReasoningEffort };
+    delete payloadRecord.reasoning_effort;
+  }
+
   if (
     (account.providerNpm === "@openrouter/ai-sdk-provider" ||
       account.providerNpm === "@llmgateway/ai-sdk-provider") &&

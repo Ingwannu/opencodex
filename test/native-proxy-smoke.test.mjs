@@ -1969,6 +1969,83 @@ test("proxy applies configured OpenCode model variants from request variant", as
   }
 });
 
+test("proxy derives OpenCode OpenRouter reasoning variants from request effort", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "no model listing" }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/chat/completions") {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl_openrouter_variant",
+          object: "chat.completion",
+          created_at: 1,
+          model: "openai/gpt-5.4",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Variant OK" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "openrouter-variant-smoke",
+          provider: "openai-compatible",
+          providerId: "openrouter",
+          providerAdapter: "openai-compatible",
+          providerNpm: "@openrouter/ai-sdk-provider",
+          accessToken: "configured-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}/v1`,
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          providerModels: {
+            "openai/gpt-5.4": {
+              name: "GPT 5.4",
+              capabilities: { reasoning: true },
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "openai/gpt-5.4",
+            messages: [{ role: "user", content: "Hello" }],
+            reasoning_effort: "high",
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+        assert.equal(json.choices[0].message.content, "Variant OK");
+        assert.deepEqual(capturedRequest.reasoning, { effort: "high" });
+        assert.equal(capturedRequest.reasoning_effort, undefined);
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy routes Perplexity Sonar compatibility without a /v1 prefix", async () => {
   let capturedRequest;
   const upstream = http.createServer(async (req, res) => {

@@ -1179,6 +1179,16 @@ function applyOpenCodeProviderDefaults(
   }
 
   if (
+    (account.providerNpm === "@ai-sdk/groq" || providerId === "groq") &&
+    flatReasoningEffort &&
+    !hasOwn(requestRecord, "reasoningEffort") &&
+    !hasOwn(payloadRecord, "reasoningEffort")
+  ) {
+    payloadRecord.reasoningEffort = flatReasoningEffort;
+    delete payloadRecord.reasoning_effort;
+  }
+
+  if (
     (account.providerNpm === "@openrouter/ai-sdk-provider" ||
       account.providerNpm === "@llmgateway/ai-sdk-provider") &&
     model.includes("gemini-3") &&

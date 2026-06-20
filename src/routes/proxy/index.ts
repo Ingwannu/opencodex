@@ -683,6 +683,60 @@ function isClaudeLikeModel(model: string | undefined): boolean {
   return modelId.includes("claude") || modelId.includes("anthropic");
 }
 
+function sanitizeMoonshotSchema(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(sanitizeMoonshotSchema);
+
+  const source = value as Record<string, unknown>;
+  if (typeof source.$ref === "string") return { $ref: source.$ref };
+
+  const result: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(source)) {
+    result[key] = sanitizeMoonshotSchema(entry);
+  }
+  if (Array.isArray(result.items)) result.items = result.items[0] ?? {};
+  return result;
+}
+
+function shouldSanitizeMoonshotToolSchemas(
+  account: Pick<Account, "providerId">,
+  model: string | undefined,
+): boolean {
+  const providerId = String(account.providerId ?? "").toLowerCase();
+  const modelId = String(model ?? "").toLowerCase();
+  return (
+    providerId === "moonshotai" ||
+    providerId === "moonshotai-cn" ||
+    modelId.includes("kimi")
+  );
+}
+
+function applyMoonshotToolSchemaNormalization(
+  payload: unknown,
+  account: Pick<Account, "providerId">,
+  model: string | undefined,
+): void {
+  if (!shouldSanitizeMoonshotToolSchemas(account, model)) return;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
+  const source = payload as Record<string, unknown>;
+  if (!Array.isArray(source.tools)) return;
+
+  source.tools = source.tools.map((tool) => {
+    const record = objectValue(tool);
+    if (!record) return tool;
+    const fn = objectValue(record.function);
+    if (!fn) return tool;
+    const nextFunction = { ...fn };
+    if (nextFunction.parameters) {
+      nextFunction.parameters = sanitizeMoonshotSchema(nextFunction.parameters);
+    }
+    if (nextFunction.input_schema) {
+      nextFunction.input_schema = sanitizeMoonshotSchema(nextFunction.input_schema);
+    }
+    return { ...record, function: nextFunction };
+  });
+}
+
 function shouldApplyOpenCodePromptCaching(
   account: Pick<Account, "provider" | "providerId" | "providerNpm">,
   model: string | undefined,
@@ -2592,6 +2646,13 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
           isClaudeLikeModel(candidate.resolvedModel ?? requestModel)
         ) {
           applyClaudeToolIdNormalization(payloadToUpstream);
+        }
+        if (shouldSendChatCompletions && candidate.provider === "openai-compatible") {
+          applyMoonshotToolSchemaNormalization(
+            payloadToUpstream,
+            selected,
+            candidate.resolvedModel ?? requestModel,
+          );
         }
 
         if (

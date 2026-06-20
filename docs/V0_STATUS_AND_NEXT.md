@@ -65,6 +65,8 @@ full OpenCode provider parity.
 - Google Gemini and Vertex native tool schemas now mirror OpenCode's Gemini
   sanitizer for enum values, nullable type arrays, invalid `required` fields,
   array item defaults, and non-object `properties` cleanup.
+- Moonshot/Kimi OpenAI-compatible tool schemas now mirror OpenCode's cleanup for
+  `$ref` siblings and tuple-style `items` arrays before upstream forwarding.
 - Additional OpenCode provider-level request defaults are mirrored from provider
   identity and model metadata: OpenRouter/Venice/OpenAI-compatible
   `setCacheKey` session cache keys, Z.ai/ZhipuAI thinking enablement,
@@ -106,6 +108,7 @@ full OpenCode provider parity.
 - Google native tool forwarding and Gemini function-call response conversion
   fixtures.
 - Google native Gemini tool-schema sanitizer fixture.
+- Moonshot/Kimi OpenAI-compatible tool-schema sanitizer fixture.
 - OpenCode provider identity default fixture for session cache keys, Z.ai
   thinking, Alibaba CN reasoning enablement, and gateway-style request hints.
 - OpenCode OpenRouter reasoning variant fixture for request-effort mapping.

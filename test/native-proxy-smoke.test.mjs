@@ -702,6 +702,102 @@ test("proxy preserves OpenAI-compatible base paths that already contain /v1", as
   }
 });
 
+test("proxy sanitizes Moonshot Kimi tool schemas for OpenAI-compatible upstreams", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "kimi-k2-schema-smoke" }] }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/chat/completions") {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl_kimi_schema",
+          object: "chat.completion",
+          created: 1,
+          model: "kimi-k2-schema-smoke",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Kimi OK" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 2, completion_tokens: 2, total_tokens: 4 },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "moonshot-schema-smoke",
+          provider: "openai-compatible",
+          providerId: "moonshotai",
+          providerAdapter: "openai-compatible",
+          accessToken: "moonshot-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}/v1`,
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "kimi-k2-schema-smoke",
+            messages: [{ role: "user", content: "Lookup" }],
+            tools: [
+              {
+                type: "function",
+                function: {
+                  name: "lookup_ref",
+                  parameters: {
+                    type: "object",
+                    properties: {
+                      refValue: {
+                        $ref: "#/defs/RefValue",
+                        description: "Moonshot rejects siblings beside $ref",
+                      },
+                      tupleValue: {
+                        type: "array",
+                        items: [{ type: "string" }, { type: "number" }],
+                      },
+                    },
+                    required: ["refValue", "tupleValue"],
+                  },
+                },
+              },
+            ],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+        assert.deepEqual(capturedRequest.tools[0].function.parameters, {
+          type: "object",
+          properties: {
+            refValue: { $ref: "#/defs/RefValue" },
+            tupleValue: { type: "array", items: { type: "string" } },
+          },
+          required: ["refValue", "tupleValue"],
+        });
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy omits authorization for auth-free local OpenAI-compatible accounts", async () => {
   let sawModels = false;
   let sawChat = false;

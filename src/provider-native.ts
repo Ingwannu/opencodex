@@ -541,6 +541,10 @@ function anthropicContentParts(content: unknown) {
   return text ? [{ type: "text", text }] : [];
 }
 
+function scrubAnthropicToolId(id: unknown): string {
+  return String(id ?? randomUUID()).replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
 function buildAnthropicPayload(payload: Record<string, unknown>) {
   const messages = Array.isArray(payload.messages)
     ? (payload.messages as Array<Record<string, unknown>>)
@@ -560,7 +564,7 @@ function buildAnthropicPayload(payload: Record<string, unknown>) {
         content: [
           {
             type: "tool_result",
-            tool_use_id: String(message.tool_call_id ?? randomUUID()),
+            tool_use_id: scrubAnthropicToolId(message.tool_call_id),
             content: textFromContent(message.content),
           },
         ],
@@ -576,7 +580,7 @@ function buildAnthropicPayload(payload: Record<string, unknown>) {
         const tc = toolCall as Record<string, any>;
         content.push({
           type: "tool_use",
-          id: String(tc.id ?? randomUUID()),
+          id: scrubAnthropicToolId(tc.id),
           name: String(tc.function?.name ?? "unknown"),
           input: coerceJsonObject(tc.function?.arguments),
         } as any);

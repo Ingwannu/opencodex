@@ -148,6 +148,42 @@ test("Anthropic adapter removes empty string messages before upstream requests",
   ]);
 });
 
+test("Anthropic adapter scrubs tool call ids before upstream requests", () => {
+  const request = buildNativeProviderRequest(
+    "anthropic",
+    { accessToken: "ant-key" },
+    {
+      model: "claude-sonnet-4-5",
+      messages: [
+        {
+          role: "assistant",
+          content: "Need lookup",
+          tool_calls: [
+            {
+              id: "call:bad.id/1",
+              type: "function",
+              function: { name: "lookup", arguments: "{}" },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          tool_call_id: "call:bad.id/1",
+          content: "Lookup result",
+        },
+      ],
+      max_tokens: 64,
+    },
+    false,
+  );
+
+  assert.equal(request.body.messages[0].content[1].id, "call_bad_id_1");
+  assert.equal(
+    request.body.messages[1].content[0].tool_use_id,
+    "call_bad_id_1",
+  );
+});
+
 test("Gateway adapter converts chat payloads, responses, and model metadata", () => {
   const request = buildNativeProviderRequest(
     "gateway",

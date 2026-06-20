@@ -341,6 +341,89 @@ test("Google adapter converts chat payloads, responses, and model lists", () => 
   ]);
 });
 
+test("Google adapter forwards tools and converts function calls", () => {
+  const request = buildNativeProviderRequest(
+    "google",
+    { accessToken: "gem-key" },
+    {
+      model: "gemini-2.5-pro",
+      messages: [{ role: "user", content: "Lookup status" }],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "lookup_status",
+            description: "Lookup service status",
+            parameters: {
+              type: "object",
+              properties: { service: { type: "string" } },
+              required: ["service"],
+            },
+          },
+        },
+      ],
+    },
+    false,
+  );
+
+  assert.deepEqual(request.body.tools, [
+    {
+      functionDeclarations: [
+        {
+          name: "lookup_status",
+          description: "Lookup service status",
+          parameters: {
+            type: "object",
+            properties: { service: { type: "string" } },
+            required: ["service"],
+          },
+        },
+      ],
+    },
+  ]);
+
+  const converted = convertNativeProviderResponse(
+    "google",
+    {
+      candidates: [
+        {
+          content: {
+            role: "model",
+            parts: [
+              {
+                functionCall: {
+                  name: "lookup_status",
+                  args: { service: "api" },
+                },
+              },
+            ],
+          },
+          finishReason: "STOP",
+        },
+      ],
+      usageMetadata: {
+        promptTokenCount: 7,
+        candidatesTokenCount: 2,
+        totalTokenCount: 9,
+      },
+    },
+    "chat.completions",
+    "gemini-2.5-pro",
+  );
+
+  assert.deepEqual(converted.choices[0].message.tool_calls, [
+    {
+      id: "call_lookup_status_0",
+      type: "function",
+      function: {
+        name: "lookup_status",
+        arguments: JSON.stringify({ service: "api" }),
+      },
+    },
+  ]);
+  assert.equal(converted.choices[0].finish_reason, "tool_calls");
+});
+
 test("Vertex adapter converts chat payloads and responses", () => {
   const request = buildNativeProviderRequest(
     "vertex",

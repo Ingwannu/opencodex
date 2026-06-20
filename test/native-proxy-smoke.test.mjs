@@ -332,6 +332,122 @@ test("proxy routes Google responses through native generateContent API", async (
   }
 });
 
+test("proxy routes Google native tool calls through chat completions", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1beta/models?key=gem-tool") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ models: [{ name: "models/gemini-tool-smoke" }] }));
+      return;
+    }
+    if (
+      req.method === "POST" &&
+      req.url === "/v1beta/models/gemini-tool-smoke:generateContent?key=gem-tool"
+    ) {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                role: "model",
+                parts: [
+                  {
+                    functionCall: {
+                      name: "lookup_status",
+                      args: { service: "api" },
+                    },
+                  },
+                ],
+              },
+              finishReason: "STOP",
+            },
+          ],
+          usageMetadata: {
+            promptTokenCount: 5,
+            candidatesTokenCount: 2,
+            totalTokenCount: 7,
+          },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "google-tool-smoke",
+          provider: "google",
+          providerId: "google",
+          providerAdapter: "google",
+          accessToken: "gem-tool",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "gemini-tool-smoke",
+            messages: [{ role: "user", content: "Lookup status" }],
+            tools: [
+              {
+                type: "function",
+                function: {
+                  name: "lookup_status",
+                  description: "Lookup service status",
+                  parameters: {
+                    type: "object",
+                    properties: { service: { type: "string" } },
+                    required: ["service"],
+                  },
+                },
+              },
+            ],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+        assert.deepEqual(capturedRequest.tools, [
+          {
+            functionDeclarations: [
+              {
+                name: "lookup_status",
+                description: "Lookup service status",
+                parameters: {
+                  type: "object",
+                  properties: { service: { type: "string" } },
+                  required: ["service"],
+                },
+              },
+            ],
+          },
+        ]);
+        assert.deepEqual(json.choices[0].message.tool_calls, [
+          {
+            id: "call_lookup_status_0",
+            type: "function",
+            function: {
+              name: "lookup_status",
+              arguments: JSON.stringify({ service: "api" }),
+            },
+          },
+        ]);
+        assert.equal(json.choices[0].finish_reason, "tool_calls");
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy routes Vercel AI Gateway chat completions through native Gateway API", async () => {
   let capturedRequest;
   let sawModels = false;

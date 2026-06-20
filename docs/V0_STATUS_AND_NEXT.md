@@ -59,6 +59,9 @@ full OpenCode provider parity.
   default thinking config by sending `includeThoughts: true` and
   `thinkingLevel: "high"` through `generationConfig.thinkingConfig` when the
   caller did not provide a thinking config.
+- Google Gemini and Vertex native adapters now forward OpenAI-style function
+  tools as Gemini `functionDeclarations` and convert Gemini `functionCall`
+  responses back to OpenAI `tool_calls` / Responses `function_call` items.
 - Additional OpenCode provider-level request defaults are mirrored from provider
   identity and model metadata: OpenRouter/Venice/OpenAI-compatible
   `setCacheKey` session cache keys, Z.ai/ZhipuAI thinking enablement,
@@ -97,6 +100,8 @@ full OpenCode provider parity.
   `options.experimental_providerMetadata` request-default fixture.
 - OpenCode OpenRouter usage and Gemini 3 reasoning default fixture.
 - Google native Gemini 3 `thinkingConfig` default fixture.
+- Google native tool forwarding and Gemini function-call response conversion
+  fixtures.
 - OpenCode provider identity default fixture for session cache keys, Z.ai
   thinking, Alibaba CN reasoning enablement, and gateway-style request hints.
 - OpenCode OpenRouter reasoning variant fixture for request-effort mapping.

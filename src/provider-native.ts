@@ -632,6 +632,32 @@ function googlePartFromContent(content: unknown) {
   return text ? [{ text }] : [{ text: " " }];
 }
 
+function googleTools(payload: Record<string, unknown>) {
+  if (!Array.isArray(payload.tools)) return undefined;
+  const functionDeclarations: Array<Record<string, unknown>> = payload.tools
+    .map((tool: any) => {
+      const fn = tool?.function ?? tool;
+      if (!fn?.name) return undefined;
+      return {
+        name: fn.name,
+        description: fn.description,
+        parameters: fn.parameters ?? fn.input_schema ?? { type: "object" },
+      };
+    })
+    .filter((tool): tool is { name: unknown; description: unknown; parameters: unknown } => Boolean(tool));
+  return functionDeclarations.length ? [{ functionDeclarations }] : undefined;
+}
+
+function googleToolConfig(payload: Record<string, unknown>) {
+  if (payload.tool_choice === "required") {
+    return { functionCallingConfig: { mode: "ANY" } };
+  }
+  if (payload.tool_choice === "none") {
+    return { functionCallingConfig: { mode: "NONE" } };
+  }
+  return undefined;
+}
+
 function buildGooglePayload(payload: Record<string, unknown>) {
   const messages = Array.isArray(payload.messages)
     ? (payload.messages as Array<Record<string, unknown>>)
@@ -668,6 +694,10 @@ function buildGooglePayload(payload: Record<string, unknown>) {
   if (system) {
     body.systemInstruction = { parts: [{ text: system }] };
   }
+  const tools = googleTools(payload);
+  if (tools) body.tools = tools;
+  const toolConfig = googleToolConfig(payload);
+  if (toolConfig) body.toolConfig = toolConfig;
   return body;
 }
 
@@ -1726,6 +1756,35 @@ function googleText(response: Record<string, unknown>): string {
     .join("");
 }
 
+function googleFunctionCalls(
+  response: Record<string, unknown>,
+): Array<{ id: string; name: string; arguments: string }> {
+  const candidates = Array.isArray(response.candidates)
+    ? response.candidates as Array<Record<string, any>>
+    : [];
+  const first = candidates[0];
+  const parts = Array.isArray(first?.content?.parts)
+    ? first.content.parts
+    : [];
+  const calls: Array<{ id: string; name: string; arguments: string } | undefined> = parts
+    .map((part: any, index: number) => {
+      const call = part?.functionCall;
+      if (!call || typeof call !== "object" || !call.name) return undefined;
+      return {
+        id: `call_${String(call.name).replace(/[^a-zA-Z0-9_-]/g, "_")}_${index}`,
+        name: String(call.name),
+        arguments: JSON.stringify(
+          call.args && typeof call.args === "object" && !Array.isArray(call.args)
+            ? call.args
+            : {},
+        ),
+      };
+    });
+  return calls.filter(
+    (call): call is { id: string; name: string; arguments: string } => Boolean(call),
+  );
+}
+
 function cohereText(response: Record<string, unknown>): string {
   const message = response.message && typeof response.message === "object"
     ? (response.message as Record<string, unknown>)
@@ -1799,6 +1858,62 @@ function responseObject(
       },
     ],
     usage: responseUsageFromChatUsage(usage),
+  };
+}
+
+function googleResponseObject(
+  model: string,
+  content: string,
+  functionCalls: Array<{ id: string; name: string; arguments: string }>,
+  usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number },
+) {
+  if (!functionCalls.length) return responseObject(model, content, usage);
+  return {
+    id: `resp_${randomUUID().replace(/-/g, "").slice(0, 24)}`,
+    object: "response",
+    created_at: Math.floor(Date.now() / 1000),
+    model,
+    status: "completed",
+    output: functionCalls.map((call) => ({
+      type: "function_call",
+      id: call.id,
+      call_id: call.id,
+      name: call.name,
+      arguments: call.arguments,
+    })),
+    usage: responseUsageFromChatUsage(usage),
+  };
+}
+
+function googleChatCompletion(
+  model: string,
+  content: string,
+  finishReason: string,
+  functionCalls: Array<{ id: string; name: string; arguments: string }>,
+  usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number },
+) {
+  if (!functionCalls.length) return chatCompletion(model, content, finishReason, usage);
+  return {
+    id: `chatcmpl_${randomUUID().replace(/-/g, "").slice(0, 24)}`,
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: "assistant",
+          content: content || null,
+          tool_calls: functionCalls.map((call) => ({
+            id: call.id,
+            type: "function",
+            function: { name: call.name, arguments: call.arguments },
+          })),
+        },
+        finish_reason: "tool_calls",
+      },
+    ],
+    usage,
   };
 }
 
@@ -1927,6 +2042,13 @@ export function convertNativeProviderResponse(
           ? usageFromBedrock(body.usage)
       : usageFromGoogle(body.usageMetadata);
 
+  if (provider === "google" || provider === "vertex") {
+    const functionCalls = googleFunctionCalls(body);
+    if (shape === "responses") {
+      return googleResponseObject(model, content, functionCalls, usage);
+    }
+    return googleChatCompletion(model, content, finishReason, functionCalls, usage);
+  }
   if (shape === "responses") return responseObject(model, content, usage);
   return chatCompletion(model, content, finishReason, usage);
 }

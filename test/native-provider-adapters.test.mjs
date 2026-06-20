@@ -3221,6 +3221,43 @@ test("OpenCode auth import enables OpenAI-compatible SDK providers", async () =>
   assert.equal(byId.get("v0")?.enabled, true);
 });
 
+test("OpenCode opencode provider imports with public fallback when no API key exists", async () => {
+  const previous = process.env.OPENCODE_API_KEY;
+  delete process.env.OPENCODE_API_KEY;
+  try {
+    const payload = parseOpenCodeConfigPayload(`{
+      "provider": {
+        "opencode": {
+          "models": {
+            "kimi-k2.7-code": { "name": "Kimi K2.7 Code" }
+          }
+        },
+        "opencode-go": {
+          "models": {
+            "glm-5.2-fast": { "name": "GLM 5.2 Fast" }
+          }
+        }
+      }
+    }`);
+    const providerConfig = providerConfigFromOpenCodeConfigPayload(payload);
+
+    const accounts = await accountsFromOpenCodeAuthPayload({}, { providerConfig });
+    const byId = new Map(accounts.map((account) => [account.providerId, account]));
+
+    assert.equal(byId.get("opencode")?.accessToken, "public");
+    assert.equal(byId.get("opencode")?.baseUrl, "https://opencode.ai/zen");
+    assert.equal(byId.get("opencode")?.enabled, true);
+    assert.ok(byId.get("opencode")?.providerModels?.["kimi-k2.7-code"]);
+    assert.equal(byId.get("opencode-go")?.accessToken, "public");
+    assert.equal(byId.get("opencode-go")?.baseUrl, "https://opencode.ai/zen/go");
+    assert.equal(byId.get("opencode-go")?.enabled, true);
+    assert.ok(byId.get("opencode-go")?.providerModels?.["glm-5.2-fast"]);
+  } finally {
+    if (previous === undefined) delete process.env.OPENCODE_API_KEY;
+    else process.env.OPENCODE_API_KEY = previous;
+  }
+});
+
 test("OpenCode auth import enables Vercel AI Gateway API keys", async () => {
   const registry = providerRegistryEntryFromMetadata("vercel", {
     id: "vercel",

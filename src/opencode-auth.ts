@@ -286,6 +286,14 @@ function credentialChainTokenForProvider(
   return undefined;
 }
 
+function publicFallbackTokenForProvider(
+  providerId: string,
+  registry: ProviderRegistryEntry,
+): string | undefined {
+  const id = sanitizeProviderId(registry.providerId || providerId);
+  return id === "opencode" || id === "opencode-go" ? "public" : undefined;
+}
+
 function baseUrlForRegistry(
   registry: ProviderRegistryEntry,
   detectedBaseUrl?: string,
@@ -903,6 +911,7 @@ export async function accountsFromOpenCodeAuthPayload(
       options.providerConfigSecrets?.get(providerKey) ??
       envSecretForProvider(providerKey, registry) ??
       credentialChainTokenForProvider(providerKey, registry) ??
+      publicFallbackTokenForProvider(providerKey, registry) ??
       (registry.authType === "none" ? NO_AUTH_ACCESS_TOKEN : undefined);
     if (!token) continue;
     const providerId = sanitizeProviderId(registry.providerId || name);
@@ -1001,6 +1010,7 @@ export async function accountsFromOpenCodeAuthPayload(
     const token =
       envSecretForProvider(providerId, registry) ??
       credentialChainTokenForProvider(providerId, registry) ??
+      publicFallbackTokenForProvider(providerId, registry) ??
       (registry.authType === "none" ? NO_AUTH_ACCESS_TOKEN : undefined);
     if (!token) continue;
     const id = `${providerId}-${providerKey || randomUUID().slice(0, 8)}`;

@@ -793,6 +793,63 @@ test("imports local OpenCode provider config through the CLI without optional to
   assert.ok(atomic?.providerModels?.["gemma-local"]);
 });
 
+test("imports OpenCode opencode provider through the CLI with public fallback", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-opencode-public-"));
+  const storePath = path.join(dir, "accounts.json");
+  const authPath = path.join(dir, "auth.json");
+  const configPath = path.join(dir, "opencode.jsonc");
+
+  fs.writeFileSync(authPath, JSON.stringify({}, null, 2));
+  fs.writeFileSync(
+    configPath,
+    `{
+      "provider": {
+        "opencode": {
+          "models": {
+            "kimi-k2.7-code": { "name": "Kimi K2.7 Code" }
+          }
+        },
+        "opencode-go": {
+          "models": {
+            "glm-5.2-fast": { "name": "GLM 5.2 Fast" }
+          }
+        }
+      }
+    }`,
+  );
+
+  const env = {
+    ...process.env,
+    MULTICODEX_STORE_PATH: storePath,
+    MULTICODEX_DATA_DIR: dir,
+  };
+  delete env.OPENCODE_API_KEY;
+
+  execFileSync(
+    process.execPath,
+    [cli, "auth", "import-opencode", authPath, "--config", configPath],
+    {
+      cwd: root,
+      env,
+      encoding: "utf8",
+    },
+  );
+
+  const store = readStore(storePath);
+  const byProviderId = new Map(
+    store.accounts.map((account) => [account.providerId, account]),
+  );
+
+  assert.equal(byProviderId.get("opencode")?.accessToken, "public");
+  assert.equal(byProviderId.get("opencode")?.baseUrl, "https://opencode.ai/zen");
+  assert.equal(byProviderId.get("opencode")?.enabled, true);
+  assert.ok(byProviderId.get("opencode")?.providerModels?.["kimi-k2.7-code"]);
+  assert.equal(byProviderId.get("opencode-go")?.accessToken, "public");
+  assert.equal(byProviderId.get("opencode-go")?.baseUrl, "https://opencode.ai/zen/go");
+  assert.equal(byProviderId.get("opencode-go")?.enabled, true);
+  assert.ok(byProviderId.get("opencode-go")?.providerModels?.["glm-5.2-fast"]);
+});
+
 test("imports OpenCode WellKnown auth tokens through the CLI", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-wellknown-auth-"));
   const storePath = path.join(dir, "accounts.json");

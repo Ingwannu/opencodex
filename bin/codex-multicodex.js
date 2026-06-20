@@ -417,6 +417,16 @@ const openAiCompatibleSdkProviderDefaults = {
   venice: { baseUrl: "https://api.venice.ai/api/v1" },
   aihubmix: { baseUrl: "https://aihubmix.com/v1" },
   "merge-gateway": { baseUrl: "https://api-gateway.merge.dev/v1/openai" },
+  opencode: {
+    baseUrl: "https://opencode.ai/zen/v1",
+    label: "OpenCode Zen",
+    tokenEnv: ["OPENCODE_API_KEY"],
+  },
+  "opencode-go": {
+    baseUrl: "https://opencode.ai/zen/go/v1",
+    label: "OpenCode Go",
+    tokenEnv: ["OPENCODE_API_KEY"],
+  },
   v0: { baseUrl: "https://api.v0.dev/v1" },
 };
 
@@ -2150,6 +2160,11 @@ function credentialChainTokenForProvider(providerId, preset) {
   return undefined;
 }
 
+function publicFallbackTokenForProvider(providerId, preset) {
+  const id = sanitizeProviderId(preset.providerId || providerId);
+  return id === "opencode" || id === "opencode-go" ? "public" : undefined;
+}
+
 function baseUrlForPreset(preset, detectedBaseUrl) {
   const providerAdapter = preset.providerAdapter || preset.provider;
   if (providerAdapter === "openai-compatible") {
@@ -2605,6 +2620,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
       providerConfig.secrets.get(providerKey) ||
       envSecretForProvider(providerKey, preset) ||
       credentialChainTokenForProvider(providerKey, preset) ||
+      publicFallbackTokenForProvider(providerKey, preset) ||
       (preset.authType === "none" ? NO_AUTH_ACCESS_TOKEN : undefined);
     if (!token) continue;
 
@@ -2696,6 +2712,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
     const token =
       envSecretForProvider(providerId, preset) ||
       credentialChainTokenForProvider(providerId, preset) ||
+      publicFallbackTokenForProvider(providerId, preset) ||
       (preset.authType === "none" ? NO_AUTH_ACCESS_TOKEN : undefined);
     if (!token) continue;
     const baseUrl = baseUrlForPreset(preset);

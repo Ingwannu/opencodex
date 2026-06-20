@@ -1125,6 +1125,15 @@ function applyConfiguredModelOptions(
   }
 }
 
+function isMistralReasoningModel(modelId: string): boolean {
+  return [
+    "mistral-small-2603",
+    "mistral-small-latest",
+    "mistral-medium-3.5",
+    "mistral-medium-2604",
+  ].some((id) => modelId.includes(id));
+}
+
 function applyOpenCodeProviderDefaults(
   payload: any,
   requestBody: any,
@@ -1181,8 +1190,10 @@ function applyOpenCodeProviderDefaults(
   if (
     (account.providerNpm === "@ai-sdk/groq" ||
       account.providerNpm === "venice-ai-sdk-provider" ||
+      (account.providerNpm === "@ai-sdk/mistral" && isMistralReasoningModel(modelId)) ||
       providerId === "groq" ||
-      providerId === "venice") &&
+      providerId === "venice" ||
+      (providerId === "mistral" && isMistralReasoningModel(modelId))) &&
     flatReasoningEffort &&
     !hasOwn(requestRecord, "reasoningEffort") &&
     !hasOwn(payloadRecord, "reasoningEffort")

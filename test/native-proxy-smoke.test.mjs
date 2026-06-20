@@ -1376,6 +1376,79 @@ test("proxy normalizes Mistral tool ids and tool-user turns", async () => {
   }
 });
 
+test("proxy derives OpenCode Mistral reasoning variants from request effort", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models?client_version=1.0.0") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "mistral-small-latest" }] }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/responses") {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "resp_mistral_reasoning",
+          object: "response",
+          created_at: 1,
+          model: "mistral-small-latest",
+          output: [
+            {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "output_text", text: "Mistral Reasoning OK" }],
+            },
+          ],
+          usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxyEnv(
+      [
+        {
+          id: "mistral-reasoning-smoke",
+          provider: "mistral",
+          providerId: "mistral",
+          providerAdapter: "mistral",
+          providerNpm: "@ai-sdk/mistral",
+          accessToken: "mistral-key",
+          providerModels: {
+            "mistral-small-latest": { capabilities: { reasoning: true } },
+          },
+          enabled: true,
+        },
+      ],
+      {
+        MISTRAL_BASE_URL: `http://127.0.0.1:${upstreamPort}`,
+      },
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/responses`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "mistral-small-latest",
+            input: "Hello",
+            reasoning_effort: "high",
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+        assert.equal(capturedRequest.reasoningEffort, "high");
+        assert.equal(capturedRequest.reasoning_effort, undefined);
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy normalizes Claude tool ids for OpenAI-compatible providers", async () => {
   let capturedRequest;
   const upstream = http.createServer(async (req, res) => {

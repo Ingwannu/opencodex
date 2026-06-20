@@ -405,8 +405,13 @@ test("proxy routes Google native tool calls through chat completions", async () 
                   description: "Lookup service status",
                   parameters: {
                     type: "object",
-                    properties: { service: { type: "string" } },
-                    required: ["service"],
+                    properties: {
+                      service: { type: "string" },
+                      status: { type: "integer", enum: [1, 2] },
+                      maybe: { type: ["string", "null"] },
+                      tags: { type: "array" },
+                    },
+                    required: ["service", "missing"],
                   },
                 },
               },
@@ -423,7 +428,12 @@ test("proxy routes Google native tool calls through chat completions", async () 
                 description: "Lookup service status",
                 parameters: {
                   type: "object",
-                  properties: { service: { type: "string" } },
+                  properties: {
+                    service: { type: "string" },
+                    status: { type: "string", enum: ["1", "2"] },
+                    maybe: { anyOf: [{ type: "string" }], nullable: true },
+                    tags: { type: "array", items: { type: "string" } },
+                  },
                   required: ["service"],
                 },
               },

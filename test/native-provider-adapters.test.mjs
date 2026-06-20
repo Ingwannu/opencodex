@@ -424,6 +424,54 @@ test("Google adapter forwards tools and converts function calls", () => {
   assert.equal(converted.choices[0].finish_reason, "tool_calls");
 });
 
+test("Google adapter sanitizes Gemini tool schemas", () => {
+  const request = buildNativeProviderRequest(
+    "google",
+    { accessToken: "gem-key" },
+    {
+      model: "gemini-2.5-pro",
+      messages: [{ role: "user", content: "Search" }],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "search_items",
+            parameters: {
+              type: "object",
+              properties: {
+                status: { type: "integer", enum: [1, 2] },
+                maybe: { type: ["string", "null"] },
+                tags: { type: "array" },
+                stray: {
+                  type: "string",
+                  properties: { nested: { type: "string" } },
+                  required: ["nested"],
+                },
+              },
+              required: ["status", "missing"],
+            },
+          },
+        },
+      ],
+    },
+    false,
+  );
+
+  assert.deepEqual(
+    request.body.tools[0].functionDeclarations[0].parameters,
+    {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: ["1", "2"] },
+        maybe: { anyOf: [{ type: "string" }], nullable: true },
+        tags: { type: "array", items: { type: "string" } },
+        stray: { type: "string" },
+      },
+      required: ["status"],
+    },
+  );
+});
+
 test("Vertex adapter converts chat payloads and responses", () => {
   const request = buildNativeProviderRequest(
     "vertex",

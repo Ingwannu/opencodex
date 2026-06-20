@@ -632,6 +632,89 @@ function googlePartFromContent(content: unknown) {
   return text ? [{ text }] : [{ text: " " }];
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function hasSchemaCombiner(value: unknown): boolean {
+  return Boolean(
+    isPlainObject(value) &&
+      (Array.isArray(value.anyOf) ||
+        Array.isArray(value.oneOf) ||
+        Array.isArray(value.allOf)),
+  );
+}
+
+function hasSchemaIntent(value: unknown): boolean {
+  if (!isPlainObject(value)) return false;
+  if (hasSchemaCombiner(value)) return true;
+  return [
+    "type",
+    "properties",
+    "items",
+    "prefixItems",
+    "enum",
+    "const",
+    "$ref",
+    "additionalProperties",
+    "patternProperties",
+    "required",
+    "not",
+    "if",
+    "then",
+    "else",
+  ].some((key) => key in value);
+}
+
+function sanitizeGeminiSchema(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(sanitizeGeminiSchema);
+
+  const result: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (key === "enum" && Array.isArray(entry)) {
+      result[key] = entry.map((item) => String(item));
+      if (result.type === "integer" || result.type === "number") {
+        result.type = "string";
+      }
+      continue;
+    }
+    result[key] = sanitizeGeminiSchema(entry);
+  }
+
+  if (Array.isArray(result.type)) {
+    const hasNull = result.type.includes("null");
+    const nonNull = result.type.filter((entry) => entry !== "null");
+    if (nonNull.length === 0) {
+      result.type = "null";
+    } else {
+      delete result.type;
+      result.anyOf = nonNull.map((entry) => ({ type: entry }));
+      if (hasNull) result.nullable = true;
+    }
+  }
+
+  if (result.type === "object" && isPlainObject(result.properties) && Array.isArray(result.required)) {
+    result.required = result.required.filter(
+      (field) => typeof field === "string" && field in (result.properties as Record<string, unknown>),
+    );
+  }
+
+  if (result.type === "array" && !hasSchemaCombiner(result)) {
+    if (result.items == null) result.items = {};
+    if (isPlainObject(result.items) && !hasSchemaIntent(result.items)) {
+      result.items.type = "string";
+    }
+  }
+
+  if (result.type && result.type !== "object" && !hasSchemaCombiner(result)) {
+    delete result.properties;
+    delete result.required;
+  }
+
+  return result;
+}
+
 function googleTools(payload: Record<string, unknown>) {
   if (!Array.isArray(payload.tools)) return undefined;
   const functionDeclarations: Array<Record<string, unknown>> = payload.tools
@@ -641,7 +724,7 @@ function googleTools(payload: Record<string, unknown>) {
       return {
         name: fn.name,
         description: fn.description,
-        parameters: fn.parameters ?? fn.input_schema ?? { type: "object" },
+        parameters: sanitizeGeminiSchema(fn.parameters ?? fn.input_schema ?? { type: "object" }),
       };
     })
     .filter((tool): tool is { name: unknown; description: unknown; parameters: unknown } => Boolean(tool));

@@ -520,4 +520,11 @@ test("windows install writes executable cmd launchers and removes extensionless 
   const config = fs.readFileSync(path.join(home, ".codex", "config.toml"), "utf8");
   assert.match(config, /^model_provider = "multicodex"$/m);
   assert.match(config, /^service_tier = "fast"$/m);
+
+  const doctorOutput = execFileSync(process.execPath, [cli, "doctor"], {
+    cwd: root,
+    env,
+    encoding: "utf8",
+  });
+  assert.match(doctorOutput, /config_multicodex_default: true/);
 });

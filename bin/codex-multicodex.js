@@ -3498,7 +3498,7 @@ async function doctor() {
   const config = fs.existsSync(CONFIG_PATH) ? fs.readFileSync(CONFIG_PATH, "utf8") : "";
   const configMulticodexDefault =
     /^model_provider\s*=\s*"multicodex"$/m.test(config) &&
-    config.includes(CATALOG_PATH) &&
+    (config.includes(CATALOG_PATH) || config.includes(JSON.stringify(CATALOG_PATH).slice(1, -1))) &&
     /^service_tier\s*=\s*"fast"$/m.test(config);
   console.log(`proxy: ${BASE}`);
   console.log(`data_dir: ${DATA_DIR}`);

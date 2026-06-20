@@ -40,6 +40,9 @@ full OpenCode provider parity.
   tool IDs are scrubbed to Mistral's nine-character alphanumeric format, and an
   assistant `Done.` turn is inserted between a tool result and the following
   user turn.
+- OpenCode configured model provider metadata defaults are forwarded to upstream
+  requests via `providerOptions` and `experimental_providerMetadata`, preserving
+  provider-specific cache/control hints when the caller did not override them.
 - Default `codex` launcher fail-open behavior now falls back through the OpenAI
   profile when the MultiCodex proxy cannot start, so an installed wrapper should
   not trap normal Codex startup on a broken proxy.
@@ -60,6 +63,8 @@ full OpenCode provider parity.
 - DigitalOcean cached router import fixtures for both CLI and web/admin import
   paths.
 - OpenCode model `options.topK` / `top_k` request-default fixture.
+- OpenCode model `options.providerOptions`, `options.providerMetadata`, and
+  `options.experimental_providerMetadata` request-default fixture.
 - Launcher regression coverage that proves the default `codex` wrapper falls
   back to the real Codex CLI when the MultiCodex proxy cannot start.
 - Launcher regression coverage that proves `opencodex install` preserves the

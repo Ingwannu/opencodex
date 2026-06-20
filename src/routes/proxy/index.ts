@@ -808,6 +808,19 @@ function cloneJsonValue<T>(value: T): T {
   return value === undefined ? value : JSON.parse(JSON.stringify(value));
 }
 
+function mergeRecordDefaults(
+  current: unknown,
+  defaults: unknown,
+): Record<string, unknown> | undefined {
+  const defaultRecord = objectValue(defaults);
+  if (!defaultRecord) return objectValue(current);
+  const currentRecord = objectValue(current) ?? {};
+  return {
+    ...cloneJsonValue(defaultRecord),
+    ...cloneJsonValue(currentRecord),
+  };
+}
+
 function applyConfiguredPayloadDefault(
   payload: Record<string, unknown>,
   requestBody: Record<string, unknown>,
@@ -961,6 +974,20 @@ function applyConfiguredModelOptions(
   applyConfiguredPayloadDefault(payloadRecord, requestRecord, options, ["thinkingConfig"], "thinkingConfig");
   applyConfiguredPayloadDefault(payloadRecord, requestRecord, options, ["chat_template_args"], "chat_template_args");
   applyConfiguredPayloadDefault(payloadRecord, requestRecord, options, ["gateway"], "gateway");
+
+  if (!hasOwn(requestRecord, "providerOptions")) {
+    const merged = mergeRecordDefaults(payloadRecord.providerOptions, options.providerOptions);
+    if (merged && Object.keys(merged).length) payloadRecord.providerOptions = merged;
+  }
+  if (!hasOwn(requestRecord, "experimental_providerMetadata")) {
+    const merged = mergeRecordDefaults(
+      payloadRecord.experimental_providerMetadata,
+      options.experimental_providerMetadata ?? options.providerMetadata,
+    );
+    if (merged && Object.keys(merged).length) {
+      payloadRecord.experimental_providerMetadata = merged;
+    }
+  }
 }
 
 function mergeConfiguredAccountModels(

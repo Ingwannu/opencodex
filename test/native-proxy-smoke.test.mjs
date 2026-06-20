@@ -1207,6 +1207,102 @@ test("proxy applies configured OpenCode model options as request defaults", asyn
   }
 });
 
+test("proxy applies configured OpenCode provider metadata as request defaults", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "no model listing" }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/responses") {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "resp_provider_metadata",
+          object: "response",
+          created_at: 1,
+          model: "metadata-model",
+          output: [
+            {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "output_text", text: "Metadata OK" }],
+            },
+          ],
+          usage: { input_tokens: 3, output_tokens: 2, total_tokens: 5 },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "provider-metadata-smoke",
+          provider: "openai-compatible",
+          providerId: "provider-metadata",
+          providerAdapter: "openai-compatible",
+          accessToken: "configured-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          upstreamMode: "responses",
+          compatibilityMode: "responses",
+          providerModels: {
+            "metadata-model": {
+              name: "Metadata Model",
+              options: {
+                providerOptions: {
+                  openaiCompatible: {
+                    cache_control: { type: "ephemeral" },
+                    customFlag: "configured",
+                  },
+                },
+                experimental_providerMetadata: {
+                  anthropic: {
+                    cacheControl: { type: "ephemeral" },
+                  },
+                },
+              },
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/responses`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "metadata-model",
+            input: "Hello",
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+        assert.equal(json.output[0].content[0].text, "Metadata OK");
+        assert.deepEqual(capturedRequest.providerOptions, {
+          openaiCompatible: {
+            cache_control: { type: "ephemeral" },
+            customFlag: "configured",
+          },
+        });
+        assert.deepEqual(capturedRequest.experimental_providerMetadata, {
+          anthropic: {
+            cacheControl: { type: "ephemeral" },
+          },
+        });
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy replaces unsupported configured model image input with text error", async () => {
   let capturedRequest;
   const upstream = http.createServer(async (req, res) => {

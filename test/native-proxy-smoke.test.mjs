@@ -1303,7 +1303,7 @@ test("proxy applies configured OpenCode provider metadata as request defaults", 
   }
 });
 
-test("proxy applies OpenCode OpenRouter usage include default", async () => {
+test("proxy applies OpenCode OpenRouter usage and Gemini 3 reasoning defaults", async () => {
   let capturedRequest;
   const upstream = http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/v1/models") {
@@ -1319,7 +1319,7 @@ test("proxy applies OpenCode OpenRouter usage include default", async () => {
           id: "chatcmpl_openrouter_usage",
           object: "chat.completion",
           created_at: 1,
-          model: "openrouter-usage-model",
+          model: "google/gemini-3-pro-preview",
           choices: [
             {
               index: 0,
@@ -1350,7 +1350,7 @@ test("proxy applies OpenCode OpenRouter usage include default", async () => {
           upstreamMode: "chat/completions",
           compatibilityMode: "chat-completions-bridge",
           providerModels: {
-            "openrouter-usage-model": { name: "OpenRouter Usage Model" },
+            "google/gemini-3-pro-preview": { name: "Gemini 3 Pro Preview" },
           },
           enabled: true,
         },
@@ -1360,7 +1360,7 @@ test("proxy applies OpenCode OpenRouter usage include default", async () => {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            model: "openrouter-usage-model",
+            model: "google/gemini-3-pro-preview",
             messages: [{ role: "user", content: "Hello" }],
           }),
         });
@@ -1368,6 +1368,7 @@ test("proxy applies OpenCode OpenRouter usage include default", async () => {
         assert.equal(res.status, 200, JSON.stringify(json));
         assert.equal(json.choices[0].message.content, "Usage OK");
         assert.deepEqual(capturedRequest.usage, { include: true });
+        assert.deepEqual(capturedRequest.reasoning, { effort: "high" });
       },
     );
   } finally {

@@ -1009,6 +1009,17 @@ function applyOpenCodeProviderDefaults(
   ) {
     payloadRecord.usage = { include: true };
   }
+
+  const model = typeof payloadRecord.model === "string" ? payloadRecord.model : "";
+  if (
+    (account.providerNpm === "@openrouter/ai-sdk-provider" ||
+      account.providerNpm === "@llmgateway/ai-sdk-provider") &&
+    model.includes("gemini-3") &&
+    !hasOwn(requestRecord, "reasoning") &&
+    !hasOwn(payloadRecord, "reasoning")
+  ) {
+    payloadRecord.reasoning = { effort: "high" };
+  }
 }
 
 function mergeConfiguredAccountModels(

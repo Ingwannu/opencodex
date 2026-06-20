@@ -1,0 +1,73 @@
+---
+title: 工作原理
+description: opencodex 的完整请求生命周期 —— 解析、路由、适配、桥接与 streaming。
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+Codex 只会说一种协议:OpenAI **Responses API**(`POST /v1/responses`,Server-Sent
+Events)。opencodex 接受该请求,将其翻译为你的 provider 的线路格式,再将流式返回的响应
+翻译回 Responses 事件 —— 这样 Codex 永远不会知道它对话的对象并不是 OpenAI。
+
+```
+            ┌──────────────────────────── opencodex ────────────────────────────┐
+            │                                                                     │
+ Codex ──▶  │  parser ──▶ router ──▶ [vision] ──▶ adapter ──▶ provider           │  ──▶ Codex
+ (/v1/      │     │          │          │            │           │                │     (SSE)
+  responses)│   OcxParsed  provider   describe    buildRequest  parseStream       │
+            │   Request    +adapter   images       + fetch      AdapterEvent[]    │
+            │                                          │           │              │
+            │                                  [web-search loop]  bridge ─▶ SSE   │
+            └─────────────────────────────────────────────────────────────────────┘
+```
+
+## 生命周期
+
+<Steps>
+
+1. **解析** —— `responses/parser.ts` 使用 Zod schema(`responses/schema.ts`)校验请求,
+   并将其降级为内部的 `OcxParsedRequest`:系统提示词、一份规范化的消息列表
+   (文本、图像、工具调用、工具结果)、工具定义、生成选项,以及诸如 `_webSearch`(请求了托管的网络搜索)
+   和 `_structuredOutput`(设置了 JSON schema /
+   JSON 对象的 `text.format`)等特性标志。图像会被保留为真正的内容部分 —— 绝不会被内联为
+   base64 文本。
+
+2. **路由** —— `router.ts` 按固定的优先级将请求的模型 id 映射到一个已配置的 provider:
+   显式的 `provider/model` → provider 的 `defaultModel` → provider 的 `models[]` →
+   内置前缀模式(`claude-`、`gpt-`、`o1-`/`o3-`/`o4-`、`llama-`/`mixtral-`/`gemma-`) →
+   `defaultProvider` 回退。参见 [模型路由](/opencodex/zh-cn/guides/model-routing/)。
+
+3. **认证** —— 对于 `oauth` 类型的 provider,opencodex 会换入一个全新、自动刷新的 access
+   token 作为 bearer key,从而让现有的 adapter 无需改动即可完成认证。
+
+4. **Vision sidecar(可选)** —— 如果已路由的模型被列在 `provider.noVisionModels` 中,且
+   请求携带了图像,opencodex 会通过你的 ChatGPT 登录凭据,用 `gpt-5.4-mini` vision 模型描述每张图像,
+   并将其替换为文本,这样一个纯文本模型仍可对其进行推理。
+   参见 [Sidecar](/opencodex/zh-cn/guides/sidecars/)。
+
+5. **直通快速路径** —— 如果 adapter 是直通类型(处于 `forward` 模式的 `openai-responses`,
+   或 `azure`),原始请求体会被直接管道传输给 provider,响应也会原样流式返回,
+   不发生任何翻译。
+
+6. **网络搜索 sidecar(可选)** —— 如果 Codex 启用了托管的 `web_search`,但已路由的模型
+   并非 OpenAI,opencodex 会暴露一个合成的 `web_search` 函数工具,并在一个小型
+   agentic 循环中运行该模型,通过你的 ChatGPT 登录凭据借助 `gpt-5.4-mini` 执行真实搜索,
+   再将结果作为工具结果注入回去。
+
+7. **适配** —— 否则,所选 adapter 的 `buildRequest()` 会以 provider 的原生格式生成上游 HTTP 请求
+   (URL、headers、body),由 opencodex 对其执行 `fetch`。
+
+8. **桥接** —— adapter 的 `parseStream()`(或 `parseResponse()`)会产出内部的 `AdapterEvent`
+   (text、reasoning、tool-call start/delta/end、done、error)。`bridge.ts` 会将该流转换回
+   Responses SSE 事件 —— `response.output_text.delta`、`response.reasoning_summary_text.delta`、
+   `response.function_call_arguments.delta`、`response.completed` 等等 —— 供 Codex 消费。
+
+</Steps>
+
+## 为什么是代理而不是 fork 一份 Codex?
+
+Codex 把 Responses API 硬编码在内部。通过在协议边界处进行翻译,opencodex 可以与
+Codex 的 **CLI、App 和 SDK** 无改动地协作,能在 Codex 更新后继续工作,并让你能够按请求切换 provider
+而无需改动 Codex 本身。这种翻译是双向且忠于 streaming 的:
+推理摘要、MCP 工具命名空间、freeform(`apply_patch`)工具,以及 `tool_search` 发现
+都能正确地往返。关于逐事件的映射,参见 [架构参考](/opencodex/zh-cn/reference/architecture/)。

@@ -1,0 +1,87 @@
+---
+title: opencodex
+description: Universal provider proxy for OpenAI Codex — use any LLM with Codex CLI, App, and SDK.
+template: splash
+hero:
+  tagline: Use any LLM with OpenAI Codex — Anthropic, Google, xAI, Kimi, Ollama Cloud, and any OpenAI-compatible endpoint. One proxy, zero Codex patches.
+  actions:
+    - text: Get Started
+      link: /opencodex/getting-started/installation/
+      icon: right-arrow
+      variant: primary
+    - text: How It Works
+      link: /opencodex/getting-started/how-it-works/
+      icon: open-book
+    - text: GitHub
+      link: https://github.com/Ingwannu/opencodex
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+**opencodex** (`ocx`) is a local proxy that sits between [OpenAI Codex](https://openai.com/codex)
+and any LLM provider. Codex only speaks the **Responses API** (`/v1/responses`); opencodex translates
+that protocol — in both directions, including streaming, tool calls, reasoning, and images — into
+whatever wire format your provider expects, then translates the answer back.
+
+```
+Codex CLI / App / SDK ──/v1/responses──▶ opencodex ──▶ Any provider
+                                              │
+                  Anthropic · Google · xAI · Kimi · Ollama Cloud · Groq
+                  OpenRouter · Azure · DeepSeek · GLM · …and OpenAI itself
+```
+
+![The opencodex dashboard — a dark provider control panel showing live proxy status, routed providers, and available models](../../assets/dashboard.png)
+
+<CardGrid stagger>
+  <Card title="Any provider" icon="puzzle">
+    Five adapters cover Anthropic Messages, Google Gemini, Azure, the OpenAI Responses passthrough,
+    and **every OpenAI-compatible Chat Completions** endpoint — plus an 18-provider API-key catalog.
+  </Card>
+  <Card title="OAuth or API key" icon="approve-check">
+    Log in with your xAI, Anthropic, or Kimi account (OAuth, auto-refreshed), forward your ChatGPT
+    login, or paste an API key. Keys can be `${ENV_VARS}`.
+  </Card>
+  <Card title="Drops into Codex" icon="rocket">
+    `ocx init` injects a provider into `$CODEX_HOME/config.toml` (default
+    `~/.codex/config.toml`) and writes a shared Codex catalog, so Codex CLI, TUI, App, and SDK
+    all see the same routed models and subagent picks.
+    `ocx stop` restores native Codex cleanly.
+  </Card>
+  <Card title="Subagents and transports" icon="puzzle">
+    Pin up to five routed or native models for Codex `spawn_agent`. HTTP/SSE stays the default;
+    Responses WebSocket support is advertised only when `websockets: true`.
+  </Card>
+  <Card title="Sidecars" icon="magnifier">
+    Give non-OpenAI models real **web search** and **image understanding** by routing those
+    capabilities through a `gpt-5.4-mini` sidecar over your ChatGPT login.
+  </Card>
+</CardGrid>
+
+## Quick start
+
+```bash
+# Install
+bun install -g @ingwannu/opencodex      # or: npm install -g @ingwannu/opencodex
+
+# Interactive setup (writes config + injects into Codex)
+ocx init
+
+# Start the proxy
+ocx start
+
+# Use Codex normally — it now routes through opencodex
+codex "Write a hello world in Rust"
+```
+
+## Where to next
+
+<CardGrid>
+  <LinkCard title="Installation" href="/opencodex/getting-started/installation/" description="Install ocx, prerequisites, and verification." />
+  <LinkCard title="How It Works" href="/opencodex/getting-started/how-it-works/" description="The full request lifecycle: parse → route → adapter → bridge → SSE." />
+  <LinkCard title="Providers" href="/opencodex/guides/providers/" description="OAuth, API-key catalog, forward/passthrough, and the full provider table." />
+  <LinkCard title="Codex App Model Picker" href="/opencodex/guides/codex-app-models/" description="How routed opencodex models show up in Codex App through the shared catalog." />
+  <LinkCard title="Web Dashboard" href="/opencodex/guides/web-dashboard/" description="Manage providers, OAuth, model visibility, subagents, and logs." />
+  <LinkCard title="CLI Reference" href="/opencodex/reference/cli/" description="Every ocx command and flag." />
+</CardGrid>

@@ -1,0 +1,169 @@
+name: Release
+
+# Publish opencodex to npm — jawcode-style: triggered from the Actions tab with an explicit
+# version, dist-tag, and a dry-run-first default. Bump package.json on main BEFORE dispatching
+# (or use `bun run release <version>`, which does the bump+commit+push+dispatch for you); the
+# workflow verifies the version matches before publishing.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish — must equal package.json (e.g. 0.1.0)"
+        required: true
+        type: string
+      tag:
+        description: "npm dist-tag"
+        required: true
+        type: choice
+        options:
+          - latest
+          - preview
+        default: latest
+      dry-run:
+        description: "Dry run (build + pack, no actual publish)"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write # create the matching GitHub Release + version tag after npm publish
+  id-token: write # OIDC auth for Trusted Publishing + automatic provenance attestation
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # opencodex is bun-native (the prepublishOnly GUI build + typecheck run under bun).
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # node + npm perform the actual publish. registry-url points npm at the public registry.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
+
+      # Trusted Publishing (OIDC) needs npm >= 11.5.1 — the runner's bundled npm may be older.
+      - name: Use latest npm
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Verify version matches package.json
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          echo "package.json=$PKG  input=${{ inputs.version }}"
+          test "$PKG" = "${{ inputs.version }}" || {
+            echo "::error::package.json ($PKG) != requested (${{ inputs.version }}) — bump package.json on main first";
+            exit 1;
+          }
+
+      # Tokenless publish via Trusted Publishing (OIDC) — NO NPM_TOKEN secret. npm auto-detects the
+      # OIDC environment (`id-token: write` above) and generates provenance automatically, so neither a
+      # token nor `--provenance` is needed. `npm publish` runs prepublishOnly first (typecheck + build
+      # the GUI into gui/dist), so even a dry-run fully verifies the build.
+      # PREREQUISITE: configure the Trusted Publisher for this repo + workflow on npmjs.com — possible
+      # only AFTER the package's first version exists (do the first publish locally, see the runbook).
+      - name: Publish (or dry-run)
+        run: |
+          if [ "${{ inputs.dry-run }}" = "true" ]; then
+            echo "::notice::DRY RUN — building + packing, not publishing"
+            npm run prepublishOnly
+            npm pack --dry-run
+          else
+            npm publish --tag "${{ inputs.tag }}" --access public
+          fi
+
+      # Confirm the registry actually has the new version (real publishes only).
+      - name: Post-publish registry smoke
+        if: ${{ inputs.dry-run != true }}
+        run: |
+          for attempt in $(seq 1 30); do
+            if VERSION=$(npm view "@bitkyc08/opencodex@${{ inputs.version }}" version 2>/dev/null); then
+              echo "registry version=$VERSION"
+              test "$VERSION" = "${{ inputs.version }}"
+              npm dist-tag ls @bitkyc08/opencodex
+              exit 0
+            fi
+            echo "::notice::@bitkyc08/opencodex@${{ inputs.version }} not visible in npm registry yet (attempt $attempt/30)"
+            sleep 10
+          done
+          echo "::error::npm registry smoke failed after 30 attempts"
+          npm view @bitkyc08/opencodex versions dist-tags --json || true
+          exit 1
+
+      - name: Create GitHub release
+        if: ${{ inputs.dry-run != true }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          NPM_DIST_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          release_tag="v${RELEASE_VERSION}"
+          notes_file="$(mktemp)"
+
+          git fetch --force --tags origin
+
+          existing_tag_sha="$(git rev-parse -q --verify "refs/tags/${release_tag}^{commit}" || true)"
+          if [ -n "$existing_tag_sha" ] && [ "$existing_tag_sha" != "$GITHUB_SHA" ]; then
+            echo "::error::${release_tag} already points at ${existing_tag_sha}, not ${GITHUB_SHA}"
+            exit 1
+          fi
+
+          previous_tag="$(
+            git tag --merged HEAD --list 'v[0-9]*' --sort=-v:refname |
+              grep -vx "$release_tag" |
+              head -n 1 || true
+          )"
+
+          {
+            echo "Published to npm as \`@bitkyc08/opencodex@${RELEASE_VERSION}\` with dist-tag \`${NPM_DIST_TAG}\`."
+            echo
+            echo "## Commit log"
+            echo
+            if [ -n "$previous_tag" ]; then
+              echo "Changes since \`${previous_tag}\`:"
+              echo
+              git log --reverse --no-merges --pretty=format:'- %s (%h)' "${previous_tag}..HEAD" |
+                grep -vE '^- release: v[0-9]+\.[0-9]+\.[0-9]+' || true
+              echo
+              echo
+              echo "[Full diff](https://github.com/${GITHUB_REPOSITORY}/compare/${previous_tag}...${release_tag})"
+            else
+              echo "Initial release commits:"
+              echo
+              git log --reverse --no-merges --pretty=format:'- %s (%h)' HEAD |
+                grep -vE '^- release: v[0-9]+\.[0-9]+\.[0-9]+' || true
+            fi
+          } > "$notes_file"
+
+          if ! grep -q '^- ' "$notes_file"; then
+            printf '\n- Release version bump only.\n' >> "$notes_file"
+          fi
+
+          if [ -z "$existing_tag_sha" ]; then
+            git tag "$release_tag" "$GITHUB_SHA"
+            git push origin "refs/tags/${release_tag}"
+          fi
+
+          if gh release view "$release_tag" >/dev/null 2>&1; then
+            gh release edit "$release_tag" --title "$release_tag" --notes-file "$notes_file"
+          else
+            gh release create "$release_tag" --target "$GITHUB_SHA" --title "$release_tag" --notes-file "$notes_file"
+          fi

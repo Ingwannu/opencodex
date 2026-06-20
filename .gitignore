@@ -1,17 +1,7 @@
-node_modules
-web/node_modules
-dist
-web-dist
+node_modules/
+dist/
 .env
-.env*
-!.env.example
-web/*.tsbuildinfo
-data/accounts.json
-data/oauth-state.json
-data/requests-trace.jsonl
-
-# CCE (code-context-engine)
-# CCE local cache (per-machine, not for version control)
-.cce/
-# Claude Code local settings written by cce init
-.claude/settings.local.json
+*.log
+.DS_Store
+devlog/
+.tmp/

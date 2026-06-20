@@ -36,6 +36,10 @@ full OpenCode provider parity.
   OpenAI, Anthropic, Google, and xAI.
 - OpenCode plugin header defaults mirrored for Anthropic, Cerebras, OpenRouter,
   Vercel/v0, Kilo, LLM Gateway, Nvidia, and ZenMux provider paths.
+- OpenCode Mistral/devstral tool-call transform mirrored for Responses payloads:
+  tool IDs are scrubbed to Mistral's nine-character alphanumeric format, and an
+  assistant `Done.` turn is inserted between a tool result and the following
+  user turn.
 - Default `codex` launcher fail-open behavior now falls back through the OpenAI
   profile when the MultiCodex proxy cannot start, so an installed wrapper should
   not trap normal Codex startup on a broken proxy.
@@ -53,6 +57,10 @@ full OpenCode provider parity.
 - OpenCode model `options.topK` / `top_k` request-default fixture.
 - Launcher regression coverage that proves the default `codex` wrapper falls
   back to the real Codex CLI when the MultiCodex proxy cannot start.
+- Packed npm tarball install smoke for `@ingwannu/opencodex`, confirming
+  `opencodex doctor` can detect `managed-stale` wrappers that still point at an
+  older source checkout and that `opencodex install` is the required rewrite
+  step after npm upgrades.
 
 ## Known gaps
 
@@ -69,7 +77,8 @@ full OpenCode provider parity.
 - The unscoped `opencodex` npm package name is blocked by npm's similarity
   policy, so the npm package is published as `@ingwannu/opencodex`.
 - Real npm publishing is currently blocked until npm auth is refreshed; the
-  latest published registry version observed locally is still `0.2.5`.
+  latest published registry version observed locally is still `0.2.5`, and
+  `npm whoami` currently returns `E401 Unauthorized`.
 
 ## Next update order
 

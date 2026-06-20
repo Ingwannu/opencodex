@@ -647,6 +647,51 @@ function applyConfiguredInputCapabilities(
   }
 }
 
+function scrubMistralToolId(id: string): string {
+  return id.replace(/[^a-zA-Z0-9]/g, "").substring(0, 9).padEnd(9, "0");
+}
+
+function applyMistralInputNormalization(payload: unknown): void {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
+  const source = payload as Record<string, unknown>;
+  if (!Array.isArray(source.input)) return;
+
+  const normalized: unknown[] = [];
+  for (const item of source.input) {
+    const previous = normalized[normalized.length - 1];
+    if (
+      previous &&
+      typeof previous === "object" &&
+      !Array.isArray(previous) &&
+      (previous as Record<string, unknown>).type === "function_call_output" &&
+      item &&
+      typeof item === "object" &&
+      !Array.isArray(item) &&
+      (item as Record<string, unknown>).role === "user"
+    ) {
+      normalized.push({
+        role: "assistant",
+        content: [{ type: "input_text", text: "Done." }],
+      });
+    }
+
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      normalized.push(item);
+      continue;
+    }
+
+    const record = { ...(item as Record<string, unknown>) };
+    for (const key of ["call_id", "id"] as const) {
+      if (typeof record[key] === "string") {
+        record[key] = scrubMistralToolId(record[key]);
+      }
+    }
+    normalized.push(record);
+  }
+
+  source.input = normalized;
+}
+
 function requestVariantKey(
   requestBody: any,
   requestEffort: EffortTier | undefined,
@@ -2331,6 +2376,7 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
             | undefined;
 
           if (candidate.provider === "mistral") {
+            applyMistralInputNormalization(payloadToUpstream);
             upstreamBaseUrl = mistralBaseUrl;
             upstreamPath = isResponsesCompactPath
               ? mistralCompactUpstreamPath

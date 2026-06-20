@@ -37,9 +37,10 @@ port. It does not install a boot daemon. Runtime account data is stored under
 Manage models, API keys, and auth in either surface:
 
 - Web dashboard: run `opencodex sync` or launch `codex` once, then open
-  `http://127.0.0.1:1455`. Use the Accounts tab to add providers, paste API
-  keys, start OpenAI OAuth, enable/disable accounts, edit base URLs, or import
-  OpenCode auth/config.
+  `http://127.0.0.1:1455`. Use the Accounts tab to add providers, paste or
+  rotate API keys, choose auth-free local endpoints, start/complete OpenAI OAuth,
+  enable/disable accounts, edit base URLs, refresh usage, unblock accounts, or
+  import OpenCode auth/config.
 - CLI: use `opencodex auth providers`, `opencodex auth login ...`,
   `opencodex auth oauth-start`, and `opencodex auth import-opencode`.
 
@@ -69,6 +70,11 @@ opencodex auth import-opencode ~/.local/share/opencode/auth.json --config ./open
 opencodex sync
 ```
 
+After installing or upgrading from npm, run `opencodex install`. The npm global
+install creates the `opencodex` binary, but `opencodex install` is the step that
+writes or rewrites the managed `codex`, `codex-multi`, `codex-oai`, and
+`codex-oss` launchers under `~/.local/bin`.
+
 If the real Codex binary is not in the default standalone location, OpenCodex
 auto-detects the existing `codex` on `PATH` during install. You can pin it with
 `CODEX_REAL_BIN=/absolute/path/to/codex opencodex install`.
@@ -83,6 +89,15 @@ opencodex install
 `doctor` prints each wrapper's detected root. `managed-stale` means an older
 shim is still pointing at a previous source checkout, and `install` rewrites it
 to the current npm/source package.
+
+Launcher behavior after install:
+
+- `codex`: default MultiCodex profile. If the proxy cannot start, it falls back
+  to the normal OpenAI profile so the Codex CLI still opens.
+- `codex-multi`: strict MultiCodex profile for OpenAI, API-key providers, and
+  local providers in one generated model catalog.
+- `codex-oai`: normal OpenAI Codex profile only.
+- `codex-oss`: Codex `--oss` using Ollama by default.
 
 Useful commands:
 

@@ -38,6 +38,30 @@ export interface CatalogModel { id: string; provider: string; owned_by?: string;
 type RawEntry = Record<string, unknown>;
 const JAWCODE_CATALOG_AUGMENT_PROVIDERS = new Set(["opencode-go"]);
 
+/**
+ * Image/video GENERATION model families. opencodex routes chat/coding models into Codex; media-
+ * generation models (Grok image/video, DALL·E, Imagen, Sora, Veo, …) are useless to a coding agent
+ * and must never surface in the dashboard, /v1/models, or the routed catalog. The metadata has no
+ * output-modality field, so we classify by id. Extend this list as providers add media models.
+ */
+const MEDIA_GEN_FAMILIES = [
+  "dall-e", "dalle", "imagen", "sora", "veo", "flux", "kling",
+  "seedance", "hailuo", "stable-diffusion", "sdxl", "midjourney",
+];
+const MEDIA_GEN_ID_RE = new RegExp(
+  `(?:^|[/_-])(?:image|video)(?:[/_-]|$)|(?:^|[/_-])(?:${MEDIA_GEN_FAMILIES.join("|")})(?:[/_-]|$|\\d)`,
+  "i",
+);
+
+/**
+ * True when a model id denotes image/video GENERATION (so it should be hidden everywhere). Vision
+ * *input* chat models — `grok-2-vision`, `qwen3-vl-*`, `gpt-4o`, `gemini-3-pro-preview` — are
+ * intentionally NOT matched: they carry no `image`/`video` id segment and no generation-family token.
+ */
+export function isMediaGenerationModelId(id: string): boolean {
+  return MEDIA_GEN_ID_RE.test(id);
+}
+
 /** Resolve the `model_catalog_json` path from Codex config.toml, else the default. */
 export function readCodexCatalogPath(): string {
   try {
@@ -414,7 +438,10 @@ export async function gatherRoutedModels(config: OcxConfig): Promise<CatalogMode
   const lists = await Promise.all(
     Object.entries(config.providers).map(([name, prov]) => fetchProviderModels(name, prov, ttlMs)),
   );
-  const all = augmentRoutedModelsWithJawcodeMetadata(lists.flat(), Object.keys(config.providers), config.providers);
+  const all = augmentRoutedModelsWithJawcodeMetadata(lists.flat(), Object.keys(config.providers), config.providers)
+    // Drop image/video generation models (e.g. Grok image/video) — they are not usable by Codex and
+    // must not surface in the dashboard, /v1/models, or the routed catalog. Single choke point.
+    .filter(m => !isMediaGenerationModelId(m.id));
   all.sort((a, b) => (a.provider === b.provider ? a.id.localeCompare(b.id) : a.provider.localeCompare(b.provider)));
   return all;
 }

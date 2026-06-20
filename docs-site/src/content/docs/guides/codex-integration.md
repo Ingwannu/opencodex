@@ -91,11 +91,12 @@ Priority ranking: featured (0–4) < other routed (5) < native (9). You can also
 
 ## Restoring native Codex
 
-opencodex never traps you. Any of these strip the injected lines and routed catalog entries, leaving
-only native slugs:
+opencodex never traps you. **`ocx stop` is the single command that fully reverts to native Codex** — it
+stops the proxy, stops the background service if one is installed, and strips every injected line and
+routed catalog entry so plain `codex` works exactly as if opencodex was never there:
 
 ```bash
-ocx stop       # stop the proxy and restore
+ocx stop       # stop the proxy + service, restore native Codex
 ocx restore    # restore without stopping  (alias: ocx eject)
 ```
 

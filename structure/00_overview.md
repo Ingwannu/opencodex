@@ -28,8 +28,9 @@ Codex CLI / TUI / App / SDK
 ```
 
 The default install keeps native OpenAI/ChatGPT passthrough working through the `openai` forward
-provider. Additional providers are routed by explicit `provider/model`, provider model lists, or the
-configured `defaultProvider`.
+provider. Built-in provider presets include Anthropic, Google, Azure, and Neuralwatt Cloud. Additional
+providers are routed by explicit `provider/model`, provider model lists, or the configured
+`defaultProvider`.
 
 ## Local state
 

@@ -93,3 +93,9 @@ opencodex는 `~/.opencodex/config.json`으로 설정됩니다. 이 파일은 `oc
 키에는 `${ENV_VAR}` 참조를 사용하여 `config.json`에 시크릿이 남지 않도록 하세요. OAuth와 포워드
 프로바이더는 키를 전혀 저장하지 않습니다.
 :::
+
+:::note[원자적 쓰기]
+모든 설정 및 카탈로그 파일(`config.toml`, `opencodex-catalog.json`)은 `atomicWriteFile`(임시 파일 +
+이름 바꾸기)을 통해 원자적으로 기록됩니다. 이는 동시 작성자 — 예를 들어 `ocx stop`과 프록시의
+자체 종료 핸들러 — 가 동시에 Codex를 복원할 때 반쯤 기록된 파일이 생기는 것을 방지합니다.
+:::

@@ -1,9 +1,8 @@
 #!/usr/bin/env bun
-import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
 import { restoreNativeCodex } from "./codex-inject";
 import { loadConfig, readPid, removePid, writePid } from "./config";
-import { serviceCommand } from "./service";
+import { serviceCommand, stopServiceIfInstalled } from "./service";
 import { startServer } from "./server";
 import { maybeShowStarPrompt } from "./star-prompt";
 
@@ -38,11 +37,10 @@ async function syncModelsToCodex(port?: number) {
   const p = port ?? config.port ?? 10100;
   let catalogPath: string | null | undefined;
   try {
-    const { invalidateCodexModelsCache, syncCatalogModels } = await import("./codex-catalog");
-    const cat = await syncCatalogModels(config);
-    catalogPath = existsSync(cat.path) ? cat.path : null;
+    const { refreshCodexModelCatalog } = await import("./codex-refresh");
+    const cat = await refreshCodexModelCatalog(config);
+    catalogPath = cat.catalogExists ? cat.path : null;
     if (cat.added > 0) {
-      invalidateCodexModelsCache();
       console.log(`   + ${cat.added} models appended to Codex catalog (${cat.path})`);
     } else if (catalogPath === null) {
       console.error("catalog sync skipped: no Codex catalog source found; keeping Codex's native catalog.");
@@ -56,7 +54,7 @@ async function syncModelsToCodex(port?: number) {
   return result;
 }
 
-function handleStart() {
+async function handleStart(options: { block?: boolean } = {}) {
   const existingPid = readPid();
   if (existingPid) {
     console.error(`⚠️  Proxy already running (PID ${existingPid}). Use 'ocx stop' first.`);
@@ -76,9 +74,6 @@ function handleStart() {
   const server = startServer(port);
   writePid(process.pid);
 
-  void maybeShowStarPrompt(); // once-only [Y/n] GitHub-star prompt on first interactive start
-  syncModelsToCodex(port).catch(() => {});
-
   const shutdown = () => {
     console.log("\n🛑 Shutting down opencodex proxy...");
     server.stop(true);
@@ -91,6 +86,13 @@ function handleStart() {
 
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
+
+  await maybeShowStarPrompt(); // once-only [Y/n] GitHub-star prompt on first interactive start
+  await syncModelsToCodex(port).catch(() => {});
+  if (options.block ?? true) {
+    setInterval(() => {}, 60_000);
+    await new Promise<void>(() => {});
+  }
 }
 
 function killProxy(pid: number): void {
@@ -129,6 +131,9 @@ function waitForExit(pid: number, timeoutMs: number): boolean {
 }
 
 function handleStop() {
+  const stoppedService = stopServiceIfInstalled();
+  if (stoppedService) console.log("🛑 Service manager stopped (won't respawn).");
+
   const pid = readPid();
   let stopFailed = false;
   if (pid) {
@@ -140,10 +145,9 @@ function handleStop() {
       stopFailed = true;
       console.error(`❌ Failed to stop proxy (PID ${pid}).`);
     }
-  } else {
+  } else if (!stoppedService) {
     console.log("No running proxy found.");
   }
-  // Recover native Codex so plain `codex` keeps working while the proxy is down.
   const r = restoreNativeCodex();
   console.log(`↩️  ${r.message}`);
   if (stopFailed) process.exit(1);
@@ -165,7 +169,7 @@ switch (command) {
     break;
   }
   case "start":
-    handleStart();
+    await handleStart();
     break;
   case "stop":
     handleStop();
@@ -202,7 +206,12 @@ switch (command) {
     const guiUrl = `http://localhost:${config.port}`;
     if (!cfg.readPid()) {
       console.log("Proxy not running. Starting...");
-      handleStart();
+      const child = spawn(process.execPath, [process.argv[1], "start"], {
+        detached: true,
+        stdio: "ignore",
+        env: process.env,
+      });
+      child.unref();
       await new Promise(r => setTimeout(r, 1000));
     }
     console.log(`Opening ${guiUrl}`);

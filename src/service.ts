@@ -107,9 +107,13 @@ export function buildWindowsServiceScript(): string {
     windowsBatchSet("OCX_SERVICE", "1"),
     windowsBatchSet("PATH", path),
     windowsBatchSet("CODEX_HOME", process.env.CODEX_HOME?.trim()),
+    ":loop",
     `"${bun}" "${cli}" start`,
-    "set \"OCX_EXIT=%ERRORLEVEL%\"",
-    "endlocal & exit /b %OCX_EXIT%",
+    "if %ERRORLEVEL% NEQ 0 (",
+    "  timeout /t 5 /nobreak >nul",
+    "  goto loop",
+    ")",
+    "endlocal",
   ].filter((line): line is string => Boolean(line));
   return `${lines.join("\r\n")}\r\n`;
 }
@@ -230,6 +234,26 @@ function platformOps(): ServiceOps | null {
     return { install: installSystemd, start: startSystemd, stop: stopSystemd, status: statusSystemd, uninstall: uninstallSystemd };
   }
   return null;
+}
+
+/**
+ * If a service is installed, stop it so the process manager doesn't respawn after `ocx stop`.
+ * Returns true if a service was found and stopped.
+ */
+export function stopServiceIfInstalled(): boolean {
+  if (process.platform === "darwin") {
+    if (existsSync(plistPath())) {
+      try { stopLaunchd(); return true; } catch { return false; }
+    }
+  } else if (process.platform === "win32") {
+    try {
+      const q = sh(`schtasks /query /tn ${TASK} 2>nul`);
+      if (q.includes(TASK)) { stopWindows(); return true; }
+    } catch { /* task not found */ }
+  } else if (process.platform === "linux" && isSystemd() && existsSync(unitPath())) {
+    try { stopSystemd(); return true; } catch { return false; }
+  }
+  return false;
 }
 
 export function serviceCommand(sub?: string): void {

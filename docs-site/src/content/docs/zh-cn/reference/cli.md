@@ -22,7 +22,9 @@ ocx start --port 8080
 
 ### `ocx stop`
 
-停止正在运行的代理(通过 PID),删除 PID 文件,并恢复原生 Codex。
+停止正在运行的代理(通过 PID),删除 PID 文件,并恢复原生 Codex。如果已安装受管后台服务,`ocx stop`
+会先停止该服务(使其不会重新生成代理)。同样的操作也可通过 web 仪表盘的 **Stop** 按钮
+(`POST /api/stop`)触发。
 
 ### `ocx restore` &nbsp;·&nbsp; `ocx eject`
 

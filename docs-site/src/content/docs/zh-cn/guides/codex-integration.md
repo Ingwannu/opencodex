@@ -79,11 +79,13 @@ Codex 的 `spawn_agent` 只会展示目录中**前 5 个路由模型**。`subage
 
 ## 恢复原生 Codex
 
-opencodex 绝不会把你困住。以下任一操作都会剥除注入的行和路由的目录条目，只留下原生 slug：
+opencodex 绝不会把你困住。**`ocx stop` 是完全恢复原生 Codex 的单一命令** ——
+它会停止 proxy、停止后台服务（如已安装），并剥除所有注入的行和路由的目录条目，使普通的 `codex`
+完全像 opencodex 从未存在过一样工作：
 
 ```bash
-ocx stop       # stop the proxy and restore
-ocx restore    # restore without stopping  (alias: ocx eject)
+ocx stop       # 停止 proxy + 服务，恢复原生 Codex
+ocx restore    # 不停止 proxy 仅恢复  (别名: ocx eject)
 ```
 
 当 opencodex 作为受管的 [后台服务](/opencodex/zh-cn/reference/cli/#ocx-service) 运行时，它会设置 `OCX_SERVICE=1`，这样由服务驱动的重启**不会**反复改写 Codex 配置——只有显式的 `ocx stop` / `ocx service stop` 才会恢复原生 Codex。

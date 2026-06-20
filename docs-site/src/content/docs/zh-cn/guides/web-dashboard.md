@@ -29,6 +29,7 @@ cd gui && bun dev
 | **Subagent models** | 选择 Codex 的 `spawn_agent` 所展示的 ≤5 个路由模型。 |
 | **Models** | 启用/禁用单个路由模型（被隐藏的模型会从目录和 `/v1/models` 中排除）。 |
 | **Request log** | 自动刷新的近期请求视图（模型、提供商、状态）。 |
+| **Stop** | 侧栏按钮，可一键优雅地关闭 proxy、停止后台服务（如已安装）并恢复原生 Codex（`POST /api/stop`）。 |
 
 ## 仪表盘如何与 proxy 通信
 
@@ -43,6 +44,7 @@ GUI 是 proxy 管理 API 之上的一个轻量客户端。常用端点（均为 
 | `GET /api/oauth/providers` | 哪些提供商支持 OAuth 登录。 |
 | `POST /api/oauth/login` · `GET /api/oauth/status` | 启动一次 OAuth 流程并轮询其完成情况。 |
 | `GET` / `PUT /api/subagent-models` | 读取 / 设置置顶的 subagent 模型。 |
+| `POST /api/stop` | 优雅地停止 proxy（以及已安装的后台服务），恢复原生 Codex，然后退出。 |
 
 :::tip
 从仪表盘添加 **Ollama Cloud**（或任何目录提供商）时，会自动将其文本与视觉模型分类信息复制到你的配置中，因此 [vision sidecar](/opencodex/zh-cn/guides/sidecars/) 会被正确地按条件启用，无需任何手动设置。

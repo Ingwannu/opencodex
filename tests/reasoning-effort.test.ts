@@ -134,4 +134,25 @@ describe("provider-specific reasoning effort mapping", () => {
     expect(body).not.toHaveProperty("frequency_penalty");
     expect(body.tool_choice).toBe("auto");
   });
+
+  test("sanitizeCodexReasoningEfforts strips non-Codex labels like 'max' from the catalog", () => {
+    const entries = buildCatalogEntries(nativeTemplate(), [], [
+      { provider: "test", id: "model-with-max", reasoningEfforts: ["low", "max", "high"] },
+      { provider: "test", id: "model-clean", reasoningEfforts: ["low", "medium", "high", "xhigh"] },
+      { provider: "test", id: "model-empty", reasoningEfforts: [] },
+    ]);
+
+    const withMax = entries.find(e => e.slug === "test/model-with-max");
+    const clean = entries.find(e => e.slug === "test/model-clean");
+    const empty = entries.find(e => e.slug === "test/model-empty");
+
+    // "max" must never appear in catalog — Codex parser rejects it
+    const withMaxEfforts = (withMax?.supported_reasoning_levels as { effort: string }[]).map(l => l.effort);
+    expect(withMaxEfforts).toEqual(["low", "high"]);
+    expect(withMaxEfforts).not.toContain("max");
+
+    expect((clean?.supported_reasoning_levels as { effort: string }[]).map(l => l.effort)).toEqual(["low", "medium", "high", "xhigh"]);
+
+    expect(empty?.supported_reasoning_levels).toEqual([]);
+  });
 });

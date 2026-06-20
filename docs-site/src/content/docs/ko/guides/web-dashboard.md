@@ -31,6 +31,7 @@ cd gui && bun dev
 | **Subagent models** | Codex의 `spawn_agent`가 광고할 라우팅된 모델 ≤5개를 선택합니다. |
 | **Models** | 개별 라우팅된 모델을 활성화/비활성화합니다(숨겨진 항목은 카탈로그와 `/v1/models`에서 제외됩니다). |
 | **Request log** | 최근 요청(모델, 프로바이더, 상태)을 자동 갱신으로 보여주는 뷰. |
+| **Stop** | 프록시를 정상 종료하고, 설치된 백그라운드 서비스를 중지한 뒤, 네이티브 Codex를 복원하는 사이드바 버튼입니다 — 한 번의 클릭으로 모두 수행됩니다 (`POST /api/stop`). |
 
 ## 대시보드가 프록시와 통신하는 방식
 
@@ -45,6 +46,7 @@ GUI는 프록시의 관리 API에 대한 얇은 클라이언트입니다. 유용
 | `GET /api/oauth/providers` | 어떤 프로바이더가 OAuth 로그인을 지원하는지. |
 | `POST /api/oauth/login` · `GET /api/oauth/status` | OAuth 플로우 시작 및 완료 폴링. |
 | `GET` / `PUT /api/subagent-models` | featured 서브에이전트 모델 읽기 / 설정. |
+| `POST /api/stop` | 프록시(및 설치된 백그라운드 서비스)를 정상 종료하고, 네이티브 Codex를 복원한 뒤 종료합니다. |
 
 :::tip
 대시보드에서 **Ollama Cloud**(또는 임의의 카탈로그 프로바이더)를 추가하면 텍스트 대 비전 모델 분류가

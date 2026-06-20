@@ -26,6 +26,16 @@ HTTP/SSE. When true, Codex may use Responses WebSocket frames handled by `src/ws
 The endpoint handles `response.create`, ignores `response.processed`, supports warmup
 `generate: false`, and feeds the same request pipeline as HTTP/SSE.
 
+`ws-bridge.ts` preserves upstream `failed` and `incomplete` status values in the final WebSocket
+frame rather than always emitting `response.completed`. If the response status is `failed`, a
+`response.failed` frame is sent; otherwise `response.completed` carries through the original status.
+
+## Heartbeat and stall deadline
+
+The HTTP/SSE bridge emits `response.heartbeat` events during upstream silence to re-arm Codex's idle
+timer. A bounded stall deadline (150 ticks = 5 minutes at the default 2 s interval) closes the stream
+and cancels the upstream request if no real events arrive, preventing indefinitely hung connections.
+
 ## Reasoning and tool-result compatibility
 
 Native OpenAI passthrough sanitizes routed reasoning history so `reasoning` input items do not send

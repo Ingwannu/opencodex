@@ -15,6 +15,10 @@ $CODEX_HOME/models_cache.json
 Never assume macOS-only paths. Windows, service installs, and app-launched Codex can all depend on
 the resolved `CODEX_HOME`.
 
+`atomicWriteFile` uses a temp file named `{path}.ocx.{pid}.{seq}.tmp` (process ID + incrementing
+sequence number) to avoid collisions when concurrent writers (e.g. `ocx stop` and the proxy's own
+shutdown handler) both restore Codex config simultaneously. The temp is renamed atomically into place.
+
 ## Config injection
 
 `src/codex-inject.ts` inserts root-level keys and an opencodex provider table:

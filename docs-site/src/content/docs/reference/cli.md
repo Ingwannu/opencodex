@@ -26,7 +26,9 @@ ocx start --port 8080
 
 ### `ocx stop`
 
-Stop the running proxy (by PID), remove the PID file, and restore native Codex.
+Stop the running proxy (by PID), remove the PID file, and restore native Codex. If a managed
+background service is installed, `ocx stop` also stops it first (so it won't respawn the proxy).
+The same action is available from the web dashboard's **Stop** button (`POST /api/stop`).
 
 ### `ocx restore` &nbsp;·&nbsp; `ocx eject`
 

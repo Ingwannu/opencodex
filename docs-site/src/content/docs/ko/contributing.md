@@ -27,7 +27,7 @@ cd docs-site && bun install && bun dev
 
 ## 문서 배포
 
-공개 문서는 GitHub Pages의 <https://lidge-jun.github.io/opencodex/ko/>에 게시됩니다.
+공개 문서는 GitHub Pages의 <https://github.com/Ingwannu/opencodex>에 게시됩니다.
 `.github/workflows/deploy-docs.yml` 워크플로는 `main` 브랜치에서 `docs-site/**` 또는 워크플로
 자체가 바뀔 때 실행되며, `docs-site`를 빌드한 뒤 배포합니다. 문서 변경을 푸시하기 전에 다음을
 실행하세요:
@@ -36,6 +36,25 @@ cd docs-site && bun install && bun dev
 cd docs-site
 bun install --frozen-lockfile
 bun run build
+```
+
+## CI와 릴리즈
+
+GitHub Actions는 의도적으로 짧게 유지합니다:
+
+- **Cross-platform CI**(`.github/workflows/ci.yml`)는 런타임, 테스트, 패키지, 스크립트,
+  TypeScript, 워크플로 파일이 바뀐 pull request와 `main` push에서 실행됩니다. Linux와 Windows에서
+  install, typecheck, tests, release helper build smoke, `ocx help`를 검증합니다.
+- **Release**(`.github/workflows/release.yml`)는 수동 실행만 허용합니다. Release는 두 번째 전체 CI
+  파이프라인이 아니라, dry-run 또는 publish 전에 정확한 릴리즈 커밋(`GITHUB_SHA`)에 성공한
+  Cross-platform CI run이 있는지 확인하는 배포 게이트입니다.
+
+릴리즈에는 helper를 사용하세요:
+
+```bash
+bun run release <version>           # 기본은 dry-run
+bun run release <version> --publish # CI-gated dry-run을 확인한 뒤 실제 publish
+bun run release:watch               # 가장 최근 Release workflow run 감시
 ```
 
 ## 컨벤션

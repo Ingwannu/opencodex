@@ -19,6 +19,7 @@ src/
 ├── bridge.ts           # AdapterEvent stream → Responses SSE
 ├── codex-inject.ts     # $CODEX_HOME/config.toml injection + restore
 ├── codex-catalog.ts    # routed-model catalog merge + subagent ranking
+├── reasoning-effort.ts # reasoning-effort translation, clamping, and catalog levels
 ├── model-cache.ts      # per-provider /models TTL cache
 ├── types.ts            # core interfaces + helpers (modelInList, namespacedToolName)
 ├── responses/
@@ -53,12 +54,28 @@ src/
 | `done` | `response.completed`(带 usage) |
 | `error` | `response.failed`(带 `last_error`) |
 
+桥接器还运行一个**心跳保活**（RC3）：在上游沉默期间，每 2 秒发出一个解析器会忽略的
+`response.heartbeat` SSE 事件，以重置 Codex 的空闲定时器。**停滞截止时间**为 150 个 tick
+（默认 2 秒间隔下为 5 分钟），如果 provider 始终不恢复，则中止上游并关闭流 —— 防止挂起的
+连接无限期阻塞 Codex。
+
 工具调用会借助解析器捕获的命名空间映射、freeform 集合和 tool-search 集合,被消歧为三种 Responses item 类型 —— 因此 MCP 命名空间、`apply_patch` 风格的 freeform 工具,以及由客户端执行的 `tool_search` 都能完整往返。一个 `buildResponseJSON()` 变体会从同一批事件中生成单个非流式的响应对象。
 
 ## 缓存与目录
 
 - `model-cache.ts` 为每个 provider 维护一个内存中的 TTL 缓存,缓存实时 `/models` 的结果(默认 5 分钟,与 Codex 自身的缓存一致),并在请求失败时提供陈旧回退(stale-fallback)。
 - `codex-catalog.ts` 将已路由的模型作为带命名空间的条目合并到 Codex 的目录中,将精选的 [subagent 模型](/opencodex/zh-cn/guides/codex-integration/#the-subagent-picker) 排在前面,过滤掉 `disabledModels`,并能从一次性备份中完全恢复原始目录。
+
+## Reasoning effort
+
+`reasoning-effort.ts` 将 Codex 的推理标签翻译为每个 provider 的线上值。Codex 目录只广告 Codex
+自身接受的标签（`low` / `medium` / `high` / `xhigh`），但上游 provider 可能使用不同的名称（如
+`max`）或支持更小的子集。该模块：
+
+- 定义了标准的 `CODEX_REASONING_LEVELS` 及其排序顺序。
+- 当精确级别不可用时，将请求的 effort 钳位到最接近的受支持层级。
+- 解析每个模型和 provider 的 `reasoningEffortMap` 覆盖，用于自定义线上映射。
+- 对列在 `noReasoningModels` 中的模型完全丢弃 effort。
 
 ## 核心类型
 

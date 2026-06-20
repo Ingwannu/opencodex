@@ -90,3 +90,9 @@ opencodex 通过 `~/.opencodex/config.json` 进行配置。它由 `ocx init` 和
 :::tip[密钥]
 建议为 key 使用 `${ENV_VAR}` 引用,这样 `config.json` 中就不会包含密钥。OAuth 和 forward provider 完全不存储任何 key。
 :::
+
+:::note[原子写入]
+所有配置和目录文件（`config.toml`、`opencodex-catalog.json`）均通过 `atomicWriteFile`（临时文件 + 重命名）
+进行原子写入。这可以防止并发写入者（例如 `ocx stop` 和 proxy 的自身关闭处理器同时恢复 Codex 时）产生
+写了一半的文件。
+:::

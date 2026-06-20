@@ -9,6 +9,7 @@
 | `src/config.ts` | `~/.opencodex/config.json`, defaults, PID path, env-value resolution, `websocketsEnabled()`. |
 | `src/router.ts` | Provider/model selection before adapter dispatch. |
 | `src/types.ts` | Shared config, parsed request, adapter, and event types. |
+| `src/reasoning-effort.ts` | Codex reasoning-level definitions (`low`/`medium`/`high`/`xhigh`), per-model effort mapping, and catalog effort sanitization. |
 
 ## Lifecycle
 
@@ -16,6 +17,14 @@
 config/catalog, then serves until shutdown. Normal shutdown restores native Codex. Service mode sets
 `OCX_SERVICE=1`, so managed restarts do not repeatedly restore/reinject; explicit service stop and
 uninstall still restore.
+
+The bridge enforces a heartbeat stall deadline: after 5 minutes (150 ticks at the default 2 s
+interval) of upstream silence with no real events, the stream is closed and the upstream request
+cancelled. If the adapter generator ends without an explicit done/error event, the response is marked
+`incomplete` rather than `completed` so Codex can distinguish a clean finish from a truncated stream.
+
+The server exposes `POST /api/stop` which restores native Codex config, stops any installed service
+(to prevent respawn), and exits the process. The GUI sidebar stop button calls this endpoint.
 
 ## Providers and adapters
 

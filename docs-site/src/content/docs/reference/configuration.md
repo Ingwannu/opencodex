@@ -93,3 +93,9 @@ default (a single `openai` forward provider).
 Prefer `${ENV_VAR}` references for keys so `config.json` stays free of secrets. OAuth and forward
 providers store no key at all.
 :::
+
+:::note[Atomic writes]
+All config and catalog files (`config.toml`, `opencodex-catalog.json`) are written atomically via
+`atomicWriteFile` (temp file + rename). This prevents half-written files when concurrent writers —
+e.g. `ocx stop` and the proxy's own shutdown handler — both restore Codex at the same time.
+:::

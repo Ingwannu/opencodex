@@ -18,10 +18,17 @@ Management endpoints live in `src/server.ts` under `/api/*`:
 | Key providers | Expose API-key provider presets for setup and dashboard flows. |
 | Subagents | Read/write the featured `subagentModels` list capped at five ids. |
 | Logs | Surface request/runtime logs for local diagnosis. |
+| Stop | `POST /api/stop` — restore native Codex, stop any installed service, and exit the proxy. |
 
 Provider writes must not round-trip masked API keys as real secrets. Dashboard actions that change
 model visibility or subagent selection should trigger catalog/cache sync behavior through the server
 path that owns it.
+
+## Sidebar stop button
+
+The dashboard sidebar includes a stop button that calls `POST /api/stop`. The button shows a
+confirmation prompt, then fires the request and accepts the connection drop (the proxy exits). The
+endpoint restores native Codex config, stops any installed service to prevent respawn, and exits.
 
 ## UX boundary
 

@@ -3,12 +3,13 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { OcxConfig } from "./types";
 
+let _atomicSeq = 0;
 /**
  * Write a file atomically (temp + rename) so concurrent writers — e.g. `ocx stop` and the
  * proxy's own shutdown handler both restoring Codex — can never leave a half-written file.
  */
 export function atomicWriteFile(path: string, content: string): void {
-  const tmp = `${path}.ocx.tmp`;
+  const tmp = `${path}.ocx.${process.pid}.${++_atomicSeq}.tmp`;
   writeFileSync(tmp, content, "utf-8");
   renameSync(tmp, path);
 }

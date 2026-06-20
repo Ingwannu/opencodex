@@ -31,6 +31,7 @@ cd gui && bun dev
 | **Subagent models** | Pick the ≤5 routed models Codex's `spawn_agent` advertises. |
 | **Models** | Enable/disable individual routed models (hidden ones are excluded from the catalog and `/v1/models`). |
 | **Request log** | Auto-refreshing view of recent requests (model, provider, status). |
+| **Stop** | A sidebar button that gracefully shuts down the proxy, stops the background service if installed, and restores native Codex — all in one click (`POST /api/stop`). |
 
 ## How the dashboard talks to the proxy
 
@@ -45,6 +46,7 @@ The GUI is a thin client over the proxy's management API. Useful endpoints (all 
 | `GET /api/oauth/providers` | Which providers support OAuth login. |
 | `POST /api/oauth/login` · `GET /api/oauth/status` | Start an OAuth flow and poll for completion. |
 | `GET` / `PUT /api/subagent-models` | Read / set the featured subagent models. |
+| `POST /api/stop` | Gracefully stop the proxy (and the background service if installed), restore native Codex, then exit. |
 
 :::tip
 Adding **Ollama Cloud** (or any catalog provider) from the dashboard automatically copies its

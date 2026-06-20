@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { createAnthropicAdapter } from "./adapters/anthropic";
 import { createAzureAdapter } from "./adapters/azure";
@@ -32,7 +32,15 @@ import { enrichProviderFromCatalog, listKeyLoginProviders } from "./oauth/key-pr
 import { deriveProviderPresets } from "./providers/derive";
 import type { OcxConfig, OcxProviderConfig } from "./types";
 
-const VERSION = "0.0.1";
+// Single source of truth = package.json (../ from src/), so /healthz + the GUI badge match the
+// installed npm version instead of a stale hardcode.
+const VERSION = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version as string;
+  } catch {
+    return "0.0.0";
+  }
+})();
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html", ".js": "application/javascript", ".css": "text/css",
@@ -354,6 +362,15 @@ function jsonResponse(data: unknown, status = 200): Response {
 }
 
 async function handleManagementAPI(req: Request, url: URL, config: OcxConfig): Promise<Response | null> {
+  async function refreshCodexCatalogBestEffort(): Promise<void> {
+    try {
+      const { refreshCodexModelCatalog } = await import("./codex-refresh");
+      await refreshCodexModelCatalog(config);
+    } catch {
+      /* catalog absent */
+    }
+  }
+
   if (url.pathname === "/api/config" && req.method === "GET") {
     const safeConfig = JSON.parse(JSON.stringify(config));
     for (const prov of Object.values(safeConfig.providers as Record<string, OcxProviderConfig>)) {
@@ -398,6 +415,7 @@ async function handleManagementAPI(req: Request, url: URL, config: OcxConfig): P
     config.providers[name] = prov;
     if (body.setDefault) config.defaultProvider = name;
     save(config);
+    await refreshCodexCatalogBestEffort();
     return jsonResponse({ success: true, name });
   }
 
@@ -408,11 +426,7 @@ async function handleManagementAPI(req: Request, url: URL, config: OcxConfig): P
     delete config.providers[name];
     save(config);
     // Drop its models from Codex's catalog immediately (re-sync + cache bust) so removal is live.
-    try {
-      const { syncCatalogModels, invalidateCodexModelsCache } = await import("./codex-catalog");
-      await syncCatalogModels(config);
-      invalidateCodexModelsCache();
-    } catch { /* catalog absent */ }
+    await refreshCodexCatalogBestEffort();
     return jsonResponse({ success: true });
   }
 
@@ -434,11 +448,7 @@ async function handleManagementAPI(req: Request, url: URL, config: OcxConfig): P
     config.disabledModels = disabled;
     const { saveConfig: save } = await import("./config");
     save(config);
-    try {
-      const { syncCatalogModels, invalidateCodexModelsCache } = await import("./codex-catalog");
-      await syncCatalogModels(config);
-      invalidateCodexModelsCache();
-    } catch { /* catalog absent */ }
+    await refreshCodexCatalogBestEffort();
     return jsonResponse({ ok: true, disabled });
   }
 
@@ -479,11 +489,7 @@ async function handleManagementAPI(req: Request, url: URL, config: OcxConfig): P
     config.subagentModels = chosen;
     const { saveConfig: save } = await import("./config");
     save(config);
-    try {
-      const { syncCatalogModels, invalidateCodexModelsCache } = await import("./codex-catalog");
-      await syncCatalogModels(config);
-      invalidateCodexModelsCache();
-    } catch { /* catalog absent */ }
+    await refreshCodexCatalogBestEffort();
     return jsonResponse({ ok: true, applied: chosen });
   }
 
@@ -520,6 +526,15 @@ async function handleManagementAPI(req: Request, url: URL, config: OcxConfig): P
     removeCredential(provider);
     clearLoginState(provider);
     return jsonResponse({ success: true });
+  }
+
+  if (url.pathname === "/api/stop" && req.method === "POST") {
+    const { restoreNativeCodex } = await import("./codex-inject");
+    const { stopServiceIfInstalled } = await import("./service");
+    stopServiceIfInstalled();
+    restoreNativeCodex();
+    setTimeout(() => process.exit(0), 200);
+    return jsonResponse({ success: true, message: "Proxy stopping, native Codex restored." });
   }
 
   return null;

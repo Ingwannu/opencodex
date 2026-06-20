@@ -27,7 +27,7 @@ cd docs-site && bun install && bun dev
 
 ## 文档发布
 
-公开文档发布到 GitHub Pages：<https://lidge-jun.github.io/opencodex/zh-cn/>。
+公开文档发布到 GitHub Pages：<https://github.com/Ingwannu/opencodex>。
 `.github/workflows/deploy-docs.yml` 会在 `main` 分支中 `docs-site/**` 或该 workflow 自身发生变化时运行，
 构建 `docs-site` 并部署生成的网站。推送文档变更前请运行：
 
@@ -35,6 +35,24 @@ cd docs-site && bun install && bun dev
 cd docs-site
 bun install --frozen-lockfile
 bun run build
+```
+
+## CI 与发布
+
+GitHub Actions 会刻意保持短小:
+
+- **Cross-platform CI**(`.github/workflows/ci.yml`) 会在改动 runtime、tests、package、scripts、
+  TypeScript 或 workflow 文件的 pull request 与 `main` push 上运行。它在 Linux 和 Windows 上验证
+  install、typecheck、tests、release helper build smoke 以及 `ocx help`。
+- **Release**(`.github/workflows/release.yml`) 只能手动触发。它不是第二套完整 CI；在 dry-run 或
+  publish 前,它会要求精确的发布提交(`GITHUB_SHA`)已经有一次成功的 Cross-platform CI run。
+
+发布请使用 helper:
+
+```bash
+bun run release <version>           # 默认 dry-run
+bun run release <version> --publish # 理解 CI-gated dry-run 后再真正 publish
+bun run release:watch               # 观察最新的 Release workflow run
 ```
 
 ## 约定

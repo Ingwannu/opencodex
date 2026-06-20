@@ -219,9 +219,12 @@ export function sendResponsesJsonAsEvents(
       item,
     });
   });
+  const finalStatus = response.status === "failed" || response.status === "incomplete"
+    ? response.status
+    : "completed";
   sendJsonFrame(ws, {
-    type: "response.completed",
-    response: { ...response, status: "completed" },
+    type: finalStatus === "failed" ? "response.failed" : "response.completed",
+    response: { ...response, status: finalStatus },
   });
 }
 

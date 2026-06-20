@@ -103,9 +103,18 @@ export function bridgeToResponsesSSE(
       // Re-arm Codex's idle timer during silence with a parser-ignored heartbeat (RC3). Skips a tick
       // whenever a real event was emitted since the last tick, so it only fires on a genuine stall.
       const heartbeatFrame = encoder.encode('event: response.heartbeat\ndata: {"type":"response.heartbeat"}\n\n');
+      let stallTicks = 0;
+      const maxStallTicks = 150; // 5 min at default 2 s interval
       beat = setInterval(() => {
         if (closed) return;
-        if (activity) { activity = false; return; }
+        if (activity) { activity = false; stallTicks = 0; return; }
+        if (++stallTicks >= maxStallTicks) {
+          closed = true;
+          clearInterval(beat!);
+          beat = undefined;
+          onCancel?.();
+          return;
+        }
         try { controller.enqueue(heartbeatFrame); } catch { closed = true; }
       }, heartbeatMs);
 
@@ -351,15 +360,14 @@ export function bridgeToResponsesSSE(
       if (beat) clearInterval(beat);
 
       if (!terminated) {
-        // The adapter generator ended without a done/error event (e.g. an upstream that closes
-        // after message_stop, or a routed provider that drops the connection cleanly). Close any
-        // open items and synthesize a clean completion so the stream is never terminal-less.
+        // The adapter generator ended without an explicit done/error event. Mark as incomplete
+        // rather than completed so Codex can distinguish a clean finish from a truncated stream.
         if (currentMsg) closeCurrentMessage();
         if (currentReasoning) closeCurrentReasoning();
         if (currentRawReasoning) closeCurrentRawReasoning();
         if (currentToolCall) closeCurrentToolCall();
         emit("response.completed", {
-          response: { ...responseSnapshot("completed", finishedItems), usage: responsesUsage(undefined) },
+          response: { ...responseSnapshot("incomplete", finishedItems), usage: responsesUsage(undefined) },
         });
       }
 

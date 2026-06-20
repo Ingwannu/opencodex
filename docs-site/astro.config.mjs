@@ -2,11 +2,12 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 
-// Project GitHub Pages site: https://lidge-jun.github.io/opencodex
+// Project GitHub Pages site: https://github.com/Ingwannu/opencodex
 // `site` + `base` make Starlight emit correct absolute URLs and asset paths under the repo subpath.
 export default defineConfig({
   site: "https://lidge-jun.github.io",
   base: "/opencodex",
+  trailingSlash: "ignore",
   integrations: [
     starlight({
       title: "opencodex",
@@ -19,6 +20,13 @@ export default defineConfig({
         replacesTitle: false,
       },
       favicon: "/favicon.png",
+      head: [
+        { tag: "meta", attrs: { property: "og:image", content: "https://github.com/Ingwannu/opencodex" } },
+        { tag: "meta", attrs: { property: "og:image:width", content: "1200" } },
+        { tag: "meta", attrs: { property: "og:image:height", content: "630" } },
+        { tag: "meta", attrs: { name: "twitter:card", content: "summary_large_image" } },
+        { tag: "meta", attrs: { name: "twitter:image", content: "https://github.com/Ingwannu/opencodex" } },
+      ],
       social: [
         { icon: "github", label: "GitHub", href: "https://github.com/Ingwannu/opencodex" },
       ],

@@ -21,6 +21,7 @@ src/
 ├── bridge.ts           # AdapterEvent stream → Responses SSE
 ├── codex-inject.ts     # $CODEX_HOME/config.toml injection + restore
 ├── codex-catalog.ts    # routed-model catalog merge + subagent ranking
+├── reasoning-effort.ts # reasoning-effort translation, clamping, and catalog levels
 ├── model-cache.ts      # per-provider /models TTL cache
 ├── types.ts            # core interfaces + helpers (modelInList, namespacedToolName)
 ├── responses/
@@ -63,6 +64,12 @@ understands:
 | `done` | `response.completed` (with usage) |
 | `error` | `response.failed` (with `last_error`) |
 
+The bridge also runs a **heartbeat keep-alive** (RC3): during upstream silence, it emits a
+parser-ignored `response.heartbeat` SSE event every 2 seconds to re-arm Codex's idle timer. A
+**stall deadline** of 150 ticks (5 minutes at the default 2 s interval) aborts the upstream and
+closes the stream if the provider never resumes — preventing hung connections from blocking Codex
+indefinitely.
+
 Tool calls are disambiguated into three Responses item types using the namespace map, the freeform
 set, and the tool-search set captured by the parser — so MCP namespaces, `apply_patch`-style freeform
 tools, and client-executed `tool_search` all round-trip. A `buildResponseJSON()` variant produces a
@@ -75,6 +82,17 @@ single non-streaming response object from the same events.
 - `codex-catalog.ts` merges routed models into Codex's catalog as namespaced entries, ranks featured
   [subagent models](/opencodex/guides/codex-integration/#the-subagent-picker) first, filters
   `disabledModels`, and can fully restore the pristine catalog from a one-time backup.
+
+## Reasoning effort
+
+`reasoning-effort.ts` translates Codex's reasoning labels into each provider's wire values. The
+Codex catalog only advertises labels Codex accepts (`low` / `medium` / `high` / `xhigh`), but
+upstream providers may use different names (e.g. `max`) or support a smaller subset. The module:
+
+- Defines the canonical `CODEX_REASONING_LEVELS` and their sort order.
+- Clamps a requested effort to the closest supported tier when the exact level is unavailable.
+- Resolves per-model and per-provider `reasoningEffortMap` overrides for custom wire mappings.
+- Drops the effort entirely for models listed in `noReasoningModels`.
 
 ## Core types
 

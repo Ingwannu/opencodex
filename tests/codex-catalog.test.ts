@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { augmentRoutedModelsWithJawcodeMetadata, buildCatalogEntries, normalizeRoutedCatalogEntry } from "../src/codex-catalog";
+import { augmentRoutedModelsWithJawcodeMetadata, buildCatalogEntries, isMediaGenerationModelId, normalizeRoutedCatalogEntry } from "../src/codex-catalog";
 import { getJawcodeModelMetadata, resolveJawcodeProvider } from "../src/generated/jawcode-model-metadata";
 
 function nativeTemplate(): Record<string, unknown> {
@@ -222,5 +222,27 @@ describe("Codex catalog routed normalization", () => {
     expect(resolveJawcodeProvider("nanogpt")).toBeUndefined();
     expect(getJawcodeModelMetadata("moonshot", "kimi-k2.5")?.contextWindow).toBe(262_144);
     expect(getJawcodeModelMetadata("nanogpt", "some-model")).toBeUndefined();
+  });
+});
+
+describe("media-generation model filtering", () => {
+  test("flags image/video generation model ids", () => {
+    for (const id of [
+      "grok-2-image", "grok-2-image-1212", "grok-2-image-latest", "grok-video",
+      "gpt-5-image", "gpt-5-image-mini", "gpt-image-1", "gemini-3-pro-image",
+      "dall-e-3", "imagen-4", "sora-2", "veo-3", "flux", "stable-diffusion-3.5", "sdxl", "kling-2",
+    ]) {
+      expect(isMediaGenerationModelId(id)).toBe(true);
+    }
+  });
+
+  test("keeps text + vision-input chat model ids", () => {
+    for (const id of [
+      "grok-4.3", "grok-2-vision", "grok-2-vision-1212", "grok-composer-2.5-fast",
+      "gpt-4o", "gpt-5.2", "claude-opus-4-8", "gemini-3-pro-preview",
+      "qwen3-vl-30b-a3b-instruct", "openrouter/aurora-alpha", "deepseek-v4-pro", "minimax-m3",
+    ]) {
+      expect(isMediaGenerationModelId(id)).toBe(false);
+    }
   });
 });

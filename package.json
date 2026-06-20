@@ -1,6 +1,6 @@
 {
   "name": "@ingwannu/opencodex",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Universal provider proxy for OpenAI Codex — use any LLM with Codex CLI/App/SDK",
   "type": "module",
   "main": "src/index.ts",
@@ -11,7 +11,6 @@
   "files": [
     "bin",
     "src",
-    "scripts/postinstall.mjs",
     "gui/dist",
     "README.md",
     "LICENSE"
@@ -26,7 +25,6 @@
     "typecheck": "bun x tsc --noEmit",
     "generate:jawcode-metadata": "bun scripts/generate-jawcode-metadata.ts",
     "build:gui": "cd gui && bun install && bun run build",
-    "postinstall": "node scripts/postinstall.mjs",
     "prepublishOnly": "bun run typecheck && bun run build:gui",
     "release": "bun scripts/release.ts",
     "release:watch": "bun scripts/release.ts watch"

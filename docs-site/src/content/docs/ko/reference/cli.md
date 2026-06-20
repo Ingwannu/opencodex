@@ -26,7 +26,9 @@ ocx start --port 8080
 
 ### `ocx stop`
 
-실행 중인 프록시를 (PID로) 중지하고, PID 파일을 제거한 뒤 네이티브 Codex를 복원합니다.
+실행 중인 프록시를 (PID로) 중지하고, PID 파일을 제거한 뒤 네이티브 Codex를 복원합니다. 관리형
+백그라운드 서비스가 설치되어 있다면, `ocx stop`이 먼저 서비스를 중지하여 프록시가 재생성되지
+않도록 합니다. 동일한 동작은 웹 대시보드의 **Stop** 버튼(`POST /api/stop`)에서도 사용 가능합니다.
 
 ### `ocx restore` &nbsp;·&nbsp; `ocx eject`
 

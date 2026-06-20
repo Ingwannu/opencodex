@@ -689,12 +689,15 @@ test("proxy preserves OpenAI-compatible base paths that already contain /v1", as
           body: JSON.stringify({
             model: "deep-model",
             messages: [{ role: "user", content: "Hello" }],
+            reasoning_effort: "high",
           }),
         });
         const json = await res.json();
         assert.equal(res.status, 200);
         assert.equal(json.choices[0].message.content, "DeepInfra OK");
         assert.equal(capturedRequest.model, "deep-model");
+        assert.equal(capturedRequest.reasoningEffort, "high");
+        assert.equal(capturedRequest.reasoning_effort, undefined);
       },
     );
   } finally {

@@ -1134,6 +1134,31 @@ function isMistralReasoningModel(modelId: string): boolean {
   ].some((id) => modelId.includes(id));
 }
 
+function usesOpenCodeReasoningEffortShape(
+  account: Pick<Account, "provider" | "providerId" | "providerNpm">,
+  providerId: string,
+  modelId: string,
+): boolean {
+  if (
+    [
+      "@ai-sdk/cerebras",
+      "@ai-sdk/deepinfra",
+      "@ai-sdk/groq",
+      "@ai-sdk/openai-compatible",
+      "@ai-sdk/togetherai",
+      "@ai-sdk/xai",
+      "venice-ai-sdk-provider",
+    ].includes(String(account.providerNpm ?? ""))
+  ) {
+    return true;
+  }
+  if (account.providerNpm === "@ai-sdk/mistral") return isMistralReasoningModel(modelId);
+  if (["cerebras", "deepinfra", "groq", "togetherai", "xai", "venice"].includes(providerId)) {
+    return true;
+  }
+  return providerId === "mistral" && isMistralReasoningModel(modelId);
+}
+
 function applyOpenCodeProviderDefaults(
   payload: any,
   requestBody: any,
@@ -1188,14 +1213,7 @@ function applyOpenCodeProviderDefaults(
   }
 
   if (
-    (account.providerNpm === "@ai-sdk/groq" ||
-      account.providerNpm === "@ai-sdk/xai" ||
-      account.providerNpm === "venice-ai-sdk-provider" ||
-      (account.providerNpm === "@ai-sdk/mistral" && isMistralReasoningModel(modelId)) ||
-      providerId === "groq" ||
-      providerId === "xai" ||
-      providerId === "venice" ||
-      (providerId === "mistral" && isMistralReasoningModel(modelId))) &&
+    usesOpenCodeReasoningEffortShape(account, providerId, modelId) &&
     flatReasoningEffort &&
     !hasOwn(requestRecord, "reasoningEffort") &&
     !hasOwn(payloadRecord, "reasoningEffort")

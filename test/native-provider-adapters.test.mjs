@@ -148,6 +148,22 @@ test("Anthropic adapter removes empty string messages before upstream requests",
   ]);
 });
 
+test("Anthropic adapter forwards thinking controls before upstream requests", () => {
+  const request = buildNativeProviderRequest(
+    "anthropic",
+    { accessToken: "ant-key" },
+    {
+      model: "minimax-m3-smoke",
+      messages: [{ role: "user", content: "Hello" }],
+      max_tokens: 64,
+      thinking: { type: "adaptive" },
+    },
+    false,
+  );
+
+  assert.deepEqual(request.body.thinking, { type: "adaptive" });
+});
+
 test("Anthropic adapter scrubs tool call ids before upstream requests", () => {
   const request = buildNativeProviderRequest(
     "anthropic",

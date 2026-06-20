@@ -305,3 +305,85 @@ model = "gpt-5.5"
   assert.match(doctorOutput, /glm-5\.2-fast: \{"visibility":"list"/);
   assert.match(doctorOutput, /kimi-k2\.7-code: \{"visibility":"list"/);
 });
+
+test("packed npm install writes runnable codex launchers without proxy startup", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencodex-packed-install-"));
+  const home = path.join(dir, "home");
+  const binDir = path.join(home, ".local", "bin");
+  const codexHome = path.join(home, ".codex");
+  const npmPrefix = path.join(dir, "npm-prefix");
+  const packDir = path.join(dir, "pack");
+  const fakeBin = path.join(dir, "real-bin");
+  const markerPath = path.join(dir, "fake-codex-calls.log");
+  const fakeCodex = path.join(fakeBin, "codex");
+  writeFakeCodex(fakeCodex, markerPath);
+  fs.mkdirSync(packDir, { recursive: true });
+
+  const packOutput = execFileSync(
+    "npm",
+    ["pack", "--ignore-scripts", "--json", "--pack-destination", packDir],
+    { cwd: root, encoding: "utf8" },
+  );
+  const packed = JSON.parse(packOutput)[0];
+  const tarball = path.join(packDir, packed.filename);
+
+  execFileSync(
+    "npm",
+    ["install", "-g", tarball, "--prefix", npmPrefix, "--ignore-scripts", "--no-audit", "--fund=false"],
+    { cwd: root, encoding: "utf8" },
+  );
+
+  const installedOpencodex = path.join(npmPrefix, "bin", "opencodex");
+  const port = String(26000 + Math.floor(Math.random() * 1000));
+  const env = {
+    ...process.env,
+    HOME: home,
+    CODEX_HOME: codexHome,
+    CODEX_MULTICODEX_BIN_DIR: binDir,
+    MULTICODEX_PORT: port,
+    PATH: `${fakeBin}${path.delimiter}${path.join(npmPrefix, "bin")}${path.delimiter}${process.env.PATH || ""}`,
+  };
+
+  try {
+    const installOutput = execFileSync(installedOpencodex, ["install"], {
+      cwd: root,
+      env,
+      encoding: "utf8",
+    });
+    assert.match(installOutput, /Installed wrappers/);
+
+    const doctorOutput = execFileSync(installedOpencodex, ["doctor"], {
+      cwd: root,
+      env,
+      encoding: "utf8",
+    });
+    assert.match(doctorOutput, /codex_wrapper: managed/);
+    assert.doesNotMatch(doctorOutput, /managed-stale/);
+
+    const codexVersion = execFileSync(path.join(binDir, "codex"), ["--version"], {
+      cwd: root,
+      env: {
+        ...env,
+        PATH: `${binDir}${path.delimiter}${env.PATH}`,
+      },
+      encoding: "utf8",
+    });
+    assert.match(codexVersion, /fake-codex 1\.0\.0/);
+
+    const codexPrompt = execFileSync(path.join(binDir, "codex"), ["hello"], {
+      cwd: root,
+      env: {
+        ...env,
+        PATH: `${binDir}${path.delimiter}${env.PATH}`,
+      },
+      encoding: "utf8",
+    });
+    assert.match(codexPrompt, /fake-codex --profile oai hello/);
+  } finally {
+    spawnSync(installedOpencodex, ["uninstall"], {
+      cwd: root,
+      env,
+      encoding: "utf8",
+    });
+  }
+});

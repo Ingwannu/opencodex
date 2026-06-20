@@ -198,6 +198,67 @@ test("proxy routes Anthropic chat completions through native Messages API", asyn
   }
 });
 
+test("proxy applies OpenCode MiniMax M3 adaptive thinking default", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "minimax-m3-smoke" }] }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/messages") {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "msg_minimax_m3",
+          model: "minimax-m3-smoke",
+          role: "assistant",
+          content: [{ type: "text", text: "MiniMax OK" }],
+          stop_reason: "end_turn",
+          usage: { input_tokens: 4, output_tokens: 2 },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "minimax-m3-smoke",
+          provider: "anthropic",
+          providerId: "minimax",
+          providerAdapter: "anthropic",
+          providerNpm: "@ai-sdk/anthropic",
+          accessToken: "minimax-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          providerModels: { "minimax-m3-smoke": { id: "minimax-m3-smoke" } },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "minimax-m3-smoke",
+            messages: [{ role: "user", content: "Hello" }],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+        assert.deepEqual(capturedRequest.thinking, { type: "adaptive" });
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy routes Google responses through native generateContent API", async () => {
   let capturedRequest;
   const upstream = http.createServer(async (req, res) => {

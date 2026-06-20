@@ -1186,6 +1186,15 @@ function applyOpenCodeProviderDefaults(
     payloadRecord.thinking = { type: "enabled", clear_thinking: false };
   }
 
+  if (
+    modelId.includes("minimax-m3") &&
+    account.providerNpm === "@ai-sdk/anthropic" &&
+    !hasOwn(requestRecord, "thinking") &&
+    !hasOwn(payloadRecord, "thinking")
+  ) {
+    payloadRecord.thinking = { type: "adaptive" };
+  }
+
   const capabilities = metadata?.capabilities;
   const reasoningCapable =
     capabilities &&

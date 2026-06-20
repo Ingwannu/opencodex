@@ -604,6 +604,13 @@ function buildAnthropicPayload(payload: Record<string, unknown>) {
   };
   if (system) body.system = system;
   if (typeof payload.temperature === "number") body.temperature = payload.temperature;
+  if (
+    payload.thinking &&
+    typeof payload.thinking === "object" &&
+    !Array.isArray(payload.thinking)
+  ) {
+    body.thinking = payload.thinking;
+  }
   if (Array.isArray(payload.tools)) {
     body.tools = payload.tools
       .map((tool: any) => {

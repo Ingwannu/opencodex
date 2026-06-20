@@ -46,6 +46,9 @@ full OpenCode provider parity.
 - OpenCode prompt-caching hints mirrored for Claude-compatible chat/completions
   requests by marking the first two system messages and final two non-system
   messages with ephemeral OpenRouter/OpenAI-compatible cache metadata.
+- OpenCode MiniMax M3 Anthropic request default mirrored by sending
+  `thinking: { type: "adaptive" }` to Anthropic-compatible upstreams when the
+  caller did not provide thinking controls.
 - OpenCode configured model provider metadata defaults are forwarded to upstream
   requests via `providerOptions` and `experimental_providerMetadata`, preserving
   provider-specific cache/control hints when the caller did not override them.
@@ -115,6 +118,11 @@ full OpenCode provider parity.
   `opencodex doctor` can detect `managed-stale` wrappers that still point at an
   older source checkout and that `opencodex install` is the required rewrite
   step after npm upgrades.
+- Packed npm tarball install smoke now also verifies the generated default
+  `codex` launcher runs the detected real Codex binary and does not require
+  proxy startup.
+- OpenCode MiniMax M3 Anthropic adaptive-thinking fixture and native Anthropic
+  adapter passthrough fixture.
 
 ## Known gaps
 
@@ -130,6 +138,9 @@ full OpenCode provider parity.
   thinking flags/config, chat template args, and gateway caching hints.
 - The unscoped `opencodex` npm package name is blocked by npm's similarity
   policy, so the npm package is published as `@ingwannu/opencodex`.
+- Install should be followed by `opencodex install`; if a previous wrapper still
+  prevents `codex` startup, `opencodex doctor` should show whether it is a stale
+  managed wrapper, then `opencodex install` rewrites it.
 - Real npm publishing is currently blocked until npm auth is refreshed; the
   latest published registry version observed locally is still `0.2.5`, and
   `npm whoami` currently returns `E401 Unauthorized`.

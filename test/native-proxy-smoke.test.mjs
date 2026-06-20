@@ -952,6 +952,99 @@ test("proxy applies configured OpenCode model options as request defaults", asyn
   }
 });
 
+test("proxy replaces unsupported configured model image input with text error", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "no model listing" }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/responses") {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "resp_unsupported_image",
+          object: "response",
+          created_at: 1,
+          model: "text-only-model",
+          output: [
+            {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "output_text", text: "Image filtered" }],
+            },
+          ],
+          usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "unsupported-image-smoke",
+          provider: "openai-compatible",
+          providerId: "unsupported-image",
+          providerAdapter: "openai-compatible",
+          accessToken: "configured-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}`,
+          upstreamMode: "responses",
+          compatibilityMode: "responses",
+          providerModels: {
+            "text-only-model": {
+              name: "Text Only Model",
+              capabilities: {
+                input: { text: true, image: false },
+              },
+            },
+          },
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/responses`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "text-only-model",
+            input: [
+              {
+                role: "user",
+                content: [
+                  { type: "input_text", text: "Please inspect this." },
+                  {
+                    type: "input_image",
+                    image_url: "data:image/png;base64,aGVsbG8=",
+                  },
+                ],
+              },
+            ],
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+        const content = capturedRequest.input[0].content;
+        assert.equal(content[0].type, "input_text");
+        assert.equal(content[1].type, "input_text");
+        assert.match(content[1].text, /Cannot read image/);
+        assert.equal(
+          content.some((part) => part.type === "input_image"),
+          false,
+        );
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy applies configured OpenCode model variants from request effort", async () => {
   let capturedRequest;
   const upstream = http.createServer(async (req, res) => {

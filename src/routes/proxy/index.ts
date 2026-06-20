@@ -519,6 +519,71 @@ function configuredModelOptionsForAccount(
   return baseOptions;
 }
 
+type InputModality = "image" | "audio" | "video" | "pdf";
+
+function configuredInputCapability(
+  metadata: Record<string, unknown> | undefined,
+  modality: InputModality,
+): boolean | undefined {
+  const capabilities = objectValue(metadata?.capabilities);
+  const input = objectValue(capabilities?.input);
+  if (typeof input?.[modality] === "boolean") return input[modality] as boolean;
+
+  const modalities = objectValue(metadata?.modalities);
+  const rawInput = modalities?.input;
+  if (Array.isArray(rawInput)) {
+    return rawInput.some((value) => String(value).toLowerCase() === modality);
+  }
+  return undefined;
+}
+
+function inputPartModality(part: unknown): InputModality | undefined {
+  if (!part || typeof part !== "object" || Array.isArray(part)) return undefined;
+  const source = part as Record<string, unknown>;
+  const type = String(source.type ?? "").toLowerCase();
+  if (type === "input_image" || type === "image") return "image";
+  if (type === "input_audio" || type === "audio") return "audio";
+  if (type === "input_video" || type === "video") return "video";
+  if (type === "input_file" || type === "file") {
+    const mediaType = String(source.media_type ?? source.mediaType ?? "").toLowerCase();
+    if (mediaType === "application/pdf") return "pdf";
+  }
+  return undefined;
+}
+
+function unsupportedInputText(modality: InputModality, part: Record<string, unknown>): string {
+  const filename = typeof part.filename === "string" && part.filename.trim()
+    ? ` \"${part.filename.trim()}\"`
+    : "";
+  return `ERROR: Cannot read${filename || ` ${modality}`} (this model does not support ${modality} input). Inform the user.`;
+}
+
+function applyConfiguredInputCapabilities(
+  payload: unknown,
+  metadata: Record<string, unknown> | undefined,
+): void {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
+  const source = payload as Record<string, unknown>;
+  const input = source.input;
+  if (!Array.isArray(input)) return;
+
+  for (const item of input) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    if (!Array.isArray(record.content)) continue;
+    record.content = record.content.map((part) => {
+      const modality = inputPartModality(part);
+      if (!modality || configuredInputCapability(metadata, modality) !== false) {
+        return part;
+      }
+      return {
+        type: "input_text",
+        text: unsupportedInputText(modality, part as Record<string, unknown>),
+      };
+    });
+  }
+}
+
 function requestVariantKey(
   requestBody: any,
   requestEffort: EffortTier | undefined,
@@ -2093,11 +2158,19 @@ export function createProxyRouter(options: ProxyRoutesOptions) {
           candidate.resolvedModel ?? requestModel,
           requestVariantKey(req.body, requestEffort),
         );
+        const configuredModelMetadata = configuredModelMetadataForAccount(
+          selected,
+          candidate.resolvedModel ?? requestModel,
+        );
         applyConfiguredModelOptions(
           payloadToUpstream,
           req.body,
           configuredModelOptions,
           shouldSendChatCompletions,
+        );
+        applyConfiguredInputCapabilities(
+          payloadToUpstream,
+          configuredModelMetadata,
         );
         if (configuredUpstreamModelId) {
           payloadToUpstream.model = configuredUpstreamModelId;

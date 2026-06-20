@@ -636,6 +636,14 @@ function applyConfiguredModelOptions(
     }
   }
 
+  if (
+    typeof (options.parallelToolCalls ?? options.parallel_tool_calls) === "boolean" &&
+    !hasOwn(requestBody, "parallelToolCalls") &&
+    !hasOwn(requestBody, "parallel_tool_calls")
+  ) {
+    payload.parallel_tool_calls = options.parallelToolCalls ?? options.parallel_tool_calls;
+  }
+
   const reasoningEffort = stringValue(
     options.reasoningEffort ?? options.reasoning_effort,
   );

@@ -806,12 +806,26 @@ test("imports OpenCode opencode provider through the CLI with public fallback", 
       "provider": {
         "opencode": {
           "models": {
-            "kimi-k2.7-code": { "name": "Kimi K2.7 Code" }
+            "kimi-k2.7-code": {
+              "name": "Kimi K2.7 Code",
+              "cost": [{ "input": 0, "output": 0 }]
+            },
+            "paid-opencode-model": {
+              "name": "Paid OpenCode Model",
+              "cost": [{ "input": 1.25, "output": 5 }]
+            }
           }
         },
         "opencode-go": {
           "models": {
-            "glm-5.2-fast": { "name": "GLM 5.2 Fast" }
+            "glm-5.2-fast": {
+              "name": "GLM 5.2 Fast",
+              "cost": [{ "input": 0, "output": 0 }]
+            },
+            "paid-go-model": {
+              "name": "Paid Go Model",
+              "cost": [{ "input": 0.2, "output": 1 }]
+            }
           }
         }
       }
@@ -844,10 +858,12 @@ test("imports OpenCode opencode provider through the CLI with public fallback", 
   assert.equal(byProviderId.get("opencode")?.baseUrl, "https://opencode.ai/zen");
   assert.equal(byProviderId.get("opencode")?.enabled, true);
   assert.ok(byProviderId.get("opencode")?.providerModels?.["kimi-k2.7-code"]);
+  assert.equal(byProviderId.get("opencode")?.providerModels?.["paid-opencode-model"], undefined);
   assert.equal(byProviderId.get("opencode-go")?.accessToken, "public");
   assert.equal(byProviderId.get("opencode-go")?.baseUrl, "https://opencode.ai/zen/go");
   assert.equal(byProviderId.get("opencode-go")?.enabled, true);
   assert.ok(byProviderId.get("opencode-go")?.providerModels?.["glm-5.2-fast"]);
+  assert.equal(byProviderId.get("opencode-go")?.providerModels?.["paid-go-model"], undefined);
 });
 
 test("imports OpenCode WellKnown auth tokens through the CLI", () => {

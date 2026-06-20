@@ -539,6 +539,7 @@ function providerModelsForAuthEntry(
   providerKey: string,
   registry: ProviderRegistryEntry,
   body: unknown,
+  token?: string,
 ): Record<string, unknown> | undefined {
   const models = { ...(baseProviderModelsForRegistry(registry) ?? {}) };
   if (sanitizeProviderId(providerKey) === "digitalocean") {
@@ -547,7 +548,37 @@ function providerModelsForAuthEntry(
       if (!models[id]) models[id] = digitalOceanRouterModel(router);
     }
   }
+
+  if (token === "public" && isOpenCodePublicFallbackProvider(providerKey, registry)) {
+    for (const [modelId, metadata] of Object.entries(models)) {
+      if (isPaidOpenCodeModel(metadata)) delete models[modelId];
+    }
+  }
   return Object.keys(models).length ? models : undefined;
+}
+
+function isOpenCodePublicFallbackProvider(
+  providerId: string,
+  registry: ProviderRegistryEntry,
+): boolean {
+  const id = sanitizeProviderId(registry.providerId || providerId);
+  return id === "opencode" || id === "opencode-go";
+}
+
+function isPaidOpenCodeModel(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return false;
+  }
+  const cost = (metadata as Record<string, unknown>).cost;
+  if (!Array.isArray(cost)) return false;
+  return cost.some(
+    (entry) =>
+      Boolean(entry) &&
+      typeof entry === "object" &&
+      !Array.isArray(entry) &&
+      typeof (entry as Record<string, unknown>).input === "number" &&
+      ((entry as Record<string, number>).input ?? 0) > 0,
+  );
 }
 
 function modelProviderOverrideAccountsForRegistry(
@@ -936,7 +967,7 @@ export async function accountsFromOpenCodeAuthPayload(
       providerAuthEnv: registry.tokenEnv,
       providerAuthType: credential.providerAuthType ?? registry.authType,
       providerOptions: providerOptionsForAuthEntry(providerKey, registry, body),
-      providerModels: providerModelsForAuthEntry(providerKey, registry, body),
+      providerModels: providerModelsForAuthEntry(providerKey, registry, body, token),
       upstreamMode: registry.upstreamMode,
       compatibilityMode: registry.compatibilityMode,
       openAiPathPrefix: registry.openAiPathPrefix,
@@ -981,7 +1012,7 @@ export async function accountsFromOpenCodeAuthPayload(
       providerAuthEnv: registry.tokenEnv,
       providerAuthType: registry.authType,
       providerOptions: registry.providerOptions,
-      providerModels: providerModelsForAuthEntry(providerKey, registry, undefined),
+      providerModels: providerModelsForAuthEntry(providerKey, registry, undefined, token),
       upstreamMode: registry.upstreamMode,
       compatibilityMode: registry.compatibilityMode,
       openAiPathPrefix: registry.openAiPathPrefix,
@@ -1029,7 +1060,7 @@ export async function accountsFromOpenCodeAuthPayload(
       providerAuthEnv: registry.tokenEnv,
       providerAuthType: registry.authType,
       providerOptions: registry.providerOptions,
-      providerModels: providerModelsForAuthEntry(providerKey, registry, undefined),
+      providerModels: providerModelsForAuthEntry(providerKey, registry, undefined, token),
       upstreamMode: registry.upstreamMode,
       compatibilityMode: registry.compatibilityMode,
       openAiPathPrefix: registry.openAiPathPrefix,

@@ -2323,7 +2323,7 @@ function digitalOceanRouterModel(router) {
   };
 }
 
-function providerModelsForAuthEntry(providerKey, preset, body) {
+function providerModelsForAuthEntry(providerKey, preset, body, token) {
   const models = { ...(baseProviderModelsForPreset(preset) || {}) };
   if (sanitizeProviderId(providerKey) === "digitalocean") {
     for (const router of parseDigitalOceanRouters(body)) {
@@ -2331,7 +2331,32 @@ function providerModelsForAuthEntry(providerKey, preset, body) {
       if (!models[id]) models[id] = digitalOceanRouterModel(router);
     }
   }
+
+  if (token === "public" && isOpenCodePublicFallbackProvider(providerKey, preset)) {
+    for (const [modelId, metadata] of Object.entries(models)) {
+      if (isPaidOpenCodeModel(metadata)) delete models[modelId];
+    }
+  }
   return Object.keys(models).length ? models : undefined;
+}
+
+function isOpenCodePublicFallbackProvider(providerId, preset) {
+  const id = sanitizeProviderId(preset.providerId || providerId);
+  return id === "opencode" || id === "opencode-go";
+}
+
+function isPaidOpenCodeModel(metadata) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
+  const cost = metadata.cost;
+  if (!Array.isArray(cost)) return false;
+  return cost.some(
+    (entry) =>
+      Boolean(entry) &&
+      typeof entry === "object" &&
+      !Array.isArray(entry) &&
+      typeof entry.input === "number" &&
+      entry.input > 0,
+  );
 }
 
 function modelProviderOverrideAccountsForPreset(baseAccount, preset, token) {
@@ -2646,7 +2671,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         providerAuthEnv: preset.tokenEnv,
         providerAuthType: credential.providerAuthType || preset.authType,
         providerOptions: providerOptionsForAuthEntry(providerKey, preset, body),
-        providerModels: providerModelsForAuthEntry(providerKey, preset, body),
+        providerModels: providerModelsForAuthEntry(providerKey, preset, body, token),
         upstreamMode: preset.upstreamMode,
         compatibilityMode: preset.compatibilityMode,
         openAiPathPrefix: preset.openAiPathPrefix,
@@ -2687,7 +2712,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         providerAuthEnv: preset.tokenEnv,
         providerAuthType: preset.authType,
         providerOptions: preset.providerOptions,
-        providerModels: providerModelsForAuthEntry(providerKey, preset, undefined),
+        providerModels: providerModelsForAuthEntry(providerKey, preset, undefined, token),
         upstreamMode: preset.upstreamMode,
         compatibilityMode: preset.compatibilityMode,
         openAiPathPrefix: preset.openAiPathPrefix,
@@ -2731,7 +2756,7 @@ async function authImportOpenCode(filePath = OPENCODE_AUTH_PATH, opts = {}) {
         providerAuthEnv: preset.tokenEnv,
         providerAuthType: preset.authType,
         providerOptions: preset.providerOptions,
-        providerModels: providerModelsForAuthEntry(providerKey, preset, undefined),
+        providerModels: providerModelsForAuthEntry(providerKey, preset, undefined, token),
         upstreamMode: preset.upstreamMode,
         compatibilityMode: preset.compatibilityMode,
         openAiPathPrefix: preset.openAiPathPrefix,

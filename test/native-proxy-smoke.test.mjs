@@ -2582,6 +2582,76 @@ test("proxy derives OpenCode Groq reasoning variants from request effort", async
   }
 });
 
+test("proxy derives OpenCode Venice reasoning variants from request effort", async () => {
+  let capturedRequest;
+  const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/api/v1/models") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "venice-reasoning-smoke" }] }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/api/v1/chat/completions") {
+      capturedRequest = await readJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl_venice_reasoning",
+          object: "chat.completion",
+          created: 1,
+          model: "venice-reasoning-smoke",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "Venice OK" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 },
+        }),
+      );
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  const upstreamPort = await listen(upstream);
+
+  try {
+    await withProxy(
+      [
+        {
+          id: "venice-reasoning-smoke",
+          provider: "openai-compatible",
+          providerId: "venice",
+          providerAdapter: "openai-compatible",
+          providerNpm: "venice-ai-sdk-provider",
+          accessToken: "venice-key",
+          baseUrl: `http://127.0.0.1:${upstreamPort}/api/v1`,
+          upstreamMode: "chat/completions",
+          compatibilityMode: "chat-completions-bridge",
+          enabled: true,
+        },
+      ],
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "venice-reasoning-smoke",
+            messages: [{ role: "user", content: "Hello" }],
+            reasoning_effort: "high",
+          }),
+        });
+        const json = await res.json();
+        assert.equal(res.status, 200, JSON.stringify(json));
+        assert.equal(capturedRequest.reasoningEffort, "high");
+        assert.equal(capturedRequest.reasoning_effort, undefined);
+      },
+    );
+  } finally {
+    await closeServer(upstream);
+  }
+});
+
 test("proxy routes Perplexity Sonar compatibility without a /v1 prefix", async () => {
   let capturedRequest;
   const upstream = http.createServer(async (req, res) => {

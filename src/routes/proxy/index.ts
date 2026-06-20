@@ -1179,7 +1179,10 @@ function applyOpenCodeProviderDefaults(
   }
 
   if (
-    (account.providerNpm === "@ai-sdk/groq" || providerId === "groq") &&
+    (account.providerNpm === "@ai-sdk/groq" ||
+      account.providerNpm === "venice-ai-sdk-provider" ||
+      providerId === "groq" ||
+      providerId === "venice") &&
     flatReasoningEffort &&
     !hasOwn(requestRecord, "reasoningEffort") &&
     !hasOwn(payloadRecord, "reasoningEffort")

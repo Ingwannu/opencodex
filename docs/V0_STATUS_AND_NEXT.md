@@ -75,9 +75,9 @@ full OpenCode provider parity.
 - OpenRouter and LLM Gateway reasoning variants now mirror OpenCode's provider
   shape by translating requested flat `reasoning_effort` into
   `reasoning: { effort }` before forwarding chat/completions requests.
-- Groq reasoning variants now mirror OpenCode's provider shape by translating
-  requested flat `reasoning_effort` into `reasoningEffort` before forwarding
-  chat/completions requests.
+- Groq and Venice reasoning variants now mirror OpenCode's provider shape by
+  translating requested flat `reasoning_effort` into `reasoningEffort` before
+  forwarding chat/completions requests.
 - GitHub Copilot GPT reasoning variants now mirror OpenCode's provider shape by
   translating requested flat `reasoning_effort` into `reasoningEffort`, adding
   `reasoningSummary: "auto"`, and requesting encrypted reasoning continuity.
@@ -118,7 +118,8 @@ full OpenCode provider parity.
 - OpenCode provider identity default fixture for session cache keys, Z.ai
   thinking, Alibaba CN reasoning enablement, and gateway-style request hints.
 - OpenCode OpenRouter reasoning variant fixture for request-effort mapping.
-- OpenCode Groq reasoning variant fixture for request-effort mapping.
+- OpenCode Groq and Venice reasoning variant fixtures for request-effort
+  mapping.
 - OpenCode GitHub Copilot GPT reasoning variant fixture for request-effort
   mapping, auto summaries, and encrypted reasoning include.
 - OpenCode Amazon Bedrock Anthropic `reasoningConfig` variant fixture and native
